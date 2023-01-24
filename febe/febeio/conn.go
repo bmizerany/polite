@@ -42,10 +42,7 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 func (c *Conn) ReadByte() (byte, error) {
 	b, err := c.r.ReadByte()
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			err = io.ErrUnexpectedEOF
-		}
-		return 0, err
+		return 0, eofAsUnexpectedEOF(err)
 	}
 	return b, nil
 }
@@ -57,10 +54,7 @@ func (c *Conn) WriteByte(b byte) error {
 func (c *Conn) ReadInt16() (int16, error) {
 	b, err := c.r.Peek(2)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			err = io.ErrUnexpectedEOF
-		}
-		return 0, err
+		return 0, eofAsUnexpectedEOF(err)
 	}
 	c.r.Discard(len(b))
 	n := int16(b[0])<<8 | int16(b[1])
@@ -75,10 +69,7 @@ func (c *Conn) WriteInt16(n int16) error {
 func (c *Conn) ReadInt32() (int32, error) {
 	b, err := c.r.Peek(4)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			err = io.ErrUnexpectedEOF
-		}
-		return 0, err
+		return 0, eofAsUnexpectedEOF(err)
 	}
 	c.r.Discard(len(b))
 	n := int32(b[0])<<24 | int32(b[1])<<16 | int32(b[2])<<8 | int32(b[3])
@@ -134,10 +125,7 @@ func (c *Conn) discardRemainder() error {
 func (c *Conn) ReadString() (mem.RO, error) {
 	b, err := c.r.ReadSlice(0)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			err = io.ErrUnexpectedEOF
-		}
-		return mem.B(b), err
+		return mem.B(b), eofAsUnexpectedEOF(err)
 	}
 	return mem.B(b[:len(b)-1]), nil
 }
@@ -170,8 +158,12 @@ func (r *fullReader) Read(p []byte) (int, error) {
 	}
 	n, err := r.R.Read(p)
 	r.N -= n
-	if errors.Is(err, io.EOF) && r.N > 0 {
-		err = io.ErrUnexpectedEOF
+	return n, eofAsUnexpectedEOF(err)
+}
+
+func eofAsUnexpectedEOF(err error) error {
+	if errors.Is(err, io.EOF) {
+		return io.ErrUnexpectedEOF
 	}
-	return n, err
+	return err
 }
