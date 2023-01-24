@@ -55,15 +55,15 @@ func (c *Conn) WriteByte(b byte) error {
 }
 
 func (c *Conn) ReadInt16() (int16, error) {
-	buf, err := c.r.Peek(2)
+	b, err := c.r.Peek(2)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			err = io.ErrUnexpectedEOF
 		}
 		return 0, err
 	}
-	c.r.Discard(len(buf))
-	n := int16(buf[0])<<8 | int16(buf[1])
+	c.r.Discard(len(b))
+	n := int16(b[0])<<8 | int16(b[1])
 	return n, nil
 }
 
@@ -73,15 +73,15 @@ func (c *Conn) WriteInt16(n int16) error {
 }
 
 func (c *Conn) ReadInt32() (int32, error) {
-	buf, err := c.r.Peek(4)
+	b, err := c.r.Peek(4)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			err = io.ErrUnexpectedEOF
 		}
 		return 0, err
 	}
-	c.r.Discard(len(buf))
-	n := int32(buf[0])<<24 | int32(buf[1])<<16 | int32(buf[2])<<8 | int32(buf[3])
+	c.r.Discard(len(b))
+	n := int32(b[0])<<24 | int32(b[1])<<16 | int32(b[2])<<8 | int32(b[3])
 	return n, nil
 }
 
