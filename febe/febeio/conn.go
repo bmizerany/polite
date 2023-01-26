@@ -20,7 +20,6 @@ type Conn struct {
 	w *bufio.Writer
 
 	fr fullReader
-	rr io.Reader
 }
 
 // NewConn returns a Conn ready for use.
@@ -34,7 +33,6 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 		r: bufio.NewReader(r),
 		w: bufio.NewWriter(w),
 	}
-	c.rr = &c.fr
 	return c
 }
 
@@ -88,7 +86,8 @@ type connReadCloser struct {
 }
 
 func (c connReadCloser) Read(p []byte) (int, error) {
-	return c.rr.Read(p)
+	r := &c.fr
+	return r.Read(p)
 }
 
 func (c connReadCloser) Close() error {
