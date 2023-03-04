@@ -3,6 +3,7 @@ package febe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 
@@ -49,26 +50,111 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 	return c.Err()
 }
 
-func (c *Conn) ReadStartupResponse() error {
+type Message interface {
+	Header() *MessageHeader
+}
+
+type MessageHeader struct {
+	Type byte
+	Len  int32
+}
+
+func (h *MessageHeader) Header() *MessageHeader { return h }
+
+func (c *Conn) Next() (Message, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	b, err := c.c.ReadByte()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if b != 'R' {
-		return errors.New("expected 'R'")
-	}
-	c.c.ReadInt32()           // length
-	t, err := c.c.ReadInt32() // protocol version
+	l, err := c.c.ReadInt32()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if t != 0 {
-		// https://www.postgresql.org/docs/current/protocol-message-formats.html
-		return errors.New("unexpected autentication response")
+	h := MessageHeader{Type: b, Len: l}
+	switch b {
+	case 'E':
+		return c.readErrorResponse(h)
+	default:
+		return nil, fmt.Errorf("pqlite: unexpected message type %q", b)
 	}
-	return nil
+}
+
+// TODO(bmizerany): https://www.postgresql.org/docs/current/errcodes-appendix.html
+
+type ErrorResponse struct {
+	MessageHeader
+	Severity   string
+	Code       string
+	Message    string
+	Detail     string
+	Hint       string
+	Position   string
+	Internal   string
+	Where      string
+	Schema     string
+	Table      string
+	Column     string
+	DataType   string
+	Constraint string
+	File       string
+	Line       string
+	Routine    string
+}
+
+func (c *Conn) readErrorResponse(h MessageHeader) (*ErrorResponse, error) {
+	e := &ErrorResponse{MessageHeader: h}
+	for {
+		k, err := c.c.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		if k == 0 {
+			break
+		}
+		v, err := c.c.ReadString()
+		if err != nil {
+			return nil, err
+		}
+		switch k {
+		case 'S':
+			e.Severity = v.StringCopy()
+		case 'C':
+			e.Code = v.StringCopy()
+		case 'M':
+			e.Message = v.StringCopy()
+		case 'D':
+			e.Detail = v.StringCopy()
+		case 'H':
+			e.Hint = v.StringCopy()
+		case 'P':
+			e.Position = v.StringCopy()
+		case 'p':
+			e.Internal = v.StringCopy()
+		case 'W':
+			e.Where = v.StringCopy()
+		case 's':
+			e.Schema = v.StringCopy()
+		case 't':
+			e.Table = v.StringCopy()
+		case 'c':
+			e.Column = v.StringCopy()
+		case 'd':
+			e.DataType = v.StringCopy()
+		case 'n':
+			e.Constraint = v.StringCopy()
+		case 'F':
+			e.File = v.StringCopy()
+		case 'L':
+			e.Line = v.StringCopy()
+		case 'R':
+			e.Routine = v.StringCopy()
+		default:
+			return nil, fmt.Errorf("pqlite: unexpected error response key %q", k)
+		}
+	}
+	return e, nil
 }
 
 type sizer int32
