@@ -27,7 +27,7 @@ func (c *Conn) Flush() error {
 func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 	defer errorfmt.Handlef("pqlite: febe: WriteStartupMessage: %w", &err)
 	if len(params)%2 != 0 {
-		return errors.New("pqlite: febe: WriteStartupMessage: params must be even")
+		return errors.New("params must be even")
 	}
 
 	var s sizer
