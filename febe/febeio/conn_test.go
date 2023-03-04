@@ -220,7 +220,7 @@ func testWriteAllocs[T knownTypes](t *testing.T, name string, v T, write func(*C
 	t.Run(name, func(t *testing.T) {
 		t.Helper()
 		c := NewConn(nil, io.Discard)
-		n := testing.AllocsPerRun(100, func() {
+		n := testing.AllocsPerRun(1000, func() {
 			if err := write(c, v); err != nil {
 				t.Fatal(err)
 			}

@@ -54,8 +54,8 @@ func (c *Conn) ReadInt16() (int16, error) {
 	if err != nil {
 		return 0, eofAsUnexpectedEOF(err)
 	}
-	c.r.Discard(len(b))
 	n := int16(b[0])<<8 | int16(b[1])
+	c.r.Discard(len(b))
 	return n, nil
 }
 
@@ -69,8 +69,8 @@ func (c *Conn) ReadInt32() (int32, error) {
 	if err != nil {
 		return 0, eofAsUnexpectedEOF(err)
 	}
-	c.r.Discard(len(b))
 	n := int32(b[0])<<24 | int32(b[1])<<16 | int32(b[2])<<8 | int32(b[3])
+	c.r.Discard(len(b))
 	return n, nil
 }
 
@@ -79,6 +79,11 @@ func (c *Conn) WriteInt32(n int32) error {
 	c.w.WriteByte(byte(n >> 16))
 	c.w.WriteByte(byte(n >> 8))
 	return c.w.WriteByte(byte(n))
+}
+
+func (c *Conn) Err() error {
+	_, err := c.w.Write(nil)
+	return err
 }
 
 type connReadCloser struct {
