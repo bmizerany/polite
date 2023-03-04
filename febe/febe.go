@@ -1,13 +1,13 @@
 package febe
 
 import (
+	"context"
 	"errors"
 	"io"
 	"sync"
 
 	"blake.io/pqlite/febe/febeio"
 	"go4.org/mem"
-	"kr.dev/errorfmt"
 )
 
 type Conn struct {
@@ -24,8 +24,11 @@ func (c *Conn) Flush() error {
 	return c.c.Flush()
 }
 
-func (c *Conn) WriteStartupMessage(params ...string) (err error) {
-	defer errorfmt.Handlef("pqlite: febe: WriteStartupMessage: %w", &err)
+func (c *Conn) Err() error {
+	return c.c.Err()
+}
+
+func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err error) {
 	if len(params)%2 != 0 {
 		return errors.New("params must be even")
 	}
@@ -43,7 +46,29 @@ func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 		c.c.WriteString(mem.S(params[i]))
 		c.c.WriteString(mem.S(params[i+1]))
 	}
-	return c.c.Err()
+	return c.Err()
+}
+
+func (c *Conn) ReadStartupResponse() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	b, err := c.c.ReadByte()
+	if err != nil {
+		return err
+	}
+	if b != 'R' {
+		return errors.New("expected 'R'")
+	}
+	c.c.ReadInt32()           // length
+	t, err := c.c.ReadInt32() // protocol version
+	if err != nil {
+		return err
+	}
+	if t != 0 {
+		// https://www.postgresql.org/docs/current/protocol-message-formats.html
+		return errors.New("unexpected autentication response")
+	}
+	return nil
 }
 
 type sizer int32
