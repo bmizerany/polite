@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"blake.io/pqlite/febe/febeio"
 	"kr.dev/diff"
 )
 
@@ -30,32 +29,6 @@ func TestError(t *testing.T) {
 			t.Fatalf("[%d]: unexpected error: %v", i, err)
 		}
 	}
-}
-
-type msgBuffer struct {
-	*febeio.Conn
-	b bytes.Buffer
-}
-
-func newMsgBuffer(t byte) *msgBuffer {
-	b := &msgBuffer{}
-	b.Conn = febeio.NewConn(nil, &b.b)
-	b.WriteByte(t)
-	b.WriteInt32(0) // reserved for length
-	return b
-}
-
-func (b *msgBuffer) Flush() {
-	b.Conn.Flush()
-	l := b.b.Len() - 1
-	b.b.Bytes()[1] = byte(l >> 24)
-	b.b.Bytes()[2] = byte(l >> 16)
-	b.b.Bytes()[3] = byte(l >> 8)
-	b.b.Bytes()[4] = byte(l)
-}
-
-func (b *msgBuffer) Reader() io.Reader {
-	return &b.b
 }
 
 func TestErrorResponse(t *testing.T) {
