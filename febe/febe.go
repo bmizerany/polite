@@ -36,48 +36,6 @@ func (c *Conn) Err() error {
 	return c.c.Err()
 }
 
-func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err error) {
-	if len(params)%2 != 0 {
-		return errors.New("params must be even")
-	}
-
-	var s sizer
-	s.addInt32() // length
-	s.addInt32() // protocol version
-	s.addStrings(params...)
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.c.WriteInt32(s.size())
-	c.c.WriteInt32(196608)
-	for i := 0; i < len(params); i += 2 {
-		c.c.WriteString(mem.S(params[i]))
-		c.c.WriteString(mem.S(params[i+1]))
-	}
-	return c.Err()
-}
-
-type AuthMessage struct {
-	MessageHeader
-	Type int32
-}
-
-func (m AuthMessage) Ok() bool        { return m.Type == 0 }
-func (m AuthMessage) Cleartext() bool { return m.Type == 3 }
-
-func (c *Conn) ReadAuthentiationMessage(h MessageHeader) (AuthMessage, error) {
-	if err := checkMessageHeader(h, 'R'); err != nil {
-		return AuthMessage{}, err
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	t, err := c.c.ReadInt32()
-	if err != nil {
-		return AuthMessage{}, err
-	}
-	return AuthMessage{MessageHeader: h, Type: t}, nil
-}
-
 type Message interface {
 	Header() *MessageHeader
 }
@@ -121,3 +79,78 @@ func (s *sizer) addStrings(vv ...string) {
 	}
 }
 func (s *sizer) size() int32 { return int32(*s) }
+
+func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err error) {
+	if len(params)%2 != 0 {
+		return errors.New("params must be even")
+	}
+
+	var s sizer
+	s.addInt32() // length
+	s.addInt32() // protocol version
+	s.addStrings(params...)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.c.WriteInt32(s.size())
+	c.c.WriteInt32(196608)
+	for i := 0; i < len(params); i += 2 {
+		c.c.WriteString(mem.S(params[i]))
+		c.c.WriteString(mem.S(params[i+1]))
+	}
+	return c.Err()
+}
+
+type AuthMessage struct {
+	MessageHeader
+	Type int32
+}
+
+func (m AuthMessage) Ok() bool        { return m.Type == 0 }
+func (m AuthMessage) Cleartext() bool { return m.Type == 3 }
+
+func (c *Conn) ReadAuthentiationMessage(h MessageHeader) (AuthMessage, error) {
+	if err := checkMessageHeader(h, 'R'); err != nil {
+		return AuthMessage{}, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, err := c.c.ReadInt32()
+	if err != nil {
+		return AuthMessage{}, err
+	}
+	return AuthMessage{MessageHeader: h, Type: t}, nil
+}
+
+func (c *Conn) WriteBackendKeyData(ctx context.Context, pid, secret int32) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.c.WriteByte('K')
+	c.c.WriteInt32(12)
+	c.c.WriteInt32(pid)
+	c.c.WriteInt32(secret)
+	return c.Err()
+}
+
+func (c *Conn) WriteParameterStatus(ctx context.Context, name, value string) error {
+	var s sizer
+	s.addInt32() // length
+	s.addStrings(name, value)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.c.WriteByte('S')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(mem.S(name))
+	c.c.WriteString(mem.S(value))
+	return c.Err()
+}
+
+func (c *Conn) WriteReadyForQuery(ctx context.Context, status byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.c.WriteByte('Z')
+	c.c.WriteInt32(5)
+	c.c.WriteByte(status)
+	return c.Err()
+}

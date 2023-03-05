@@ -140,15 +140,66 @@ func BenchmarkReadErrorResponse(b *testing.B) {
 	}
 }
 
-func TestStartupResponse(t *testing.T) {
+func TestWriteStartupMessage(t *testing.T) {
 	var b bytes.Buffer
-
-	ctx := context.Background()
 	c := New(&b, &b)
-	c.WriteStartupMessage(ctx, "user", "test")
+	c.WriteStartupMessage(context.Background(), "user", "test")
 	if err := c.Err(); err != nil {
 		t.Fatal(err)
 	}
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{
+		// length of message
+		0, 0, 0, 18,
+		// protocol version
+		0, 3, 0, 0,
+		// user
+		'u', 's', 'e', 'r', 0,
+		't', 'e', 's', 't', 0,
+	}
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestReadBackendKeyData(t *testing.T) {
+	var b bytes.Buffer
+	c := New(nil, &b)
+	c.WriteBackendKeyData(context.Background(), 123, 456)
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{
+		// protocol version
+		'K',
+		// length of message
+		0, 0, 0, 12,
+		// 123 (int32 big endian)
+		0, 0, 0, 123,
+		// 456 (int32 big endian)
+		0, 0, 1, 200,
+	}
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestWriteParameterStatus(t *testing.T) {
+	var b bytes.Buffer
+	c := New(nil, &b)
+	c.WriteParameterStatus(context.Background(), "key", "value")
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{
+		// protocol version
+		'S',
+		// length of message
+		0, 0, 0, 14,
+		// key
+		'k', 'e', 'y', 0,
+		// value
+		'v', 'a', 'l', 'u', 'e', 0,
+	}
+	diff.Test(t, t.Errorf, b.Bytes(), want)
 }
 
 var errTest = errors.New("febe_test: test error")
