@@ -84,7 +84,7 @@ func TestErrorResponse(t *testing.T) {
 		ErrorFields: fields,
 	}
 
-	c.WriteErrorResponse(context.Background(), fields)
+	c.WriteErrorResponse(context.Background(), Error, fields)
 	c.Flush()
 
 	want.MessageHeader = MessageHeader{
@@ -109,7 +109,7 @@ func BenchmarkWriteErrorResponse(b *testing.B) {
 	c := New(nil, io.Discard)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		err := c.WriteErrorResponse(context.Background(), ErrorFields{
+		err := c.WriteErrorResponse(context.Background(), Error, ErrorFields{
 			Severity: "ERROR",
 			Message:  "MESSAGE",
 			Code:     "CODE",
@@ -200,6 +200,72 @@ func TestWriteParameterStatus(t *testing.T) {
 		'v', 'a', 'l', 'u', 'e', 0,
 	}
 	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestWriteReadyForQuery(t *testing.T) {
+	var b bytes.Buffer
+	c := New(nil, &b)
+	c.WriteReadyForQuery(context.Background(), 'I')
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{
+		// protocol version
+		'Z',
+		// length of message
+		0, 0, 0, 5,
+		// transaction status
+		'I',
+	}
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestNoticeResponse(t *testing.T) {
+	var b bytes.Buffer
+	c := New(&b, &b)
+
+	fields := ErrorFields{
+		Severity:   "NOTICE",
+		Message:    "MESSAGE",
+		Code:       "CODE",
+		Detail:     "DETAIL",
+		Hint:       "HINT",
+		Position:   "POS",
+		Internal:   "INTERNAL",
+		Where:      "WHERE",
+		Schema:     "SCHEMA",
+		Table:      "TABLE",
+		Column:     "COLUMN",
+		DataType:   "DATATYPE",
+		Constraint: "CONSTRAINT",
+		File:       "FILE",
+		Line:       "LINE",
+		Routine:    "ROUTINE",
+	}
+
+	want := &ErrorResponse{
+		ErrorFields: fields,
+	}
+
+	c.WriteErrorResponse(context.Background(), Notice, fields)
+	c.Flush()
+
+	want.MessageHeader = MessageHeader{
+		msgType: 'N',
+		msgLen:  b.Len() - 1,
+	}
+
+	h, err := c.ReadHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.ReadNoticeResponse(context.Background(), h)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	diff.Test(t, t.Errorf, got, want)
 }
 
 var errTest = errors.New("febe_test: test error")

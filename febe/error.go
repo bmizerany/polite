@@ -7,6 +7,13 @@ import (
 	"go4.org/mem"
 )
 
+type ErrorType byte
+
+const (
+	Error  ErrorType = 'E'
+	Notice ErrorType = 'N'
+)
+
 type ErrorFields struct {
 	Severity   string
 	Code       string
@@ -50,11 +57,21 @@ type ErrorResponse struct {
 	ErrorFields
 }
 
+func (c *Conn) ReadNoticeResponse(ctx context.Context, h MessageHeader) (*ErrorResponse, error) {
+	if err := checkMessageHeader(h, 'N'); err != nil {
+		return nil, err
+	}
+	return c.readErrorResponse(ctx, h)
+}
+
 func (c *Conn) ReadErrorResponse(ctx context.Context, h MessageHeader) (*ErrorResponse, error) {
 	if err := checkMessageHeader(h, 'E'); err != nil {
 		return nil, err
 	}
+	return c.readErrorResponse(ctx, h)
+}
 
+func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (*ErrorResponse, error) {
 	e := &ErrorResponse{MessageHeader: h}
 	for {
 		k, err := c.c.ReadByte()
@@ -108,7 +125,7 @@ func (c *Conn) ReadErrorResponse(ctx context.Context, h MessageHeader) (*ErrorRe
 	return e, nil
 }
 
-func (c *Conn) WriteErrorResponse(ctx context.Context, e ErrorFields) error {
+func (c *Conn) WriteErrorResponse(ctx context.Context, t ErrorType, e ErrorFields) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -120,7 +137,7 @@ func (c *Conn) WriteErrorResponse(ctx context.Context, e ErrorFields) error {
 		s.addString(v)
 	})
 
-	c.c.WriteByte('E')
+	c.c.WriteByte(byte(t))
 	c.c.WriteInt32(s.size())
 	e.forEachField(func(t byte, v string) {
 		c.c.WriteByte(t)
