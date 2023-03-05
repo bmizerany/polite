@@ -96,7 +96,19 @@ func TestErrorResponse(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func BenchmarkErrorResponse(b *testing.B) {
+func BenchmarkWriteErrorResponse(b *testing.B) {
+	c := New(nil, io.Discard)
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		c.WriteErrorResponse(context.Background(), &ErrorResponse{
+			Severity: "ERROR",
+			Message:  "MESSAGE",
+			Code:     "CODE",
+		})
+	}
+}
+
+func BenchmarkReadErrorResponse(b *testing.B) {
 	b.ReportAllocs()
 
 	const data = "E\x00\x00\x00\x04\x00"
