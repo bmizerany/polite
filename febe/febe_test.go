@@ -88,8 +88,8 @@ func TestErrorResponse(t *testing.T) {
 	c.Flush()
 
 	want.MessageHeader = MessageHeader{
-		t: 'E',
-		l: b.Len() - 1,
+		msgType: 'E',
+		msgLen:  b.Len() - 1,
 	}
 
 	h, err := c.ReadHeader()

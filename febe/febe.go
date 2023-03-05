@@ -57,17 +57,38 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 	return c.Err()
 }
 
+type AuthMessage struct {
+	MessageHeader
+	Type int32
+}
+
+func (m AuthMessage) Ok() bool        { return m.Type == 0 }
+func (m AuthMessage) Cleartext() bool { return m.Type == 3 }
+
+func (c *Conn) ReadAuthentiationMessage(h MessageHeader) (AuthMessage, error) {
+	if err := checkMessageHeader(h, 'R'); err != nil {
+		return AuthMessage{}, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, err := c.c.ReadInt32()
+	if err != nil {
+		return AuthMessage{}, err
+	}
+	return AuthMessage{MessageHeader: h, Type: t}, nil
+}
+
 type Message interface {
 	Header() *MessageHeader
 }
 
 type MessageHeader struct {
-	t byte
-	l int
+	msgType byte
+	msgLen  int
 }
 
-func (h MessageHeader) Type() byte            { return h.t }
-func (h MessageHeader) Len() int              { return h.l }
+func (h MessageHeader) Type() byte            { return h.msgType }
+func (h MessageHeader) Len() int              { return h.msgLen }
 func (h MessageHeader) Header() MessageHeader { return h }
 
 func (c *Conn) ReadHeader() (MessageHeader, error) {
@@ -81,7 +102,7 @@ func (c *Conn) ReadHeader() (MessageHeader, error) {
 	if err != nil {
 		return MessageHeader{}, err
 	}
-	h := MessageHeader{t: b, l: int(l)}
+	h := MessageHeader{msgType: b, msgLen: int(l)}
 	return h, nil
 }
 
