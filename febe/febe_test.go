@@ -98,7 +98,7 @@ func TestErrorResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := c.ReadErrorResponse(context.Background(), h)
+	got, err := c.ReadError(context.Background(), h)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func BenchmarkReadErrorResponse(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		_, err = c.ReadErrorResponse(context.Background(), h)
+		_, err = c.ReadError(context.Background(), h)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -286,7 +286,7 @@ func TestNoticeResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := c.ReadNoticeResponse(context.Background(), h)
+	got, err := c.ReadNotice(context.Background(), h)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,6 +318,9 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 			continue
 		}
 		t.Run(m.Name, func(t *testing.T) {
+			if strings.HasSuffix(m.Name, "Response") {
+				t.Errorf("%s should not end with Response", m.Name)
+			}
 			if !isReadMethod(t, m) {
 				return
 			}
@@ -368,6 +371,10 @@ func isReadMethod(t *testing.T, m reflect.Method) bool {
 	}
 	if !m0.Implements(reflect.TypeOf(new(Message)).Elem()) {
 		t.Errorf("first out param should implement Message")
+		return false
+	}
+	if !strings.HasSuffix(m0.Name(), "Response") {
+		t.Errorf("first out param %q should end with Response", m0.Name())
 		return false
 	}
 	if m.Type.Out(1) != reflect.TypeOf(new(error)).Elem() {

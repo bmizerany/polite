@@ -101,25 +101,25 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 	return c.Err()
 }
 
-type AuthMessage struct {
+type AuthenticationResponse struct {
 	MessageHeader
 	Type int32
 }
 
-func (m AuthMessage) Ok() bool        { return m.Type == 0 }
-func (m AuthMessage) Cleartext() bool { return m.Type == 3 }
+func (m AuthenticationResponse) Ok() bool        { return m.Type == 0 }
+func (m AuthenticationResponse) Cleartext() bool { return m.Type == 3 }
 
-func (c *Conn) ReadAuthentiationMessage(ctx context.Context, h MessageHeader) (AuthMessage, error) {
+func (c *Conn) ReadAuthentiation(ctx context.Context, h MessageHeader) (AuthenticationResponse, error) {
 	if err := checkMessageHeader(h, 'R'); err != nil {
-		return AuthMessage{}, err
+		return AuthenticationResponse{}, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	t, err := c.c.ReadInt32()
 	if err != nil {
-		return AuthMessage{}, err
+		return AuthenticationResponse{}, err
 	}
-	return AuthMessage{MessageHeader: h, Type: t}, nil
+	return AuthenticationResponse{MessageHeader: h, Type: t}, nil
 }
 
 func (c *Conn) WriteBackendKeyData(ctx context.Context, pid, secret int32) error {
