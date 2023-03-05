@@ -81,7 +81,7 @@ func TestErrorResponse(t *testing.T) {
 		Routine:    "ROUTINE",
 	}
 
-	want := &ErrorResponse{
+	want := ErrorResponse{
 		ErrorFields: fields,
 	}
 
@@ -269,7 +269,7 @@ func TestNoticeResponse(t *testing.T) {
 		Routine:    "ROUTINE",
 	}
 
-	want := &ErrorResponse{
+	want := ErrorResponse{
 		ErrorFields: fields,
 	}
 
@@ -304,14 +304,16 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 	// MessageHeader.Type set to '!' and and length of the arbitrary value
 	// 1. This should cause an error to be returned.
 
-	t.Fail()
-
-	// vo := reflect.ValueOf(&Conn{})
 	var checked int
 
 	to := reflect.TypeOf(&Conn{})
 	for i := 0; i < to.NumMethod(); i++ {
 		m := to.Method(i)
+		if m.Name == "ReadHeader" {
+			// only exception o our rule that ReadX methods must be like:
+			//   ReadX(context.Context, MessageHeader) (T, error)
+			continue
+		}
 		if len(m.Name) < 4 || m.Name[:4] != "Read" {
 			continue
 		}

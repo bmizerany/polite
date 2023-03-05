@@ -57,33 +57,36 @@ type ErrorResponse struct {
 	ErrorFields
 }
 
-func (c *Conn) ReadNoticeResponse(ctx context.Context, h MessageHeader) (*ErrorResponse, error) {
+func (c *Conn) ReadNoticeResponse(ctx context.Context, h MessageHeader) (ErrorResponse, error) {
+	var zero ErrorResponse
 	if err := checkMessageHeader(h, 'N'); err != nil {
-		return nil, err
+		return zero, err
 	}
 	return c.readErrorResponse(ctx, h)
 }
 
-func (c *Conn) ReadErrorResponse(ctx context.Context, h MessageHeader) (*ErrorResponse, error) {
+func (c *Conn) ReadErrorResponse(ctx context.Context, h MessageHeader) (ErrorResponse, error) {
+	var zero ErrorResponse
 	if err := checkMessageHeader(h, 'E'); err != nil {
-		return nil, err
+		return zero, err
 	}
 	return c.readErrorResponse(ctx, h)
 }
 
-func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (*ErrorResponse, error) {
-	e := &ErrorResponse{MessageHeader: h}
+func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (ErrorResponse, error) {
+	var zero ErrorResponse
+	e := ErrorResponse{MessageHeader: h}
 	for {
 		k, err := c.c.ReadByte()
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
 		if k == 0 {
 			break
 		}
 		v, err := c.c.ReadString()
 		if err != nil {
-			return nil, err
+			return zero, err
 		}
 		switch k {
 		case 'S':
@@ -119,7 +122,7 @@ func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (*ErrorRe
 		case 'R':
 			e.Routine = v.StringCopy()
 		default:
-			return nil, fmt.Errorf("pqlite: unexpected error response key %q", k)
+			return zero, fmt.Errorf("pqlite: unexpected error response key %q", k)
 		}
 	}
 	return e, nil
