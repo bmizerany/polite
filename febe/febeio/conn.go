@@ -135,9 +135,12 @@ func (c *Conn) ReadString() (mem.RO, error) {
 }
 
 func (c *Conn) WriteString(s mem.RO) error {
-	_, err := io.Copy(c.w, mem.NewReader(s))
-	c.w.WriteByte(0)
-	return err
+	for i := 0; i < s.Len(); i++ {
+		if err := c.w.WriteByte(s.At(i)); err != nil {
+			return err
+		}
+	}
+	return c.w.WriteByte(0)
 }
 
 // Flush calls the underlying bufio.Writer's Flush method.

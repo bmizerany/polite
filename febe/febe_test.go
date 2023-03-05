@@ -99,12 +99,13 @@ func TestErrorResponse(t *testing.T) {
 func BenchmarkWriteErrorResponse(b *testing.B) {
 	c := New(nil, io.Discard)
 	b.ReportAllocs()
+	e := &ErrorResponse{
+		Severity: "ERROR",
+		Message:  "MESSAGE",
+		Code:     "CODE",
+	}
 	for i := 0; i < b.N; i++ {
-		c.WriteErrorResponse(context.Background(), &ErrorResponse{
-			Severity: "ERROR",
-			Message:  "MESSAGE",
-			Code:     "CODE",
-		})
+		c.WriteErrorResponse(context.Background(), e)
 	}
 }
 
