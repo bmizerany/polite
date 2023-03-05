@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -235,7 +236,13 @@ func TestReadReadyForQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := byte('I')
+	want := ReadyForQueryResponse{
+		MessageHeader: MessageHeader{
+			msgType: 'Z',
+			msgLen:  5,
+		},
+		Status: 'I',
+	}
 	diff.Test(t, t.Errorf, got, want)
 }
 
@@ -287,6 +294,40 @@ func TestNoticeResponse(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestReadUnknownTypeChecks(t *testing.T) {
+	// Using reflect, iterate over all methods on Conn that start with
+	// "Read" and match the generic signature:
+	//
+	//         func(context.Context, MessageHeader) (T, error)
+	//
+	// For each one found, create a test that calls the method with the
+	// MessageHeader.Type set to '!' and and length of the arbitrary value
+	// 1. This should cause an error to be returned.
+
+	t.Fail()
+
+	// vo := reflect.ValueOf(&Conn{})
+	var checked int
+
+	to := reflect.TypeOf(&Conn{})
+	for i := 0; i < to.NumMethod(); i++ {
+		m := to.Method(i)
+		if len(m.Name) < 4 || m.Name[:4] != "Read" {
+			continue
+		}
+		t.Run(m.Name, func(t *testing.T) {
+			if !isReadMethod(t, m) {
+				return
+			}
+		})
+		checked++
+	}
+
+	if checked == 0 {
+		t.Fatal("expected to find at least one Read method to check")
+	}
+}
+
 var errTest = errors.New("febe_test: test error")
 
 // errorWriter is an io.Writer that always returns an error.
@@ -294,4 +335,42 @@ type errorWriter struct{}
 
 func (errorWriter) Write([]byte) (int, error) {
 	return 0, fmt.Errorf("errorWriter.Write: %w", errTest)
+}
+
+func isReadMethod(t *testing.T, m reflect.Method) bool {
+	t.Helper()
+	if m.Type.NumIn() != 3 || m.Type.NumOut() != 2 {
+		t.Errorf("wrong number of in/out params")
+		return false
+	}
+	if m.Type.In(0) != reflect.TypeOf((*Conn)(nil)) {
+		t.Errorf("wrong type for first param")
+		return false
+	}
+	if m.Type.In(1) != reflect.TypeOf((*context.Context)(nil)).Elem() {
+		t.Errorf("wrong type for second param")
+		return false
+	}
+	if m.Type.In(2) != reflect.TypeOf((*MessageHeader)(nil)).Elem() {
+		t.Errorf("wrong type for third param")
+		return false
+	}
+	if m.Type.NumOut() != 2 {
+		t.Errorf("wrong number of out params")
+		return false
+	}
+	m0 := m.Type.Out(0)
+	if m0.Kind() == reflect.Ptr {
+		t.Errorf("first out param should not be a pointer")
+		return false
+	}
+	if !m0.Implements(reflect.TypeOf(new(Message)).Elem()) {
+		t.Errorf("first out param should implement Message")
+		return false
+	}
+	if m.Type.Out(1) != reflect.TypeOf(new(error)).Elem() {
+		t.Errorf("second out param should be an error")
+		return false
+	}
+	return true
 }

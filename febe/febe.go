@@ -37,7 +37,7 @@ func (c *Conn) Err() error {
 }
 
 type Message interface {
-	Header() *MessageHeader
+	Header() MessageHeader
 }
 
 type MessageHeader struct {
@@ -109,7 +109,7 @@ type AuthMessage struct {
 func (m AuthMessage) Ok() bool        { return m.Type == 0 }
 func (m AuthMessage) Cleartext() bool { return m.Type == 3 }
 
-func (c *Conn) ReadAuthentiationMessage(h MessageHeader) (AuthMessage, error) {
+func (c *Conn) ReadAuthentiationMessage(ctx context.Context, h MessageHeader) (AuthMessage, error) {
 	if err := checkMessageHeader(h, 'R'); err != nil {
 		return AuthMessage{}, err
 	}
@@ -161,15 +161,21 @@ func (b ReadyStatus) Transaction() bool { return b == 'T' }
 func (b ReadyStatus) Idle() bool        { return b == 'I' }
 func (b ReadyStatus) Failed() bool      { return b == 'E' }
 
-func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (byte, error) {
+type ReadyForQueryResponse struct {
+	MessageHeader
+	Status ReadyStatus
+}
+
+func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyForQueryResponse, error) {
 	if err := checkMessageHeader(h, 'Z'); err != nil {
-		return 0, err
+		return ReadyForQueryResponse{}, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	b, err := c.c.ReadByte()
 	if err != nil {
-		return 0, err
+		return ReadyForQueryResponse{}, err
 	}
-	return b, nil
+	r := ReadyForQueryResponse{MessageHeader: h, Status: ReadyStatus(b)}
+	return r, nil
 }
