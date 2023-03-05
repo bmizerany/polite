@@ -56,7 +56,7 @@ type Message interface {
 
 type MessageHeader struct {
 	Type byte
-	Len  int32
+	Len  int
 }
 
 func (h *MessageHeader) Header() *MessageHeader { return h }
@@ -72,7 +72,7 @@ func (c *Conn) Next() (Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	h := MessageHeader{Type: b, Len: l}
+	h := MessageHeader{Type: b, Len: int(l)}
 	switch b {
 	case 'E':
 		return c.readErrorResponse(h)
@@ -101,6 +101,25 @@ type ErrorResponse struct {
 	File       string
 	Line       string
 	Routine    string
+}
+
+func (e *ErrorResponse) forEachField(f func(t byte, s string)) {
+	f('S', e.Severity)
+	f('C', e.Code)
+	f('M', e.Message)
+	f('D', e.Detail)
+	f('H', e.Hint)
+	f('P', e.Position)
+	f('p', e.Internal)
+	f('W', e.Where)
+	f('s', e.Schema)
+	f('t', e.Table)
+	f('c', e.Column)
+	f('d', e.DataType)
+	f('n', e.Constraint)
+	f('F', e.File)
+	f('L', e.Line)
+	f('R', e.Routine)
 }
 
 func (c *Conn) readErrorResponse(h MessageHeader) (*ErrorResponse, error) {
@@ -157,10 +176,34 @@ func (c *Conn) readErrorResponse(h MessageHeader) (*ErrorResponse, error) {
 	return e, nil
 }
 
+func (c *Conn) WriteErrorResponse(ctx context.Context, e *ErrorResponse) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var s sizer
+	s.addByte()
+	s.addInt32()
+	e.forEachField(func(t byte, v string) {
+		s.addByte()
+		s.addString(v)
+	})
+
+	c.c.WriteByte('E')
+	c.c.WriteInt32(s.size())
+	e.forEachField(func(t byte, v string) {
+		c.c.WriteByte(t)
+		c.c.WriteString(mem.S(v))
+	})
+	c.c.WriteByte(0)
+
+	return c.Err()
+}
+
 type sizer int32
 
 func (s *sizer) addInt32()          { *s += 4 }
 func (s *sizer) addInt16()          { *s += 2 }
+func (s *sizer) addByte()           { *s += 1 }
 func (s *sizer) addBytes(v []byte)  { *s += sizer(len(v)) }
 func (s *sizer) addString(v string) { *s += sizer(len(v) + 1) }
 func (s *sizer) addStrings(vv ...string) {

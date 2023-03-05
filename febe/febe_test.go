@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"blake.io/pqlite/febe/febeio"
-	"go4.org/mem"
 	"kr.dev/diff"
 )
 
@@ -58,53 +58,10 @@ func (b *msgBuffer) Reader() io.Reader {
 }
 
 func TestErrorResponse(t *testing.T) {
-	w := newMsgBuffer('E')
-	w.WriteByte('S')
-	w.WriteString(mem.S("ERROR"))
-	w.WriteByte('M')
-	w.WriteString(mem.S("MESSAGE"))
-	w.WriteByte('C')
-	w.WriteString(mem.S("CODE"))
-	w.WriteByte('D')
-	w.WriteString(mem.S("DETAIL"))
-	w.WriteByte('H')
-	w.WriteString(mem.S("HINT"))
-	w.WriteByte('P')
-	w.WriteString(mem.S("POS"))
-	w.WriteByte('p')
-	w.WriteString(mem.S("INTERNAL"))
-	w.WriteByte('W')
-	w.WriteString(mem.S("WHERE"))
-	w.WriteByte('s')
-	w.WriteString(mem.S("SCHEMA"))
-	w.WriteByte('t')
-	w.WriteString(mem.S("TABLE"))
-	w.WriteByte('c')
-	w.WriteString(mem.S("COLUMN"))
-	w.WriteByte('d')
-	w.WriteString(mem.S("DATATYPE"))
-	w.WriteByte('n')
-	w.WriteString(mem.S("CONSTRAINT"))
-	w.WriteByte('F')
-	w.WriteString(mem.S("FILE"))
-	w.WriteByte('L')
-	w.WriteString(mem.S("LINE"))
-	w.WriteByte('R')
-	w.WriteString(mem.S("ROUTINE"))
-	w.WriteByte(0)
-	w.Flush()
-
-	c := New(w.Reader(), nil)
-	got, err := c.Next()
-	if err != nil {
-		t.Fatal(err)
-	}
+	var b bytes.Buffer
+	c := New(&b, &b)
 
 	want := &ErrorResponse{
-		MessageHeader: MessageHeader{
-			Type: 'E',
-			Len:  129,
-		},
 		Severity:   "ERROR",
 		Message:    "MESSAGE",
 		Code:       "CODE",
@@ -123,7 +80,36 @@ func TestErrorResponse(t *testing.T) {
 		Routine:    "ROUTINE",
 	}
 
+	c.WriteErrorResponse(context.Background(), want)
+	c.Flush()
+
+	want.MessageHeader = MessageHeader{
+		Type: 'E',
+		Len:  b.Len() - 1,
+	}
+
+	got, err := c.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	diff.Test(t, t.Errorf, got, want)
+}
+
+func BenchmarkErrorResponse(b *testing.B) {
+	b.ReportAllocs()
+
+	const data = "E\x00\x00\x00\x04\x00"
+
+	r := strings.NewReader("")
+	c := New(r, nil)
+	for i := 0; i < b.N; i++ {
+		r.Reset(data)
+		_, err := c.Next()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 func TestStartupResponse(t *testing.T) {
