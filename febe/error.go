@@ -46,7 +46,11 @@ func (e *ErrorResponse) forEachField(f func(t byte, s string)) {
 	f('R', e.Routine)
 }
 
-func (c *Conn) readErrorResponse(h MessageHeader) (*ErrorResponse, error) {
+func (c *Conn) ReadErrorResponse(ctx context.Context, h MessageHeader) (*ErrorResponse, error) {
+	if err := checkMessageHeader(h, 'E'); err != nil {
+		return nil, err
+	}
+
 	e := &ErrorResponse{MessageHeader: h}
 	for {
 		k, err := c.c.ReadByte()

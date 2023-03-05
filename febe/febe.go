@@ -11,6 +11,13 @@ import (
 	"go4.org/mem"
 )
 
+func checkMessageHeader(h MessageHeader, want byte) error {
+	if h.Type() != want {
+		return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", h.Type(), want)
+	}
+	return nil
+}
+
 type Conn struct {
 	mu sync.Mutex
 	c  *febeio.Conn
@@ -59,28 +66,23 @@ type MessageHeader struct {
 	len int
 }
 
-func (h MessageHeader) Type() byte              { return h.typ }
-func (h MessageHeader) Len() int                { return h.len }
-func (h *MessageHeader) Header() *MessageHeader { return h }
+func (h MessageHeader) Type() byte            { return h.typ }
+func (h MessageHeader) Len() int              { return h.len }
+func (h MessageHeader) Header() MessageHeader { return h }
 
-func (c *Conn) Next() (Message, error) {
+func (c *Conn) Next() (MessageHeader, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	b, err := c.c.ReadByte()
 	if err != nil {
-		return nil, err
+		return MessageHeader{}, err
 	}
 	l, err := c.c.ReadInt32()
 	if err != nil {
-		return nil, err
+		return MessageHeader{}, err
 	}
 	h := MessageHeader{typ: b, len: int(l)}
-	switch b {
-	case 'E':
-		return c.readErrorResponse(h)
-	default:
-		return nil, fmt.Errorf("pqlite: unexpected message type %q", b)
-	}
+	return h, nil
 }
 
 // TODO(bmizerany): https://www.postgresql.org/docs/current/errcodes-appendix.html

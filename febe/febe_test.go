@@ -88,7 +88,12 @@ func TestErrorResponse(t *testing.T) {
 		len: b.Len() - 1,
 	}
 
-	got, err := c.Next()
+	h, err := c.Next()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.ReadErrorResponse(context.Background(), h)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,13 +117,17 @@ func BenchmarkWriteErrorResponse(b *testing.B) {
 func BenchmarkReadErrorResponse(b *testing.B) {
 	b.ReportAllocs()
 
-	const data = "E\x00\x00\x00\x04\x00"
+	const data = "E\x00\x00\x00\x05\x00"
 
 	r := strings.NewReader("")
 	c := New(r, nil)
 	for i := 0; i < b.N; i++ {
 		r.Reset(data)
-		_, err := c.Next()
+		h, err := c.Next()
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, err = c.ReadErrorResponse(context.Background(), h)
 		if err != nil {
 			b.Fatal(err)
 		}
