@@ -62,12 +62,12 @@ type Message interface {
 }
 
 type MessageHeader struct {
-	typ byte
-	len int
+	t byte
+	l int
 }
 
-func (h MessageHeader) Type() byte            { return h.typ }
-func (h MessageHeader) Len() int              { return h.len }
+func (h MessageHeader) Type() byte            { return h.t }
+func (h MessageHeader) Len() int              { return h.l }
 func (h MessageHeader) Header() MessageHeader { return h }
 
 func (c *Conn) ReadHeader() (MessageHeader, error) {
@@ -81,7 +81,7 @@ func (c *Conn) ReadHeader() (MessageHeader, error) {
 	if err != nil {
 		return MessageHeader{}, err
 	}
-	h := MessageHeader{typ: b, len: int(l)}
+	h := MessageHeader{t: b, l: int(l)}
 	return h, nil
 }
 
