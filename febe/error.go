@@ -7,8 +7,7 @@ import (
 	"go4.org/mem"
 )
 
-type ErrorResponse struct {
-	MessageHeader
+type ErrorFields struct {
 	Severity   string
 	Code       string
 	Message    string
@@ -27,7 +26,7 @@ type ErrorResponse struct {
 	Routine    string
 }
 
-func (e *ErrorResponse) forEachField(f func(t byte, s string)) {
+func (e *ErrorFields) forEachField(f func(t byte, s string)) {
 	f('S', e.Severity)
 	f('C', e.Code)
 	f('M', e.Message)
@@ -44,6 +43,11 @@ func (e *ErrorResponse) forEachField(f func(t byte, s string)) {
 	f('F', e.File)
 	f('L', e.Line)
 	f('R', e.Routine)
+}
+
+type ErrorResponse struct {
+	MessageHeader
+	ErrorFields
 }
 
 func (c *Conn) ReadErrorResponse(ctx context.Context, h MessageHeader) (*ErrorResponse, error) {
@@ -104,7 +108,7 @@ func (c *Conn) ReadErrorResponse(ctx context.Context, h MessageHeader) (*ErrorRe
 	return e, nil
 }
 
-func (c *Conn) WriteErrorResponse(ctx context.Context, e *ErrorResponse) error {
+func (c *Conn) WriteErrorResponse(ctx context.Context, e ErrorFields) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

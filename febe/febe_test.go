@@ -61,7 +61,7 @@ func TestErrorResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
 
-	want := &ErrorResponse{
+	fields := ErrorFields{
 		Severity:   "ERROR",
 		Message:    "MESSAGE",
 		Code:       "CODE",
@@ -80,7 +80,11 @@ func TestErrorResponse(t *testing.T) {
 		Routine:    "ROUTINE",
 	}
 
-	c.WriteErrorResponse(context.Background(), want)
+	want := &ErrorResponse{
+		ErrorFields: fields,
+	}
+
+	c.WriteErrorResponse(context.Background(), fields)
 	c.Flush()
 
 	want.MessageHeader = MessageHeader{
@@ -104,13 +108,15 @@ func TestErrorResponse(t *testing.T) {
 func BenchmarkWriteErrorResponse(b *testing.B) {
 	c := New(nil, io.Discard)
 	b.ReportAllocs()
-	e := &ErrorResponse{
-		Severity: "ERROR",
-		Message:  "MESSAGE",
-		Code:     "CODE",
-	}
 	for i := 0; i < b.N; i++ {
-		c.WriteErrorResponse(context.Background(), e)
+		err := c.WriteErrorResponse(context.Background(), ErrorFields{
+			Severity: "ERROR",
+			Message:  "MESSAGE",
+			Code:     "CODE",
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
