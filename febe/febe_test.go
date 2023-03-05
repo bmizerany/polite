@@ -220,6 +220,25 @@ func TestWriteReadyForQuery(t *testing.T) {
 	diff.Test(t, t.Errorf, b.Bytes(), want)
 }
 
+func TestReadReadyForQuery(t *testing.T) {
+	var b bytes.Buffer
+	c := New(&b, &b)
+	c.WriteReadyForQuery(context.Background(), 'I')
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	h, err := c.ReadHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.ReadReadyForQuery(context.Background(), h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := byte('I')
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)

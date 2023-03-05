@@ -154,3 +154,22 @@ func (c *Conn) WriteReadyForQuery(ctx context.Context, status byte) error {
 	c.c.WriteByte(status)
 	return c.Err()
 }
+
+type ReadyStatus byte
+
+func (b ReadyStatus) Transaction() bool { return b == 'T' }
+func (b ReadyStatus) Idle() bool        { return b == 'I' }
+func (b ReadyStatus) Failed() bool      { return b == 'E' }
+
+func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (byte, error) {
+	if err := checkMessageHeader(h, 'Z'); err != nil {
+		return 0, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	b, err := c.c.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	return b, nil
+}
