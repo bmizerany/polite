@@ -280,6 +280,7 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 	var checked int
 
 	to := reflect.TypeOf(&Conn{})
+	vo := reflect.ValueOf(&Conn{})
 	for i := 0; i < to.NumMethod(); i++ {
 		m := to.Method(i)
 		if m.Name == "ReadHeader" {
@@ -297,7 +298,31 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 			if !isReadMethod(t, m) {
 				return
 			}
+
 		})
+
+		vm := vo.Method(i)
+		ctx := context.Background()
+		h := MessageHeader{
+			msgType: '!',
+			msgLen:  1,
+		}
+
+		// This is only a superficial check that the method is
+		// implemented with check that the header type is considered
+		// before returning, and returns an error if invalid.
+		//
+		// This check does not ensure the implementation is checking for the
+		// right byte value. This is left up to other tests, mostly
+		// integration, which would fail if a ReadX type field check
+		// would
+		out := vm.Call([]reflect.Value{
+			reflect.ValueOf(ctx),
+			reflect.ValueOf(h),
+		})
+		if err := out[1].Interface().(error); err == nil {
+			t.Errorf("expected error, got nil")
+		}
 		checked++
 	}
 
