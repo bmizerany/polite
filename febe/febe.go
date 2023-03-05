@@ -70,7 +70,7 @@ func (h MessageHeader) Type() byte            { return h.typ }
 func (h MessageHeader) Len() int              { return h.len }
 func (h MessageHeader) Header() MessageHeader { return h }
 
-func (c *Conn) Next() (MessageHeader, error) {
+func (c *Conn) ReadHeader() (MessageHeader, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	b, err := c.c.ReadByte()

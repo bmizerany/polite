@@ -88,7 +88,7 @@ func TestErrorResponse(t *testing.T) {
 		len: b.Len() - 1,
 	}
 
-	h, err := c.Next()
+	h, err := c.ReadHeader()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func BenchmarkReadErrorResponse(b *testing.B) {
 	c := New(r, nil)
 	for i := 0; i < b.N; i++ {
 		r.Reset(data)
-		h, err := c.Next()
+		h, err := c.ReadHeader()
 		if err != nil {
 			b.Fatal(err)
 		}
