@@ -219,6 +219,39 @@ func TestReadReadyForQuery(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestReadAuthentication(t *testing.T) {
+	cases := []struct {
+		typ AuthenticationType
+	}{
+		{typ: AuthenticationTypeOK},
+		{typ: AuthenticationTypeCleartext},
+	}
+	for _, tt := range cases {
+		var b bytes.Buffer
+		c := New(&b, &b)
+		c.WriteAuthentication(context.Background(), tt.typ)
+		if err := c.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		h, err := c.ReadHeader()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := c.ReadAuthentiation(context.Background(), h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := AuthenticationResponse{
+			MessageHeader: MessageHeader{
+				msgType: 'R',
+				msgLen:  8,
+			},
+			Type: tt.typ,
+		}
+		diff.Test(t, t.Errorf, got, want)
+	}
+}
+
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
