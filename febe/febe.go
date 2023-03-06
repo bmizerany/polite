@@ -1,3 +1,5 @@
+// Package febe implements the encoding and decoding of Frontend/Backend
+// (FE/BE) messages.
 package febe
 
 import (
@@ -126,7 +128,7 @@ type AuthenticationResponse struct {
 	Type AuthenticationType
 }
 
-func (c *Conn) ReadAuthentiation(ctx context.Context, h MessageHeader) (AuthenticationResponse, error) {
+func (c *Conn) ReadAuthentication(ctx context.Context, h MessageHeader) (AuthenticationResponse, error) {
 	if err := checkMessageHeader(h, 'R'); err != nil {
 		return AuthenticationResponse{}, err
 	}

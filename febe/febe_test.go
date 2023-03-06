@@ -237,7 +237,7 @@ func TestReadAuthentication(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := c.ReadAuthentiation(context.Background(), h)
+		got, err := c.ReadAuthentication(context.Background(), h)
 		if err != nil {
 			t.Fatal(err)
 		}
