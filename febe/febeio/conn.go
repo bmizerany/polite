@@ -135,12 +135,24 @@ func (c *Conn) ReadString() (mem.RO, error) {
 }
 
 func (c *Conn) WriteString(s mem.RO) error {
+	if err := c.readFrom(s); err != nil {
+		return err
+	}
+	return c.w.WriteByte(0)
+}
+
+func (c *Conn) readFrom(s mem.RO) error {
 	for i := 0; i < s.Len(); i++ {
 		if err := c.w.WriteByte(s.At(i)); err != nil {
 			return err
 		}
 	}
-	return c.w.WriteByte(0)
+	return nil
+}
+
+func (c *Conn) WriteByteN(s mem.RO) error {
+	c.WriteInt32(int32(s.Len()))
+	return c.readFrom(s)
 }
 
 // Flush calls the underlying bufio.Writer's Flush method.

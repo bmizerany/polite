@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"go4.org/mem"
 	"kr.dev/diff"
 )
 
@@ -279,17 +280,66 @@ func TestReadCommandComplete(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-// CopyInResponse
+// TODO: CopyInResponse
 // The backend is ready to copy data from the frontend to a table; see Section 55.2.6.
 
-// CopyOutResponse
+// TODO: CopyOutResponse
 // The backend is ready to copy data from a table to the frontend; see Section 55.2.6.
 
-// RowDescription
+// TODO: RowDescription (discarded for now)
 // Indicates that rows are about to be returned in response to a SELECT, FETCH, etc. query. The contents of this message describe the column layout of the rows. This will be followed by a DataRow message for each row being returned to the frontend.
 
 // DataRow
 // One of the set of rows returned by a SELECT, FETCH, etc. query.
+func TestReadDataRowValue(t *testing.T) {
+	ctx := context.Background()
+
+	var b bytes.Buffer
+	c := New(&b, &b)
+
+	c.WriteDataRowHeader(ctx, 2)
+	c.WriteDataRowValue(ctx, mem.S("hello"))
+	c.WriteDataRowValue(ctx, mem.S("world"))
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := c.ReadHeader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.ReadDataRowHeader(ctx, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := DataRowHeaderResponse{
+		MessageHeader: MessageHeader{
+			msgType: 'D',
+			msgLen:  14,
+		},
+		N: 2,
+	}
+	diff.Test(t, t.Errorf, got, want)
+
+	cases := []string{
+		"hello",
+		"world",
+	}
+	for i, tt := range cases {
+		r, err := c.ReadDataRowValue(ctx, h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotBytes, err := io.ReadAll(r)
+		if w := []byte(tt); !bytes.Equal(gotBytes, w) {
+			t.Fatalf("[%d]: got %q, want %q", i, gotBytes, w)
+		}
+	}
+
+	if b.Len() != 0 {
+		t.Fatalf("got %d bytes left, want 0", b.Len())
+	}
+}
 
 // EmptyQueryResponse
 // An empty query string was recognized.

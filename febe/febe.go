@@ -231,3 +231,50 @@ func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (Comman
 	}
 	return CommandCompleteResponse{MessageHeader: h, Tag: t.StringCopy()}, nil
 }
+
+func (c *Conn) WriteDataRowHeader(ctx context.Context, n int16) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.c.WriteByte('D')
+	c.c.WriteInt32(6)
+	c.c.WriteInt16(n)
+	return c.Err()
+}
+
+type DataRowHeaderResponse struct {
+	MessageHeader
+	N int16
+}
+
+func (c *Conn) ReadDataRowHeader(ctx context.Context, h MessageHeader) (DataRowHeaderResponse, error) {
+	if err := checkMessageHeader(h, 'D'); err != nil {
+		return DataRowHeaderResponse{}, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n, err := c.c.ReadInt16()
+	if err != nil {
+		return DataRowHeaderResponse{}, err
+	}
+	return DataRowHeaderResponse{MessageHeader: h, N: n}, nil
+}
+func (c *Conn) WriteDataRowValue(ctx context.Context, v mem.RO) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.c.WriteInt32(int32(v.Len()))
+	c.c.WriteByteN(v)
+	return c.Err()
+}
+
+func (c *Conn) ReadDataRowValue(ctx context.Context, h MessageHeader) (io.ReadCloser, error) {
+	if err := checkMessageHeader(h, 'D'); err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	l, err := c.c.ReadInt32()
+	if err != nil {
+		return nil, err
+	}
+	return c.c.ReadByteN(int(l)), nil
+}
