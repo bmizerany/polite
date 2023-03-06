@@ -11,6 +11,23 @@ import (
 	"go4.org/mem"
 )
 
+type ReadyStatus byte
+
+const (
+	ReadyStatusIdle   ReadyStatus = 'I'
+	ReadyStatusBusy   ReadyStatus = 'T'
+	ReadyStatusFailed ReadyStatus = 'E'
+)
+
+func (b ReadyStatus) Busy() bool   { return b == 'T' }
+func (b ReadyStatus) Idle() bool   { return b == 'I' }
+func (b ReadyStatus) Failed() bool { return b == 'E' }
+
+type ReadyForQueryResponse struct {
+	MessageHeader
+	Status ReadyStatus
+}
+
 func checkMessageHeader(h MessageHeader, want byte) error {
 	if h.Type() != want {
 		return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", h.Type(), want)
@@ -146,24 +163,13 @@ func (c *Conn) WriteParameterStatus(ctx context.Context, name, value string) err
 	return c.Err()
 }
 
-func (c *Conn) WriteReadyForQuery(ctx context.Context, status byte) error {
+func (c *Conn) WriteReadyForQuery(ctx context.Context, status ReadyStatus) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.c.WriteByte('Z')
 	c.c.WriteInt32(5)
-	c.c.WriteByte(status)
+	c.c.WriteByte(byte(status))
 	return c.Err()
-}
-
-type ReadyStatus byte
-
-func (b ReadyStatus) Transaction() bool { return b == 'T' }
-func (b ReadyStatus) Idle() bool        { return b == 'I' }
-func (b ReadyStatus) Failed() bool      { return b == 'E' }
-
-type ReadyForQueryResponse struct {
-	MessageHeader
-	Status ReadyStatus
 }
 
 func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyForQueryResponse, error) {
