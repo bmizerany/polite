@@ -19,10 +19,6 @@ const (
 	ReadyStatusFailed ReadyStatus = 'E'
 )
 
-func (b ReadyStatus) Busy() bool   { return b == 'T' }
-func (b ReadyStatus) Idle() bool   { return b == 'I' }
-func (b ReadyStatus) Failed() bool { return b == 'E' }
-
 type ReadyForQueryResponse struct {
 	MessageHeader
 	Status ReadyStatus
