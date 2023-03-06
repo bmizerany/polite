@@ -123,14 +123,18 @@ type AuthenticationResponse struct {
 }
 
 func (c *Conn) ReadAuthentication(ctx context.Context, h MessageHeader) (AuthenticationResponse, error) {
+	var zero AuthenticationResponse
 	if err := checkMessageHeader(h, 'R'); err != nil {
-		return AuthenticationResponse{}, err
+		return zero, err
 	}
 	t, err := c.c.ReadInt32()
 	if err != nil {
-		return AuthenticationResponse{}, err
+		return zero, err
 	}
-	return AuthenticationResponse{MessageHeader: h, Type: AuthenticationType(t)}, nil
+	return AuthenticationResponse{
+		MessageHeader: h,
+		Type:          AuthenticationType(t),
+	}, nil
 }
 
 func (c *Conn) WriteAuthentication(ctx context.Context, typ AuthenticationType) error {
@@ -179,8 +183,10 @@ func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyFor
 	if err != nil {
 		return ReadyForQueryResponse{}, err
 	}
-	r := ReadyForQueryResponse{MessageHeader: h, Status: ReadyStatus(b)}
-	return r, nil
+	return ReadyForQueryResponse{
+		MessageHeader: h,
+		Status:        ReadyStatus(b),
+	}, nil
 }
 
 func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
@@ -200,14 +206,18 @@ type CommandCompleteResponse struct {
 }
 
 func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (CommandCompleteResponse, error) {
+	var zero CommandCompleteResponse
 	if err := checkMessageHeader(h, 'C'); err != nil {
-		return CommandCompleteResponse{}, err
+		return zero, err
 	}
 	t, err := c.c.ReadString()
 	if err != nil {
-		return CommandCompleteResponse{}, err
+		return zero, err
 	}
-	return CommandCompleteResponse{MessageHeader: h, Tag: string(t)}, nil
+	return CommandCompleteResponse{
+		MessageHeader: h,
+		Tag:           string(t),
+	}, nil
 }
 
 func (c *Conn) WriteDataRow(ctx context.Context, vals ...string) error {
@@ -253,5 +263,8 @@ func (c *Conn) ReadDataRow(ctx context.Context, h MessageHeader) (DataRowRespons
 		}
 		vals[i] = b
 	}
-	return DataRowResponse{MessageHeader: h, Values: vals}, nil
+	return DataRowResponse{
+		MessageHeader: h,
+		Values:        vals,
+	}, nil
 }
