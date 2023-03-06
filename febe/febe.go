@@ -200,3 +200,34 @@ func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyFor
 	r := ReadyForQueryResponse{MessageHeader: h, Status: ReadyStatus(b)}
 	return r, nil
 }
+
+func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
+	var s sizer
+	s.addInt32() // length
+	s.addStrings(tag)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.c.WriteByte('C')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(mem.S(tag))
+	return c.Err()
+}
+
+type CommandCompleteResponse struct {
+	MessageHeader
+	Tag string
+}
+
+func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (CommandCompleteResponse, error) {
+	if err := checkMessageHeader(h, 'C'); err != nil {
+		return CommandCompleteResponse{}, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, err := c.c.ReadString()
+	if err != nil {
+		return CommandCompleteResponse{}, err
+	}
+	return CommandCompleteResponse{MessageHeader: h, Tag: t.StringCopy()}, nil
+}
