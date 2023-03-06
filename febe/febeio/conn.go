@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"io"
-
-	"go4.org/mem"
 )
 
 // Conn reads and writes postgres wire protocol message types to and from it's
@@ -108,6 +106,10 @@ func (c *Conn) ReadByteN(n int) io.ReadCloser {
 	return connReadCloser{c}
 }
 
+func (c *Conn) ReadFull(p []byte) (int, error) {
+	return io.ReadFull(c.r, p)
+}
+
 func (c *Conn) discardRemainder() error {
 	_, err := c.r.Discard(c.fr.N)
 
@@ -117,7 +119,7 @@ func (c *Conn) discardRemainder() error {
 	return err
 }
 
-// ReadString reads a null terminated string from the stream. The mem.RO is
+// ReadString reads a null terminated string from the stream. The byte slice is
 // valid until the next call to any read method on the Conn.
 //
 // Errors received from the underlying reader are returned as is. As an
@@ -126,33 +128,23 @@ func (c *Conn) discardRemainder() error {
 //
 // ReadString does not continue looking for a null byte after encountering an
 // error.
-func (c *Conn) ReadString() (mem.RO, error) {
+func (c *Conn) ReadString() ([]byte, error) {
 	b, err := c.r.ReadSlice(0)
 	if err != nil {
-		return mem.B(b), eofAsUnexpectedEOF(err)
+		return b, eofAsUnexpectedEOF(err)
 	}
-	return mem.B(b[:len(b)-1]), nil
+	return b[:len(b)-1], nil
 }
 
-func (c *Conn) WriteString(s mem.RO) error {
-	if err := c.readFrom(s); err != nil {
-		return err
-	}
+func (c *Conn) WriteString(s string) error {
+	io.WriteString(c.w, s)
 	return c.w.WriteByte(0)
 }
 
-func (c *Conn) readFrom(s mem.RO) error {
-	for i := 0; i < s.Len(); i++ {
-		if err := c.w.WriteByte(s.At(i)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *Conn) WriteByteN(s mem.RO) error {
-	c.WriteInt32(int32(s.Len()))
-	return c.readFrom(s)
+func (c *Conn) WriteByteN(s string) error {
+	c.WriteInt32(int32(len(s)))
+	_, err := c.w.WriteString(s)
+	return err
 }
 
 // Flush calls the underlying bufio.Writer's Flush method.

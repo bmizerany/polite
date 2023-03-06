@@ -7,8 +7,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-
-	"go4.org/mem"
 )
 
 var fullBuffer = strings.Repeat("F", 4096)
@@ -93,11 +91,11 @@ func TestRead(t *testing.T) {
 
 func connReadString(c *Conn) (string, error) {
 	m, err := c.ReadString()
-	return m.StringCopy(), err
+	return string(m), err
 }
 
 func connWriteString(c *Conn, s string) error {
-	return c.WriteString(mem.S(s))
+	return c.WriteString(s)
 }
 
 type knownTypes interface {
@@ -341,7 +339,7 @@ func TestReadByteNMultipleCloses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g := s.StringCopy(); g != "XYZ" {
+	if g := string(s); g != "XYZ" {
 		t.Errorf("got = %q, want XYZ", g)
 	}
 }
@@ -374,8 +372,8 @@ func TestReadStringAllocs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !got.Equal(mem.S("FEBE")) {
-			t.Fatalf("got %v, want FEBE", got.StringCopy())
+		if string(got) != "FEBE" {
+			t.Fatalf("got %v, want FEBE", got)
 		}
 	})
 	if got > 0 {

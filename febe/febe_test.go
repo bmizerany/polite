@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"go4.org/mem"
 	"kr.dev/diff"
 )
 
@@ -291,15 +290,14 @@ func TestReadCommandComplete(t *testing.T) {
 
 // DataRow
 // One of the set of rows returned by a SELECT, FETCH, etc. query.
-func TestReadDataRowValue(t *testing.T) {
+func TestReadDataRow(t *testing.T) {
 	ctx := context.Background()
 
 	var b bytes.Buffer
 	c := New(&b, &b)
+	defer c.checkDone(t)
 
-	c.WriteDataRowHeader(ctx, 2)
-	c.WriteDataRowValue(ctx, mem.S("hello"))
-	c.WriteDataRowValue(ctx, mem.S("world"))
+	c.WriteDataRow(ctx, "hello", "world")
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
@@ -308,37 +306,21 @@ func TestReadDataRowValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadDataRowHeader(ctx, h)
+	got, err := c.ReadDataRow(ctx, h)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := DataRowHeaderResponse{
+	want := DataRowResponse{
 		MessageHeader: MessageHeader{
 			msgType: 'D',
-			msgLen:  14,
+			msgLen:  24,
 		},
-		N: 2,
+		Values: [][]byte{
+			[]byte("hello"),
+			[]byte("world"),
+		},
 	}
 	diff.Test(t, t.Errorf, got, want)
-
-	cases := []string{
-		"hello",
-		"world",
-	}
-	for i, tt := range cases {
-		r, err := c.ReadDataRowValue(ctx, h)
-		if err != nil {
-			t.Fatal(err)
-		}
-		gotBytes, err := io.ReadAll(r)
-		if w := []byte(tt); !bytes.Equal(gotBytes, w) {
-			t.Fatalf("[%d]: got %q, want %q", i, gotBytes, w)
-		}
-	}
-
-	if b.Len() != 0 {
-		t.Fatalf("got %d bytes left, want 0", b.Len())
-	}
 }
 
 // EmptyQueryResponse
@@ -514,4 +496,11 @@ func isReadMethod(t *testing.T, m reflect.Method) bool {
 		return false
 	}
 	return true
+}
+
+func (c *Conn) checkDone(t *testing.T) {
+	_, err := c.c.ReadByte()
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("expected io.UnexpectedEOF, got %v", err)
+	}
 }

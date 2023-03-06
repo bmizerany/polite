@@ -9,7 +9,6 @@ import (
 	"io"
 
 	"blake.io/pqlite/febe/febeio"
-	"go4.org/mem"
 )
 
 type ReadyStatus byte
@@ -81,6 +80,7 @@ type sizer int32
 
 func (s *sizer) addInt32()          { *s += 4 }
 func (s *sizer) addInt16()          { *s += 2 }
+func (s *sizer) addN(n int)         { *s += sizer(n) }
 func (s *sizer) addByte()           { *s += 1 }
 func (s *sizer) addBytes(v []byte)  { *s += sizer(len(v)) }
 func (s *sizer) addString(v string) { *s += sizer(len(v) + 1) }
@@ -104,8 +104,8 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 	c.c.WriteInt32(s.size())
 	c.c.WriteInt32(196608)
 	for i := 0; i < len(params); i += 2 {
-		c.c.WriteString(mem.S(params[i]))
-		c.c.WriteString(mem.S(params[i+1]))
+		c.c.WriteString(params[i])
+		c.c.WriteString(params[i+1])
 	}
 	return c.Err()
 }
@@ -159,8 +159,8 @@ func (c *Conn) WriteParameterStatus(ctx context.Context, name, value string) err
 
 	c.c.WriteByte('S')
 	c.c.WriteInt32(s.size())
-	c.c.WriteString(mem.S(name))
-	c.c.WriteString(mem.S(value))
+	c.c.WriteString(name)
+	c.c.WriteString(value)
 	return c.Err()
 }
 
@@ -190,7 +190,7 @@ func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
 
 	c.c.WriteByte('C')
 	c.c.WriteInt32(s.size())
-	c.c.WriteString(mem.S(tag))
+	c.c.WriteString(tag)
 	return c.Err()
 }
 
@@ -207,44 +207,51 @@ func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (Comman
 	if err != nil {
 		return CommandCompleteResponse{}, err
 	}
-	return CommandCompleteResponse{MessageHeader: h, Tag: t.StringCopy()}, nil
+	return CommandCompleteResponse{MessageHeader: h, Tag: string(t)}, nil
 }
 
-func (c *Conn) WriteDataRowHeader(ctx context.Context, n int16) error {
+func (c *Conn) WriteDataRow(ctx context.Context, vals ...string) error {
+	var s sizer
+	s.addInt32() // length
+	s.addInt16() // number of columns
+	for _, v := range vals {
+		s.addInt32() // length
+		s.addN(len(v))
+	}
 	c.c.WriteByte('D')
-	c.c.WriteInt32(6)
-	c.c.WriteInt16(n)
+	c.c.WriteInt32(s.size())
+	c.c.WriteInt16(int16(len(vals)))
+	for _, v := range vals {
+		c.c.WriteByteN(v)
+	}
 	return c.Err()
 }
 
-type DataRowHeaderResponse struct {
+type DataRowResponse struct {
 	MessageHeader
-	N int16
+	Values [][]byte
 }
 
-func (c *Conn) ReadDataRowHeader(ctx context.Context, h MessageHeader) (DataRowHeaderResponse, error) {
+func (c *Conn) ReadDataRow(ctx context.Context, h MessageHeader) (DataRowResponse, error) {
 	if err := checkMessageHeader(h, 'D'); err != nil {
-		return DataRowHeaderResponse{}, err
+		return DataRowResponse{}, err
 	}
 	n, err := c.c.ReadInt16()
 	if err != nil {
-		return DataRowHeaderResponse{}, err
+		return DataRowResponse{}, err
 	}
-	return DataRowHeaderResponse{MessageHeader: h, N: n}, nil
-}
-func (c *Conn) WriteDataRowValue(ctx context.Context, v mem.RO) error {
-	c.c.WriteInt32(int32(v.Len()))
-	c.c.WriteByteN(v)
-	return c.Err()
-}
-
-func (c *Conn) ReadDataRowValue(ctx context.Context, h MessageHeader) (io.ReadCloser, error) {
-	if err := checkMessageHeader(h, 'D'); err != nil {
-		return nil, err
+	vals := make([][]byte, n)
+	for i := 0; i < int(n); i++ {
+		l, err := c.c.ReadInt32()
+		if err != nil {
+			return DataRowResponse{}, err
+		}
+		b := make([]byte, l)
+		_, err = c.c.ReadFull(b)
+		if err != nil {
+			return DataRowResponse{}, err
+		}
+		vals[i] = b
 	}
-	l, err := c.c.ReadInt32()
-	if err != nil {
-		return nil, err
-	}
-	return c.c.ReadByteN(int(l)), nil
+	return DataRowResponse{MessageHeader: h, Values: vals}, nil
 }

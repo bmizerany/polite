@@ -3,8 +3,6 @@ package febe
 import (
 	"context"
 	"fmt"
-
-	"go4.org/mem"
 )
 
 type ErrorType byte
@@ -90,37 +88,37 @@ func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (ErrorRes
 		}
 		switch k {
 		case 'S':
-			e.Severity = v.StringCopy()
+			e.Severity = string(v)
 		case 'C':
-			e.Code = v.StringCopy()
+			e.Code = string(v)
 		case 'M':
-			e.Message = v.StringCopy()
+			e.Message = string(v)
 		case 'D':
-			e.Detail = v.StringCopy()
+			e.Detail = string(v)
 		case 'H':
-			e.Hint = v.StringCopy()
+			e.Hint = string(v)
 		case 'P':
-			e.Position = v.StringCopy()
+			e.Position = string(v)
 		case 'p':
-			e.Internal = v.StringCopy()
+			e.Internal = string(v)
 		case 'W':
-			e.Where = v.StringCopy()
+			e.Where = string(v)
 		case 's':
-			e.Schema = v.StringCopy()
+			e.Schema = string(v)
 		case 't':
-			e.Table = v.StringCopy()
+			e.Table = string(v)
 		case 'c':
-			e.Column = v.StringCopy()
+			e.Column = string(v)
 		case 'd':
-			e.DataType = v.StringCopy()
+			e.DataType = string(v)
 		case 'n':
-			e.Constraint = v.StringCopy()
+			e.Constraint = string(v)
 		case 'F':
-			e.File = v.StringCopy()
+			e.File = string(v)
 		case 'L':
-			e.Line = v.StringCopy()
+			e.Line = string(v)
 		case 'R':
-			e.Routine = v.StringCopy()
+			e.Routine = string(v)
 		default:
 			return zero, fmt.Errorf("pqlite: unexpected error response key %q", k)
 		}
@@ -141,7 +139,7 @@ func (c *Conn) WriteErrorResponse(ctx context.Context, t ErrorType, e ErrorField
 	c.c.WriteInt32(s.size())
 	e.forEachField(func(t byte, v string) {
 		c.c.WriteByte(t)
-		c.c.WriteString(mem.S(v))
+		c.c.WriteString(v)
 	})
 	c.c.WriteByte(0)
 
