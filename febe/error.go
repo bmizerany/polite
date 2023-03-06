@@ -129,9 +129,6 @@ func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (ErrorRes
 }
 
 func (c *Conn) WriteErrorResponse(ctx context.Context, t ErrorType, e ErrorFields) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	var s sizer
 	s.addByte()
 	s.addInt32()

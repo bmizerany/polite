@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
 
 	"blake.io/pqlite/febe/febeio"
 	"go4.org/mem"
@@ -34,8 +33,7 @@ func checkMessageHeader(h MessageHeader, want byte) error {
 }
 
 type Conn struct {
-	mu sync.Mutex
-	c  *febeio.Conn
+	c *febeio.Conn
 }
 
 func New(r io.Reader, w io.Writer) *Conn {
@@ -65,8 +63,6 @@ func (h MessageHeader) Len() int              { return h.msgLen }
 func (h MessageHeader) Header() MessageHeader { return h }
 
 func (c *Conn) ReadHeader() (MessageHeader, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	b, err := c.c.ReadByte()
 	if err != nil {
 		return MessageHeader{}, err
@@ -105,8 +101,6 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 	s.addInt32() // protocol version
 	s.addStrings(params...)
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.c.WriteInt32(s.size())
 	c.c.WriteInt32(196608)
 	for i := 0; i < len(params); i += 2 {
@@ -132,8 +126,6 @@ func (c *Conn) ReadAuthentication(ctx context.Context, h MessageHeader) (Authent
 	if err := checkMessageHeader(h, 'R'); err != nil {
 		return AuthenticationResponse{}, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	t, err := c.c.ReadInt32()
 	if err != nil {
 		return AuthenticationResponse{}, err
@@ -146,8 +138,6 @@ func (c *Conn) WriteAuthentication(ctx context.Context, typ AuthenticationType) 
 	s.addInt32() // length
 	s.addInt32() // type
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.c.WriteByte('R')
 	c.c.WriteInt32(s.size())
 	c.c.WriteInt32(int32(typ))
@@ -155,8 +145,6 @@ func (c *Conn) WriteAuthentication(ctx context.Context, typ AuthenticationType) 
 }
 
 func (c *Conn) WriteBackendKeyData(ctx context.Context, pid, secret int32) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.c.WriteByte('K')
 	c.c.WriteInt32(12)
 	c.c.WriteInt32(pid)
@@ -169,8 +157,6 @@ func (c *Conn) WriteParameterStatus(ctx context.Context, name, value string) err
 	s.addInt32() // length
 	s.addStrings(name, value)
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.c.WriteByte('S')
 	c.c.WriteInt32(s.size())
 	c.c.WriteString(mem.S(name))
@@ -179,8 +165,6 @@ func (c *Conn) WriteParameterStatus(ctx context.Context, name, value string) err
 }
 
 func (c *Conn) WriteReadyForQuery(ctx context.Context, status ReadyStatus) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.c.WriteByte('Z')
 	c.c.WriteInt32(5)
 	c.c.WriteByte(byte(status))
@@ -191,8 +175,6 @@ func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyFor
 	if err := checkMessageHeader(h, 'Z'); err != nil {
 		return ReadyForQueryResponse{}, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	b, err := c.c.ReadByte()
 	if err != nil {
 		return ReadyForQueryResponse{}, err
@@ -206,8 +188,6 @@ func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
 	s.addInt32() // length
 	s.addStrings(tag)
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.c.WriteByte('C')
 	c.c.WriteInt32(s.size())
 	c.c.WriteString(mem.S(tag))
@@ -223,8 +203,6 @@ func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (Comman
 	if err := checkMessageHeader(h, 'C'); err != nil {
 		return CommandCompleteResponse{}, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	t, err := c.c.ReadString()
 	if err != nil {
 		return CommandCompleteResponse{}, err
@@ -233,8 +211,6 @@ func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (Comman
 }
 
 func (c *Conn) WriteDataRowHeader(ctx context.Context, n int16) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.c.WriteByte('D')
 	c.c.WriteInt32(6)
 	c.c.WriteInt16(n)
@@ -250,8 +226,6 @@ func (c *Conn) ReadDataRowHeader(ctx context.Context, h MessageHeader) (DataRowH
 	if err := checkMessageHeader(h, 'D'); err != nil {
 		return DataRowHeaderResponse{}, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	n, err := c.c.ReadInt16()
 	if err != nil {
 		return DataRowHeaderResponse{}, err
@@ -259,8 +233,6 @@ func (c *Conn) ReadDataRowHeader(ctx context.Context, h MessageHeader) (DataRowH
 	return DataRowHeaderResponse{MessageHeader: h, N: n}, nil
 }
 func (c *Conn) WriteDataRowValue(ctx context.Context, v mem.RO) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.c.WriteInt32(int32(v.Len()))
 	c.c.WriteByteN(v)
 	return c.Err()
@@ -270,8 +242,6 @@ func (c *Conn) ReadDataRowValue(ctx context.Context, h MessageHeader) (io.ReadCl
 	if err := checkMessageHeader(h, 'D'); err != nil {
 		return nil, err
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	l, err := c.c.ReadInt32()
 	if err != nil {
 		return nil, err
