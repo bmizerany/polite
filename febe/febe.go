@@ -189,6 +189,23 @@ func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyFor
 	}, nil
 }
 
+func (c *Conn) WriteEmptyQueryResponse(ctx context.Context) error {
+	c.c.WriteByte('I')
+	c.c.WriteInt32(4)
+	return c.Err()
+}
+
+type EmptyQueryResponse struct {
+	MessageHeader
+}
+
+func (c *Conn) ReadEmptyQuery(ctx context.Context, h MessageHeader) (EmptyQueryResponse, error) {
+	if err := checkMessageHeader(h, 'I'); err != nil {
+		return EmptyQueryResponse{}, err
+	}
+	return EmptyQueryResponse{MessageHeader: h}, nil
+}
+
 func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
 	var s sizer
 	s.addInt32() // length
