@@ -328,9 +328,6 @@ func TestReadDataRow(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-// TODO: EmptyQueryResponse
-// An empty query string was recognized.
-
 func TestReadEmptyQueryResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
@@ -354,21 +351,6 @@ func TestReadEmptyQueryResponse(t *testing.T) {
 	}
 	diff.Test(t, t.Errorf, got, want)
 }
-
-// TODO: ErrorResponse
-// An error has occurred.
-
-// TODO: ReadyForQuery
-// Processing of the query string is complete. A separate message is sent to
-// indicate this because the query string might contain multiple SQL commands.
-// (CommandComplete marks the end of processing one SQL command, not the whole
-// string.) ReadyForQuery will always be sent, whether processing terminates
-// successfully or with an error.
-
-// TODO: NoticeResponse
-// A warning message has been issued in relation to the query. Notices are in
-// addition to other responses, i.e., the backend will continue processing the
-// command.
 
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
