@@ -3,6 +3,7 @@ package pqlite
 import (
 	"testing"
 
+	"golang.org/x/exp/slices"
 	"kr.dev/diff"
 )
 
@@ -31,6 +32,7 @@ func TestParseOptions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			slices.Sort(got.Extra)
 			diff.Test(t, t.Errorf, got, c.want)
 		})
 	}

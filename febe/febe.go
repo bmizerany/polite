@@ -60,6 +60,9 @@ type MessageHeader struct {
 func (h MessageHeader) Type() byte            { return h.msgType }
 func (h MessageHeader) Len() int              { return h.msgLen }
 func (h MessageHeader) Header() MessageHeader { return h }
+func (h MessageHeader) String() string {
+	return fmt.Sprintf("<MessageHeader Type:%q Len:%d>", h.msgType, h.msgLen)
+}
 
 func (c *Conn) ReadHeader() (MessageHeader, error) {
 	b, err := c.c.ReadByte()

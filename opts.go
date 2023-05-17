@@ -61,26 +61,23 @@ func ParseOptions(dsn string) (Options, error) {
 	}
 
 	for _, kv := range strings.Fields(dsn) {
-		kv := strings.SplitN(kv, "=", 2)
-		if len(kv) != 2 {
-			return o, fmt.Errorf("invalid key-value pair: %q", kv)
-		}
-		switch kv[0] {
+		k, v, _ := strings.Cut(kv, "=")
+		switch k {
 		case "dbname":
-			o.DBName = kv[1]
+			o.DBName = v
 		case "user":
-			o.User = kv[1]
+			o.User = v
 		case "password":
-			o.Password = kv[1]
+			o.Password = v
 		case "host":
-			o.Host = kv[1]
+			o.Host = v
 		case "port":
-			o.Port = kv[1]
+			o.Port = v
 		case "sslmode":
-			o.SSLMode = kv[1]
+			o.SSLMode = v
 		default:
 			// TODO(bmizerany): escape k and v?
-			o.Extra = append(o.Extra, kv[0]+"="+kv[1])
+			o.Extra = append(o.Extra, fmt.Sprintf("%s=%s", k, v))
 		}
 	}
 	return o, nil
