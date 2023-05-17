@@ -6,7 +6,7 @@ import (
 	"kr.dev/diff"
 )
 
-func TestOptsParse(t *testing.T) {
+func TestParseOptions(t *testing.T) {
 	cases := []struct {
 		dsn  string
 		want Options
@@ -18,6 +18,11 @@ func TestOptsParse(t *testing.T) {
 		{"sslmode=foo", Options{SSLMode: "foo", DBName: "postgres", User: "postgres", Host: "localhost", Port: "5432"}},
 		{"postgres://foo:bar@localhost:5432/test", Options{User: "foo", Password: "bar", Host: "localhost", Port: "5432", DBName: "test", SSLMode: "verify"}},
 		{"postgres:///test", Options{DBName: "test", Host: "localhost", Port: "5432", User: "postgres", SSLMode: "verify"}},
+
+		{"a=x b=y", Options{DBName: "postgres", Host: "localhost", Port: "5432", User: "postgres", SSLMode: "verify",
+			Extra: []string{"a=x", "b=y"}}},
+		{"postgres://foo:bar@localhost:5432/test?a=x&b=y", Options{User: "foo", Password: "bar", Host: "localhost", Port: "5432", DBName: "test", SSLMode: "verify",
+			Extra: []string{"a=x", "b=y"}}},
 	}
 
 	for _, c := range cases {

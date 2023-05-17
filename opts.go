@@ -15,6 +15,10 @@ type Options struct {
 
 	SSLMode string
 
+	// Extra holds extra options that are not parsed or interpreted by this
+	// package. They are passed to postgres as-is.
+	Extra []string
+
 	// TODO: TLS
 }
 
@@ -35,15 +39,24 @@ func ParseOptions(dsn string) (Options, error) {
 		if err != nil {
 			return o, err
 		}
+
+		q := u.Query()
+		yank := func(s string) string {
+			v := q.Get(s)
+			q.Del(s)
+			return v
+		}
 		o.DBName = strings.TrimPrefix(u.Path, "/")
 		o.User = coallesce(u.User.Username(), o.User)
 		o.Password, _ = u.User.Password()
 		o.Password = coallesce(o.Password, o.Password)
 		o.Host = coallesce(u.Hostname(), o.Host)
 		o.Port = coallesce(u.Port(), o.Port)
-
-		q := u.Query()
-		o.SSLMode = coallesce(q.Get("sslmode"), o.SSLMode)
+		o.SSLMode = coallesce(yank("sslmode"), o.SSLMode)
+		for k := range q {
+			// TODO(bmizerany): escape k and v?
+			o.Extra = append(o.Extra, fmt.Sprintf("%s=%s", k, q.Get(k)))
+		}
 		return o, nil
 	}
 
@@ -66,7 +79,8 @@ func ParseOptions(dsn string) (Options, error) {
 		case "sslmode":
 			o.SSLMode = kv[1]
 		default:
-			return o, fmt.Errorf("unknown key: %q", kv[0])
+			// TODO(bmizerany): escape k and v?
+			o.Extra = append(o.Extra, kv[0]+"="+kv[1])
 		}
 	}
 	return o, nil
