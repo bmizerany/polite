@@ -110,6 +110,7 @@ func (rs *Rows) Next() error {
 			return err
 		}
 		return &er.ErrorFields
+	TODO: https://www.postgresql.org/docs/current/protocol-flow.html#id-1.10.6.7.4
 	default:
 		return fmt.Errorf("%w: unknown message type: %q", ErrProtocol, h.Type())
 	}
