@@ -103,6 +103,7 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 	s.addInt32() // length
 	s.addInt32() // protocol version
 	s.addStrings(params...)
+	s.addStrings("")
 
 	c.c.WriteInt32(s.size())
 	c.c.WriteInt32(196608)
@@ -110,6 +111,7 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 		c.c.WriteString(params[i])
 		c.c.WriteString(params[i+1])
 	}
+	c.c.WriteString("")
 	return c.Err()
 }
 

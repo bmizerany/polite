@@ -128,12 +128,13 @@ func TestWriteStartupMessage(t *testing.T) {
 	}
 	want := []byte{
 		// length of message
-		0, 0, 0, 18,
+		0, 0, 0, 19,
 		// protocol version
 		0, 3, 0, 0,
 		// user
 		'u', 's', 'e', 'r', 0,
 		't', 'e', 's', 't', 0,
+		0,
 	}
 	diff.Test(t, t.Errorf, b.Bytes(), want)
 }
