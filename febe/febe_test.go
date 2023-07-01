@@ -66,7 +66,8 @@ func TestErrorResponse(t *testing.T) {
 		msgLen:  b.Len() - 1,
 	}
 
-	h, err := c.ReadHeader()
+	ctx := context.Background()
+	h, err := c.ReadHeader(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,11 +100,12 @@ func BenchmarkReadErrorResponse(b *testing.B) {
 
 	const data = "E\x00\x00\x00\x05\x00"
 
+	ctx := context.Background()
 	r := strings.NewReader("")
 	c := New(r, nil)
 	for i := 0; i < b.N; i++ {
 		r.Reset(data)
-		h, err := c.ReadHeader()
+		h, err := c.ReadHeader(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -201,7 +203,7 @@ func TestReadReadyForQuery(t *testing.T) {
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := c.ReadHeader()
+	h, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +235,7 @@ func TestReadAuthentication(t *testing.T) {
 		if err := c.Flush(); err != nil {
 			t.Fatal(err)
 		}
-		h, err := c.ReadHeader()
+		h, err := c.ReadHeader(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -261,7 +263,7 @@ func TestReadCommandComplete(t *testing.T) {
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := c.ReadHeader()
+	h, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +309,7 @@ func TestReadDataRow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := c.ReadHeader()
+	h, err := c.ReadHeader(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +337,7 @@ func TestReadEmptyQueryResponse(t *testing.T) {
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := c.ReadHeader()
+	h, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +389,7 @@ func TestNoticeResponse(t *testing.T) {
 		msgLen:  b.Len() - 1,
 	}
 
-	h, err := c.ReadHeader()
+	h, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

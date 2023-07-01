@@ -64,7 +64,7 @@ func (h MessageHeader) String() string {
 	return fmt.Sprintf("<MessageHeader Type:%q Len:%d>", h.msgType, h.msgLen)
 }
 
-func (c *Conn) ReadHeader() (MessageHeader, error) {
+func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	b, err := c.c.ReadByte()
 	if err != nil {
 		return MessageHeader{}, err
