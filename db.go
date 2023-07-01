@@ -70,6 +70,17 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 			if err := c.c.DiscardMessage(ctx, h); err != nil {
 				return nil, err
 			}
+		case 'K':
+			// TODO(bmizerany): save the key for cancellations later
+			if err := c.c.DiscardMessage(ctx, h); err != nil {
+				return nil, err
+			}
+		case 'Z':
+			_, err := c.c.ReadReadyForQuery(ctx, h)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
 		default:
 			return nil, fmt.Errorf("%w: unknown message %q", ErrProtocol, h.Type())
 		}
