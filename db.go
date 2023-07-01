@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os/user"
 
 	"blake.io/pqlite/febe"
 )
@@ -24,13 +23,6 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if o.User == "" {
-		cu, err := user.Current()
-		if err != nil {
-			return nil, err
-		}
-		o.User = cu.Username
-	}
 
 	var d net.Dialer
 	cn, err := d.DialContext(ctx, "tcp", o.Host+":"+o.Port)
@@ -48,22 +40,32 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 		return nil, err
 	}
 
-	h, err := c.c.ReadHeader(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Printf("h %v\n", h)
-
-	switch h.Type() {
-	case 'E':
-		er, err := c.c.ReadError(ctx, h)
+	for {
+		h, err := c.c.ReadHeader(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return nil, &er
-	default:
-		return nil, fmt.Errorf("%w: unknown message %q", ErrProtocol, h.Type())
+
+		fmt.Printf("h %v\n", h)
+
+		switch h.Type() {
+		case 'E':
+			cr, err := c.c.ReadError(ctx, h)
+			if err != nil {
+				return nil, err
+			}
+			return nil, &cr
+		case 'R':
+			cr, err := c.c.ReadAuthentication(ctx, h)
+			if err != nil {
+				return nil, err
+			}
+			if cr.Type != 0 {
+				panic("TODO")
+			}
+		default:
+			return nil, fmt.Errorf("%w: unknown message %q", ErrProtocol, h.Type())
+		}
 	}
 }
 

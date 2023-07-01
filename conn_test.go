@@ -2,6 +2,7 @@ package pqlite
 
 import (
 	"context"
+	"os/user"
 	"testing"
 
 	"blake.io/pqx/pqxtest"
@@ -14,10 +15,19 @@ func TestMain(m *testing.M) {
 
 func TestConnDial(t *testing.T) {
 	pqxtest.CreateDB(t, ``)
-	dsn := pqxtest.DSNForTest(t)
+	dsn := pqxtest.DSNForTest(t) + " user=" + mustGetUsername()
+	t.Logf(dsn)
 	ctx := context.Background()
 	_, err := Dial(ctx, dsn)
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func mustGetUsername() string {
+	cu, err := user.Current()
+	if err != nil {
+		panic(err)
+	}
+	return cu.Username
 }
