@@ -4,9 +4,9 @@ package febe
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"blake.io/pqlite/febe/febeio"
 )
@@ -95,21 +95,22 @@ func (s *sizer) addStrings(vv ...string) {
 func (s *sizer) size() int32 { return int32(*s) }
 
 func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err error) {
-	if len(params)%2 != 0 {
-		return errors.New("params must be even")
-	}
-
 	var s sizer
 	s.addInt32() // length
 	s.addInt32() // protocol version
-	s.addStrings(params...)
+	for i := 0; i < len(params); i++ {
+		k, v, _ := strings.Cut(params[i], "=")
+		s.addStrings(k)
+		s.addStrings(v)
+	}
 	s.addStrings("")
 
 	c.c.WriteInt32(s.size())
 	c.c.WriteInt32(196608)
-	for i := 0; i < len(params); i += 2 {
-		c.c.WriteString(params[i])
-		c.c.WriteString(params[i+1])
+	for i := 0; i < len(params); i++ {
+		k, v, _ := strings.Cut(params[i], "=")
+		c.c.WriteString(k)
+		c.c.WriteString(v)
 	}
 	c.c.WriteString("")
 	return c.Err()

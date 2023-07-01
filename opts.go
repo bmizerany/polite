@@ -7,19 +7,15 @@ import (
 )
 
 type Options struct {
-	DBName   string
-	User     string
-	Password string
-	Host     string
-	Port     string
+	Host string
+	Port string
 
 	SSLMode string
 
 	// Extra holds extra options that are not parsed or interpreted by this
-	// package. They are passed to postgres as-is.
+	// package. They are passed to postgres as-is and so should be in
+	// key=value form.
 	Extra []string
-
-	// TODO: TLS
 }
 
 // ParseOptions parses a DSN or URL string into an Options struct. The defaults are:
@@ -27,11 +23,9 @@ type Options struct {
 //	dbname=postgres user=postgres host=localhost port=5432 sslmode=verify
 func ParseOptions(dsn string) (Options, error) {
 	o := Options{
-		DBName:  "postgres",
-		User:    "postgres",
+		SSLMode: "verify",
 		Host:    "localhost",
 		Port:    "5432",
-		SSLMode: "verify",
 	}
 
 	if strings.HasPrefix(dsn, "postgres://") {
@@ -46,10 +40,6 @@ func ParseOptions(dsn string) (Options, error) {
 			q.Del(s)
 			return v
 		}
-		o.DBName = strings.TrimPrefix(u.Path, "/")
-		o.User = coallesce(u.User.Username(), o.User)
-		o.Password, _ = u.User.Password()
-		o.Password = coallesce(o.Password, o.Password)
 		o.Host = coallesce(u.Hostname(), o.Host)
 		o.Port = coallesce(u.Port(), o.Port)
 		o.SSLMode = coallesce(yank("sslmode"), o.SSLMode)
@@ -63,21 +53,18 @@ func ParseOptions(dsn string) (Options, error) {
 	for _, kv := range strings.Fields(dsn) {
 		k, v, _ := strings.Cut(kv, "=")
 		switch k {
-		case "dbname":
-			o.DBName = v
-		case "user":
-			o.User = v
-		case "password":
-			o.Password = v
 		case "host":
 			o.Host = v
 		case "port":
 			o.Port = v
 		case "sslmode":
 			o.SSLMode = v
+		case "dbname":
+			// for backwards compat when switching from drivers
+			// that support dbname
+			o.Extra = append(o.Extra, "database="+v)
 		default:
-			// TODO(bmizerany): escape k and v?
-			o.Extra = append(o.Extra, fmt.Sprintf("%s=%s", k, v))
+			o.Extra = append(o.Extra, kv)
 		}
 	}
 	return o, nil

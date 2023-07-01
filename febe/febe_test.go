@@ -119,7 +119,9 @@ func BenchmarkReadErrorResponse(b *testing.B) {
 func TestWriteStartupMessage(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
-	c.WriteStartupMessage(context.Background(), "user", "test")
+	if err := c.WriteStartupMessage(context.Background(), "user=test"); err != nil {
+		t.Fatal(err)
+	}
 	if err := c.Err(); err != nil {
 		t.Fatal(err)
 	}

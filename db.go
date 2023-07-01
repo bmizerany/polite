@@ -30,9 +30,8 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 		return nil, err
 	}
 
-	opts := append(o.Extra, "user", o.User)
 	c := &Conn{c: febe.New(cn, cn)}
-	if err := c.c.WriteStartupMessage(ctx, opts...); err != nil {
+	if err := c.c.WriteStartupMessage(ctx, o.Extra...); err != nil {
 		return nil, err
 	}
 
