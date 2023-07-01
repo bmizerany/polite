@@ -111,6 +111,7 @@ func (c *Conn) ReadFull(p []byte) (int, error) {
 }
 
 func (c *Conn) discardRemainder() error {
+	// TODO(bmizerany): use ctx to SetDeadline
 	_, err := c.r.Discard(c.fr.N)
 
 	// make calling this method again a nop if called before another call

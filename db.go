@@ -18,6 +18,10 @@ type Conn struct {
 	c *febe.Conn
 }
 
+// Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
+// or URL. The host, port, and sslmode parameters are defaulted to localhost,
+// 5432, and verirfy, respectivly. No other parameter has a default, including
+// user, which must be specified by users of Dial.
 func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 	o, err := ParseOptions(dsnOrURL)
 	if err != nil {
@@ -60,7 +64,11 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 				return nil, err
 			}
 			if cr.Type != 0 {
-				panic("TODO")
+				panic("TODO") // support passwrod
+			}
+		case 'S':
+			if err := c.c.DiscardMessage(ctx, h); err != nil {
+				return nil, err
 			}
 		default:
 			return nil, fmt.Errorf("%w: unknown message %q", ErrProtocol, h.Type())

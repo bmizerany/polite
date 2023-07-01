@@ -59,6 +59,7 @@ type MessageHeader struct {
 
 func (h MessageHeader) Type() byte            { return h.msgType }
 func (h MessageHeader) Len() int              { return h.msgLen }
+func (h MessageHeader) BodyLen() int          { return h.msgLen - 4 }
 func (h MessageHeader) Header() MessageHeader { return h }
 func (h MessageHeader) String() string {
 	return fmt.Sprintf("<MessageHeader Type:%q Len:%d>", h.msgType, h.msgLen)
@@ -75,6 +76,10 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	}
 	h := MessageHeader{msgType: b, msgLen: int(l)}
 	return h, nil
+}
+
+func (c *Conn) DiscardMessage(ctx context.Context, h MessageHeader) error {
+	return c.c.ReadByteN(h.BodyLen()).Close()
 }
 
 // TODO(bmizerany): https://www.postgresql.org/docs/current/errcodes-appendix.html
