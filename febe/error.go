@@ -3,6 +3,7 @@ package febe
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type ErrorType byte
@@ -29,6 +30,14 @@ type ErrorFields struct {
 	File       string
 	Line       string
 	Routine    string
+	Verbosity  string
+}
+
+func (e *ErrorFields) Error() string {
+	var b strings.Builder
+	b.WriteString("postgres: ")
+	b.WriteString(e.Message)
+	return b.String()
 }
 
 func (e *ErrorFields) forEachField(f func(t byte, s string)) {
@@ -119,6 +128,8 @@ func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (ErrorRes
 			e.Line = string(v)
 		case 'R':
 			e.Routine = string(v)
+		case 'V':
+			e.Verbosity = string(v)
 		default:
 			return zero, fmt.Errorf("pqlite: unexpected error response key %q", k)
 		}
