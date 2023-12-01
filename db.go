@@ -12,6 +12,7 @@ import (
 // Errors
 var (
 	ErrProtocol = errors.New("pqlite: protocol error")
+	ErrComplete = errors.New("pqlite: complete")
 )
 
 type Conn struct {
@@ -48,8 +49,6 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-
-		fmt.Printf("h %v\n", h)
 
 		switch h.Type() {
 		case 'E':
@@ -88,8 +87,22 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 }
 
 func (c *Conn) Query(ctx context.Context, sql string) (*Rows, error) {
+	if err := c.c.WriteQuery(ctx, sql); err != nil {
+		return nil, err
+	}
+	if err := c.c.Flush(); err != nil {
+		return nil, err
+	}
 	rs := &Rows{ctx: ctx, c: c}
 	return rs, nil
+}
+
+type Row struct {
+	d febe.DataRowResponse
+}
+
+func (r *Row) Values() [][]byte {
+	return r.d.Values
 }
 
 type Rows struct {
@@ -97,24 +110,52 @@ type Rows struct {
 	c   *Conn
 }
 
-func (rs *Rows) Next() error {
+func (rs *Rows) Next() (Row, error) {
 	c := rs.c.c
-	h, err := c.ReadHeader(rs.ctx)
-	if err != nil {
-		return err
-	}
-	switch h.Type() {
-	case 'E':
-		er, err := c.ReadError(rs.ctx, h)
+	for {
+		h, err := c.ReadHeader(rs.ctx)
 		if err != nil {
-			return err
+			return Row{}, err
 		}
-		return &er.ErrorFields
-	TODO: https://www.postgresql.org/docs/current/protocol-flow.html#id-1.10.6.7.4
-	default:
-		return fmt.Errorf("%w: unknown message type: %q", ErrProtocol, h.Type())
+		switch h.Type() {
+		case 'E':
+			er, err := c.ReadError(rs.ctx, h)
+			if err != nil {
+				return Row{}, err
+			}
+			return Row{}, &er.ErrorFields
+		case 'T':
+			// Ignore row descriptions for now; they're pretty
+			// useless if you know the query you're running,
+			// espcially when code can be generated from the
+			// query, which would already know the types. Save
+			// the energy.
+			if err := c.DiscardMessage(rs.ctx, h); err != nil {
+				return Row{}, err
+			}
+		case 'D':
+			m, err := c.ReadDataRow(rs.ctx, h)
+			if err != nil {
+				return Row{}, err
+			}
+			return Row{d: m}, nil
+		case 'C':
+			_, err := c.ReadCommandComplete(rs.ctx, h)
+			if err != nil {
+				return Row{}, err
+			}
+			// TODO(bmizerany): save the command tag
+		case 'Z':
+			_, err := c.ReadReadyForQuery(rs.ctx, h)
+			if err != nil {
+				return Row{}, err
+			}
+			// TODO(bmizerany): save the transaction status
+			return Row{}, ErrComplete
+		default:
+			return Row{}, fmt.Errorf("%w: unknown message type: %q", ErrProtocol, h.Type())
+		}
 	}
-	return nil
 }
 
 func (r *Rows) Close() error {

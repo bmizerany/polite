@@ -200,6 +200,17 @@ func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyFor
 	}, nil
 }
 
+func (c *Conn) WriteQuery(ctx context.Context, query string) error {
+	var s sizer
+	s.addInt32() // length
+	s.addStrings(query)
+
+	c.c.WriteByte('Q')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(query)
+	return c.Err()
+}
+
 func (c *Conn) WriteEmptyQueryResponse(ctx context.Context) error {
 	c.c.WriteByte('I')
 	c.c.WriteInt32(4)
