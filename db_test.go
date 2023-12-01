@@ -20,18 +20,11 @@ func TestQuery(t *testing.T) {
 		t.Error(err)
 	}
 
-	r, err := c.Query(context.Background(), "SELECT 1")
-	if err != nil {
-		t.Error(err)
-	}
-	defer r.Close()
-
-	for {
-		r, err := r.Next()
+	for row, err := range c.Query(context.Background(), "SELECT 1") {
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
 		}
-		for _, b := range r.Values() {
+		for _, b := range row.Values() {
 			t.Logf("value: len(b) = %d: %s", len(b), b)
 		}
 	}

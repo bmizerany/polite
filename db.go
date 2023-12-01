@@ -86,7 +86,34 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 	}
 }
 
-func (c *Conn) Query(ctx context.Context, sql string) (*Rows, error) {
+// TODO(bmizerany): replace with iter.Seq2 in go1.22
+type iter_Seq2[T, U any] func(yield func(T, U) bool)
+
+func (c *Conn) Query(ctx context.Context, sql string) iter_Seq2[Row, error] {
+	return func(yield func(Row, error) bool) {
+		rows, err := c.QueryRows(ctx, sql)
+		if err != nil {
+			yield(Row{}, err)
+			return
+		}
+		defer rows.Close()
+		for {
+			row, err := rows.Next()
+			if err != nil {
+				if errors.Is(err, ErrComplete) {
+					return
+				}
+				yield(Row{}, err)
+				return
+			}
+			if !yield(row, nil) {
+				return
+			}
+		}
+	}
+}
+
+func (c *Conn) QueryRows(ctx context.Context, sql string) (*Rows, error) {
 	if err := c.c.WriteQuery(ctx, sql); err != nil {
 		return nil, err
 	}
