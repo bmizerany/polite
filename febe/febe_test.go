@@ -52,6 +52,7 @@ func TestErrorResponse(t *testing.T) {
 		File:       "FILE",
 		Line:       "LINE",
 		Routine:    "ROUTINE",
+		Verbosity:  "VERBOSITY",
 	}
 
 	want := ErrorResponse{

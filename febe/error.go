@@ -57,6 +57,7 @@ func (e *ErrorFields) forEachField(f func(t byte, s string)) {
 	f('F', e.File)
 	f('L', e.Line)
 	f('R', e.Routine)
+	f('V', e.Verbosity)
 }
 
 type ErrorResponse struct {
