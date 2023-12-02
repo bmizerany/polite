@@ -200,6 +200,37 @@ func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyFor
 	}, nil
 }
 
+type NotificationResponse struct {
+	MessageHeader
+	PID     int32
+	Channel []byte
+	Payload []byte
+}
+
+func (c *Conn) ReadNotification(ctx context.Context, h MessageHeader) (NotificationResponse, error) {
+	if err := checkMessageHeader(h, 'A'); err != nil {
+		return NotificationResponse{}, err
+	}
+	pid, err := c.c.ReadInt32()
+	if err != nil {
+		return NotificationResponse{}, err
+	}
+	channel, err := c.c.ReadString()
+	if err != nil {
+		return NotificationResponse{}, err
+	}
+	payload, err := c.c.ReadString()
+	if err != nil {
+		return NotificationResponse{}, err
+	}
+	return NotificationResponse{
+		MessageHeader: h,
+		PID:           pid,
+		Channel:       channel,
+		Payload:       payload,
+	}, nil
+}
+
 func (c *Conn) WriteQuery(ctx context.Context, query string) error {
 	var s sizer
 	s.addInt32() // length

@@ -8,22 +8,42 @@ import (
 	"fmt"
 	"os/exec"
 	"os/user"
+	"reflect"
 	"testing"
 )
 
 func TestQuery(t *testing.T) {
 	dsn := createDB(t)
 	ctx := context.Background()
-
 	c, err := Dial(ctx, dsn)
 	if err != nil {
 		t.Error(err)
 	}
+	checkPing(t, c)
+}
 
+func checkPing(t *testing.T, c *Conn) {
+	t.Helper()
 	for row, err := range c.Query(context.Background(), "SELECT 1") {
 		if err != nil {
-			t.Error(err)
+			t.Fatal(err)
 		}
+		got := row.Values()
+		want := [][]byte{{'1'}}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got = %v, want %v", got, want)
+		}
+	}
+}
+
+func checkExec(t *testing.T, c *Conn, sql string) {
+	t.Helper()
+	t.Logf("exec: %q", sql)
+	for row, err := range c.Query(context.Background(), sql) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Error("should not have received a row")
 		for _, b := range row.Values() {
 			t.Logf("value: len(b) = %d: %s", len(b), b)
 		}

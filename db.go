@@ -9,6 +9,21 @@ import (
 	"blake.io/pqlite/febe"
 )
 
+// TODO: https://www.postgresql.org/docs/current/protocol-flow.html
+//
+// [x] 55.2.1. Start-up
+// [ ]    -- tls
+// [x] 55.2.2. Simple Query
+// [ ] 55.2.3. Extended Query
+// [/] 55.2.4. Pipelining (not supporting)
+// [?] 55.2.5. Function Call
+// [ ] 55.2.6. COPY Operations
+// [ ] 55.2.7. Asynchronous Operations
+// [ ] 55.2.8. Canceling Requests in Progress
+// [ ] 55.2.9. Termination
+// [ ] 55.2.10. SSL Session Encryption
+// [/] 55.2.11. GSSAPI Session Encryption
+
 // Errors
 var (
 	ErrProtocol = errors.New("pqlite: protocol error")
@@ -16,7 +31,9 @@ var (
 )
 
 type Conn struct {
-	c *febe.Conn
+	dsnOrURL string
+	cn       net.Conn
+	c        *febe.Conn
 }
 
 // Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
@@ -35,7 +52,11 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 		return nil, err
 	}
 
-	c := &Conn{c: febe.New(cn, cn)}
+	c := &Conn{
+		dsnOrURL: dsnOrURL,
+		cn:       cn,
+		c:        febe.New(cn, cn),
+	}
 	if err := c.c.WriteStartupMessage(ctx, o.Extra...); err != nil {
 		return nil, err
 	}
@@ -86,10 +107,19 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 	}
 }
 
+func (c *Conn) Close() error {
+	return c.cn.Close()
+}
+
 // TODO(bmizerany): replace with iter.Seq2 in go1.22
 type iter_Seq2[T, U any] func(yield func(T, U) bool)
 
 func (c *Conn) Query(ctx context.Context, sql string) iter_Seq2[Row, error] {
+	// TODO(bmizerany): extended query
+	return c.simpleQuery(ctx, sql)
+}
+
+func (c *Conn) simpleQuery(ctx context.Context, sql string) iter_Seq2[Row, error] {
 	return func(yield func(Row, error) bool) {
 		rows, err := c.QueryRows(ctx, sql)
 		if err != nil {
@@ -113,6 +143,20 @@ func (c *Conn) Query(ctx context.Context, sql string) iter_Seq2[Row, error] {
 	}
 }
 
+type ExecResult struct {
+	RowsAffected int64
+}
+
+func (c *Conn) Exec(ctx context.Context, sql string) (ExecResult, error) {
+	for _, err := range c.simpleQuery(ctx, sql) {
+		if err != nil {
+			return ExecResult{}, err
+		}
+		// discard results
+	}
+	return ExecResult{}, nil
+}
+
 func (c *Conn) QueryRows(ctx context.Context, sql string) (*Rows, error) {
 	if err := c.c.WriteQuery(ctx, sql); err != nil {
 		return nil, err
@@ -120,8 +164,8 @@ func (c *Conn) QueryRows(ctx context.Context, sql string) (*Rows, error) {
 	if err := c.c.Flush(); err != nil {
 		return nil, err
 	}
-	rs := &Rows{ctx: ctx, c: c}
-	return rs, nil
+	rows := &Rows{ctx: ctx, c: c}
+	return rows, nil
 }
 
 type Row struct {
