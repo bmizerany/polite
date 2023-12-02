@@ -12,13 +12,48 @@ import (
 	"testing"
 )
 
-func TestQuery(t *testing.T) {
+func newConn(t *testing.T) *Conn {
+	t.Helper()
 	dsn := createDB(t)
 	ctx := context.Background()
 	c, err := Dial(ctx, dsn)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	checkPing(t, c)
+	return c
+}
+
+func TestQuery(t *testing.T) {
+	c := newConn(t)
+	for row, err := range c.Query(context.Background(), "SELECT 1, 2, 'three'") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := row.Values()
+		want := [][]byte{{'1'}, {'2'}, {'t', 'h', 'r', 'e', 'e'}}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestQueryEmptyQueryResponse(t *testing.T) {
+	c := newConn(t)
+	var got error
+	for _, got = range c.Query(context.Background(), "") {
+		break
+	}
+	if !errors.Is(got, ErrEmptyQuery) {
+		t.Errorf("got = %v, want %v", got, ErrEmptyQuery)
+	}
+
+	// check there is no residue left on the wire
 	checkPing(t, c)
 }
 

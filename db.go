@@ -26,8 +26,9 @@ import (
 
 // Errors
 var (
-	ErrProtocol = errors.New("pqlite: protocol error")
-	ErrComplete = errors.New("pqlite: complete")
+	ErrProtocol   = errors.New("pqlite: protocol error")
+	ErrComplete   = errors.New("pqlite: complete")
+	ErrEmptyQuery = errors.New("pqlite: empty query")
 )
 
 type Conn struct {
@@ -223,6 +224,8 @@ func (rs *Rows) Next() (Row, error) {
 			}
 			// TODO(bmizerany): save the transaction status
 			return Row{}, ErrComplete
+		case 'I':
+			return Row{}, ErrEmptyQuery
 		default:
 			return Row{}, fmt.Errorf("%w: unknown message type: %q", ErrProtocol, h.Type())
 		}
