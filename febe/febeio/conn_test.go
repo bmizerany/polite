@@ -293,6 +293,35 @@ func TestReadByteN(t *testing.T) {
 	}
 }
 
+func TestWriteByteN(t *testing.T) {
+	var b bytes.Buffer
+	c := NewConn(&b, &b)
+	if err := c.WriteInt16(1); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := io.ReadAll(c.ReadByteN(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := string(data)
+	want := "\x00\x01"
+	if got != want {
+		t.Errorf("got = %q, want %q", got, want)
+	}
+}
+
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) {
+	return 0, errors.New("error")
+}
+
 func TestReadByteNDiscardOnClose(t *testing.T) {
 	in := strings.NewReader("abc\x00\x09") // "abc" + int16(9)
 	c := NewConn(in, nil)
