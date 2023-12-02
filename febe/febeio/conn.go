@@ -79,11 +79,6 @@ func (c *Conn) WriteInt32(n int32) error {
 	return c.w.WriteByte(byte(n))
 }
 
-func (c *Conn) Err() error {
-	_, err := c.w.Write(nil)
-	return err
-}
-
 type connReadCloser struct {
 	*Conn
 }
@@ -104,10 +99,6 @@ func (c *Conn) ReadByteN(n int) io.ReadCloser {
 	c.fr.R = c.r
 	c.fr.N = n
 	return connReadCloser{c}
-}
-
-func (c *Conn) ReadFull(p []byte) (int, error) {
-	return io.ReadFull(c.r, p)
 }
 
 func (c *Conn) discardRemainder() error {
@@ -140,12 +131,6 @@ func (c *Conn) ReadString() ([]byte, error) {
 func (c *Conn) WriteString(s string) error {
 	io.WriteString(c.w, s)
 	return c.w.WriteByte(0)
-}
-
-func (c *Conn) WriteByteN(s string) error {
-	c.WriteInt32(int32(len(s)))
-	_, err := c.w.WriteString(s)
-	return err
 }
 
 // Flush calls the underlying bufio.Writer's Flush method.
