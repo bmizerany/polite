@@ -2,9 +2,31 @@ package pqlite
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
+
+func ExampleListener() {
+	ctx := context.Background()
+
+	l, err := DialListener(ctx, "host=localhost port=5432 dbname=postgres")
+	if err != nil {
+		panic(err)
+	}
+	defer l.Close()
+
+	if err := l.Listen(ctx, "foo"); err != nil {
+		panic(err)
+	}
+
+	for n, err := range l.Notifications(ctx) {
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("NOTIFICATION:", string(n.Channel), string(n.Payload))
+	}
+}
 
 func TestListenNotify(t *testing.T) {
 	dsn := createDB(t)
