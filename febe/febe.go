@@ -271,7 +271,7 @@ func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
 }
 
 type Tag struct {
-	Command      mem.RO
+	Command      string
 	OID          int
 	RowsAffected int
 }
@@ -313,7 +313,7 @@ func ParseCommandCompleteTag(tag []byte) Tag {
 	rowsInt, _ := mem.ParseInt(mem.B(data), 10, 64)
 	oidInt, _ := mem.ParseInt(mem.B(oid), 10, 64)
 	return Tag{
-		Command:      mem.B(cmd),
+		Command:      string(cmd),
 		OID:          int(oidInt),
 		RowsAffected: int(rowsInt),
 	}

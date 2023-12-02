@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"go4.org/mem"
 	"kr.dev/diff"
 )
 
@@ -284,7 +283,7 @@ func TestReadCommandComplete(t *testing.T) {
 		RawTag: []byte("SELECT 1"),
 		Tag: Tag{
 			OID:          0,
-			Command:      mem.S("SELECT"),
+			Command:      "SELECT",
 			RowsAffected: 1,
 		},
 	}

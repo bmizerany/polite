@@ -7,7 +7,6 @@ import (
 	"net"
 
 	"blake.io/pqlite/febe"
-	"go4.org/mem"
 )
 
 // TODO: https://www.postgresql.org/docs/current/protocol-flow.html
@@ -146,7 +145,7 @@ func (c *Conn) simpleQuery(ctx context.Context, sql string) iter_Seq2[Row, error
 }
 
 type Tag struct {
-	Command      mem.RO
+	Command      string
 	OID          int
 	RowsAffected int
 }

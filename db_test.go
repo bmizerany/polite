@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"go4.org/mem"
 	"kr.dev/diff"
 )
 
@@ -60,7 +59,7 @@ func TestQuerySelectTag(t *testing.T) {
 		}
 	}
 	want := Tag{
-		Command:      mem.S("SELECT"),
+		Command:      "SELECT",
 		OID:          0,
 		RowsAffected: 1,
 	}
@@ -89,7 +88,7 @@ func TestExec(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Tag{
-		Command:      mem.S("INSERT"),
+		Command:      "INSERT",
 		OID:          0,
 		RowsAffected: 1,
 	}
