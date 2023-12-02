@@ -119,11 +119,6 @@ func (c *Conn) WriteString(s string) error {
 	return c.w.WriteByte(0)
 }
 
-func (c *Conn) WriteStringBytes(b []byte) error {
-	c.w.Write(b)
-	return c.w.WriteByte(0)
-}
-
 func (c *Conn) ReadBytes() (io.ReadCloser, error) {
 	n, err := c.ReadInt32()
 	if err != nil {
