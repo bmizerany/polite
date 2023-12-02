@@ -128,7 +128,7 @@ func mustGetUsername() string {
 }
 
 var (
-	mainDSN = "dbname=postgres sslmode=disable user=" + mustGetUsername()
+	mainDSN = "dbname=postgres port=5433 sslmode=disable user=" + mustGetUsername()
 
 	mc = func() *Conn {
 		c, err := Dial(context.Background(), mainDSN)

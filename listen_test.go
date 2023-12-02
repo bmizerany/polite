@@ -10,7 +10,7 @@ import (
 func ExampleListener() {
 	ctx := context.Background()
 
-	l, err := DialListener(ctx, "host=localhost port=5432 dbname=postgres")
+	l, err := DialListener(ctx, "host=localhost port=5433 dbname=postgres")
 	if err != nil {
 		panic(err)
 	}
