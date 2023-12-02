@@ -1,19 +1,17 @@
 package pqlite
 
 import (
-	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"os/exec"
 	"os/user"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 func newConn(t *testing.T) *Conn {
-	t.Helper()
 	dsn := createDB(t)
 	ctx := context.Background()
 	c, err := Dial(ctx, dsn)
@@ -93,27 +91,23 @@ func mustGetUsername() string {
 	return cu.Username
 }
 
-func createDB(t *testing.T) (dsn string) {
-	t.Helper()
-	// Boostrap with `createdb` command.
-	//
-	// TODO(bmizerany): Replace use of createdb with our driver once
-	// enough meat is on the bones to make it work.
-	dbname := fmt.Sprintf("%s_%s", t.Name(), randomString())
-	cmd := exec.Command("createdb", dbname)
-	t.Logf("createDB: running: %s", cmd)
-	out, err := cmd.Output()
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			t.Logf("createDB: createdb exit code: %d: %s", ee.ExitCode(), ee.Stderr)
-		} else {
-			t.Logf("createDB: createdb error: %s", err)
+var (
+	mainDSN = "dbname=postgres sslmode=disable user=" + mustGetUsername()
+
+	mc = func() *Conn {
+		c, err := Dial(context.Background(), mainDSN)
+		if err != nil {
+			panic(err)
 		}
-		t.Logf("createDB: createdb output: %s", cmp.Or(string(out), "<EMPTY>"))
-		t.FailNow()
-	}
-	dsn = "user=" + mustGetUsername() + " dbname=" + dbname + " sslmode=disable"
+		return c
+	}()
+)
+
+func createDB(t *testing.T) (dsn string) {
+	dbname := fmt.Sprintf("test_%s_%s", t.Name(), randomString())
+	dbname = strings.ToLower(dbname)
+	checkExec(t, mc, fmt.Sprintf("CREATE DATABASE %s", dbname))
+	dsn = mainDSN + " dbname=" + dbname
 	t.Logf("createDB: dsn: %q", dsn)
 	return dsn
 }
