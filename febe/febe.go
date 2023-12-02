@@ -40,12 +40,12 @@ func New(r io.Reader, w io.Writer) *Conn {
 	return &Conn{c: c}
 }
 
-func (c *Conn) Flush() error {
-	return c.c.Flush()
-}
-
 func (c *Conn) Err() error {
 	return c.c.Err()
+}
+
+func (c *Conn) Flush() error {
+	return c.c.Flush()
 }
 
 type Message interface {
@@ -86,15 +86,13 @@ func (c *Conn) DiscardMessage(ctx context.Context, h MessageHeader) error {
 
 type sizer int32
 
-func (s *sizer) addInt32()          { *s += 4 }
-func (s *sizer) addInt16()          { *s += 2 }
-func (s *sizer) addN(n int)         { *s += sizer(n) }
-func (s *sizer) addByte()           { *s += 1 }
-func (s *sizer) addBytes(v []byte)  { *s += sizer(len(v)) }
-func (s *sizer) addString(v string) { *s += sizer(len(v) + 1) }
+func (s *sizer) addInt32()               { *s += 4 }
+func (s *sizer) addInt16()               { *s += 2 }
+func (s *sizer) addByte()                { *s += 1 }
+func (s *sizer) addBytesString(v string) { *s += 4 + sizer(len(v)) }
 func (s *sizer) addStrings(vv ...string) {
 	for _, v := range vv {
-		s.addString(v)
+		*s += sizer(len(v) + 1)
 	}
 }
 func (s *sizer) size() int32 { return int32(*s) }
@@ -295,14 +293,13 @@ func (c *Conn) WriteDataRow(ctx context.Context, vals ...string) error {
 	s.addInt32() // length
 	s.addInt16() // number of columns
 	for _, v := range vals {
-		s.addInt32() // length
-		s.addN(len(v))
+		s.addBytesString(v)
 	}
 	c.c.WriteByte('D')
 	c.c.WriteInt32(s.size())
 	c.c.WriteInt16(int16(len(vals)))
 	for _, v := range vals {
-		c.c.WriteByteN(v)
+		c.c.WriteBytesString(v)
 	}
 	return c.Err()
 }
@@ -322,16 +319,15 @@ func (c *Conn) ReadDataRow(ctx context.Context, h MessageHeader) (DataRowRespons
 	}
 	vals := make([][]byte, n)
 	for i := 0; i < int(n); i++ {
-		l, err := c.c.ReadInt32()
+		r, err := c.c.ReadBytes()
 		if err != nil {
 			return DataRowResponse{}, err
 		}
-		b := make([]byte, l)
-		_, err = c.c.ReadFull(b)
+		data, err := io.ReadAll(r)
 		if err != nil {
 			return DataRowResponse{}, err
 		}
-		vals[i] = b
+		vals[i] = data
 	}
 	return DataRowResponse{
 		MessageHeader: h,

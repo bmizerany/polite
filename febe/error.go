@@ -144,7 +144,7 @@ func (c *Conn) WriteErrorResponse(ctx context.Context, t ErrorType, e ErrorField
 	s.addInt32()
 	e.forEachField(func(t byte, v string) {
 		s.addByte()
-		s.addString(v)
+		s.addStrings(v)
 	})
 
 	c.c.WriteByte(byte(t))
@@ -154,6 +154,5 @@ func (c *Conn) WriteErrorResponse(ctx context.Context, t ErrorType, e ErrorField
 		c.c.WriteString(v)
 	})
 	c.c.WriteByte(0)
-
-	return c.Err()
+	return nil
 }

@@ -94,10 +94,6 @@ func connReadString(c *Conn) (string, error) {
 	return string(m), err
 }
 
-func connWriteString(c *Conn, s string) error {
-	return c.WriteString(s)
-}
-
 type knownTypes interface {
 	int16 | int32 | byte | string
 }
@@ -158,7 +154,7 @@ func TestRoundTripInt(t *testing.T) {
 		-10,
 		-21037378,
 	})
-	testRoundTrip(t, "string", connWriteString, connReadString, []string{
+	testRoundTrip(t, "string", (*Conn).WriteString, connReadString, []string{
 		"",
 		"\x01",
 		"FEBE",
@@ -265,6 +261,26 @@ func TestReadAllocs(t *testing.T) {
 	// allocs seperatly.
 }
 
+func TestWriteBytes(t *testing.T) {
+	var buf bytes.Buffer
+	c := NewConn(&buf, &buf)
+	c.WriteBytesString("FEBE")
+	if err := c.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	r, err := c.ReadBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "FEBE" {
+		t.Errorf("got = %q, want %q", got, "FEBE")
+	}
+}
+
 func TestReadByteN(t *testing.T) {
 	cases := []struct {
 		in  string
@@ -291,35 +307,6 @@ func TestReadByteN(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestWriteByteN(t *testing.T) {
-	var b bytes.Buffer
-	c := NewConn(&b, &b)
-	if err := c.WriteInt16(1); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := c.Flush(); err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := io.ReadAll(c.ReadByteN(2))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	got := string(data)
-	want := "\x00\x01"
-	if got != want {
-		t.Errorf("got = %q, want %q", got, want)
-	}
-}
-
-type errWriter struct{}
-
-func (errWriter) Write([]byte) (int, error) {
-	return 0, errors.New("error")
 }
 
 func TestReadByteNDiscardOnClose(t *testing.T) {

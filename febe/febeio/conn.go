@@ -34,6 +34,11 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 	return c
 }
 
+func (c *Conn) Err() error {
+	_, err := c.w.Write(nil)
+	return err
+}
+
 // ReadByte reads a single byte from the stream.
 func (c *Conn) ReadByte() (byte, error) {
 	b, err := c.r.ReadByte()
@@ -101,6 +106,35 @@ func (c *Conn) ReadByteN(n int) io.ReadCloser {
 	return connReadCloser{c}
 }
 
+func (c *Conn) WriteBytesString(s string) error {
+	if err := c.WriteInt32(int32(len(s))); err != nil {
+		return err
+	}
+	io.WriteString(c.w, s)
+	return c.Err()
+}
+
+func (c *Conn) WriteString(s string) error {
+	io.WriteString(c.w, s)
+	return c.w.WriteByte(0)
+}
+
+func (c *Conn) WriteStringBytes(b []byte) error {
+	c.w.Write(b)
+	return c.w.WriteByte(0)
+}
+
+func (c *Conn) ReadBytes() (io.ReadCloser, error) {
+	n, err := c.ReadInt32()
+	if err != nil {
+		return nil, err
+	}
+	if n < 0 {
+		return nil, errors.New("invalid message length")
+	}
+	return c.ReadByteN(int(n)), nil
+}
+
 func (c *Conn) discardRemainder() error {
 	// TODO(bmizerany): use ctx to SetDeadline
 	_, err := c.r.Discard(c.fr.N)
@@ -126,11 +160,6 @@ func (c *Conn) ReadString() ([]byte, error) {
 		return b, eofAsUnexpectedEOF(err)
 	}
 	return b[:len(b)-1], nil
-}
-
-func (c *Conn) WriteString(s string) error {
-	io.WriteString(c.w, s)
-	return c.w.WriteByte(0)
 }
 
 // Flush calls the underlying bufio.Writer's Flush method.
