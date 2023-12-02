@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"errors"
 	"io"
-
-	"go4.org/mem"
 )
 
 // Conn reads and writes postgres wire protocol message types to and from it's
@@ -20,7 +18,6 @@ type Conn struct {
 	w *bufio.Writer
 
 	fr fullReader
-	rr io.Reader
 }
 
 // NewConn returns a Conn ready for use.
@@ -34,7 +31,6 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 		r: bufio.NewReader(r),
 		w: bufio.NewWriter(w),
 	}
-	c.rr = &c.fr
 	return c
 }
 
@@ -42,10 +38,7 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 func (c *Conn) ReadByte() (byte, error) {
 	b, err := c.r.ReadByte()
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			err = io.ErrUnexpectedEOF
-		}
-		return 0, err
+		return 0, eofAsUnexpectedEOF(err)
 	}
 	return b, nil
 }
@@ -55,15 +48,12 @@ func (c *Conn) WriteByte(b byte) error {
 }
 
 func (c *Conn) ReadInt16() (int16, error) {
-	buf, err := c.r.Peek(2)
+	b, err := c.r.Peek(2)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			err = io.ErrUnexpectedEOF
-		}
-		return 0, err
+		return 0, eofAsUnexpectedEOF(err)
 	}
-	c.r.Discard(len(buf))
-	n := int16(buf[0])<<8 | int16(buf[1])
+	n := int16(b[0])<<8 | int16(b[1])
+	c.r.Discard(len(b))
 	return n, nil
 }
 
@@ -73,15 +63,12 @@ func (c *Conn) WriteInt16(n int16) error {
 }
 
 func (c *Conn) ReadInt32() (int32, error) {
-	buf, err := c.r.Peek(4)
+	b, err := c.r.Peek(4)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			err = io.ErrUnexpectedEOF
-		}
-		return 0, err
+		return 0, eofAsUnexpectedEOF(err)
 	}
-	c.r.Discard(len(buf))
-	n := int32(buf[0])<<24 | int32(buf[1])<<16 | int32(buf[2])<<8 | int32(buf[3])
+	n := int32(b[0])<<24 | int32(b[1])<<16 | int32(b[2])<<8 | int32(b[3])
+	c.r.Discard(len(b))
 	return n, nil
 }
 
@@ -92,12 +79,18 @@ func (c *Conn) WriteInt32(n int32) error {
 	return c.w.WriteByte(byte(n))
 }
 
+func (c *Conn) Err() error {
+	_, err := c.w.Write(nil)
+	return err
+}
+
 type connReadCloser struct {
 	*Conn
 }
 
 func (c connReadCloser) Read(p []byte) (int, error) {
-	return c.rr.Read(p)
+	r := &c.fr
+	return r.Read(p)
 }
 
 func (c connReadCloser) Close() error {
@@ -113,7 +106,12 @@ func (c *Conn) ReadByteN(n int) io.ReadCloser {
 	return connReadCloser{c}
 }
 
+func (c *Conn) ReadFull(p []byte) (int, error) {
+	return io.ReadFull(c.r, p)
+}
+
 func (c *Conn) discardRemainder() error {
+	// TODO(bmizerany): use ctx to SetDeadline
 	_, err := c.r.Discard(c.fr.N)
 
 	// make calling this method again a nop if called before another call
@@ -122,7 +120,7 @@ func (c *Conn) discardRemainder() error {
 	return err
 }
 
-// ReadString reads a null terminated string from the stream. The mem.RO is
+// ReadString reads a null terminated string from the stream. The byte slice is
 // valid until the next call to any read method on the Conn.
 //
 // Errors received from the underlying reader are returned as is. As an
@@ -131,20 +129,22 @@ func (c *Conn) discardRemainder() error {
 //
 // ReadString does not continue looking for a null byte after encountering an
 // error.
-func (c *Conn) ReadString() (mem.RO, error) {
+func (c *Conn) ReadString() ([]byte, error) {
 	b, err := c.r.ReadSlice(0)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			err = io.ErrUnexpectedEOF
-		}
-		return mem.B(b), err
+		return b, eofAsUnexpectedEOF(err)
 	}
-	return mem.B(b[:len(b)-1]), nil
+	return b[:len(b)-1], nil
 }
 
-func (c *Conn) WriteString(s mem.RO) error {
-	_, err := io.Copy(c.w, mem.NewReader(s))
-	c.w.WriteByte(0)
+func (c *Conn) WriteString(s string) error {
+	io.WriteString(c.w, s)
+	return c.w.WriteByte(0)
+}
+
+func (c *Conn) WriteByteN(s string) error {
+	c.WriteInt32(int32(len(s)))
+	_, err := c.w.WriteString(s)
 	return err
 }
 
@@ -170,8 +170,12 @@ func (r *fullReader) Read(p []byte) (int, error) {
 	}
 	n, err := r.R.Read(p)
 	r.N -= n
-	if errors.Is(err, io.EOF) && r.N > 0 {
-		err = io.ErrUnexpectedEOF
+	return n, eofAsUnexpectedEOF(err)
+}
+
+func eofAsUnexpectedEOF(err error) error {
+	if errors.Is(err, io.EOF) {
+		return io.ErrUnexpectedEOF
 	}
-	return n, err
+	return err
 }
