@@ -144,14 +144,15 @@ func (c *Conn) simpleQuery(ctx context.Context, sql string) iter_Seq2[Row, error
 	}
 }
 
-type Tag struct {
-	Command      string
-	OID          int
+type Result struct {
 	RowsAffected int
 }
 
-func (c *Conn) Exec(ctx context.Context, sql string) (Tag, error) {
-	var zero Tag
+// Exec executes a query that is not intended to return rows, such as an
+// INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
+// number of rows matched) in a Result or any error encountered.
+func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
+	var zero Result
 	rs, err := c.QueryRows(ctx, sql)
 	if err != nil {
 		return zero, err
@@ -160,9 +161,9 @@ func (c *Conn) Exec(ctx context.Context, sql string) (Tag, error) {
 		_, err := rs.Next()
 		if err != nil {
 			if errors.Is(err, ErrComplete) {
-				return rs.Tag(), nil
+				return rs.Result(), nil
 			}
-			return rs.Tag(), err
+			return rs.Result(), err
 		}
 	}
 }
@@ -190,13 +191,13 @@ type Rows struct {
 	ctx context.Context
 	c   *Conn
 
-	tag febe.Tag
+	rowsAffected int64
 }
 
-// Tag returns the tag of the last command that was executed. It is only
-// valid afer Next return ErrComplete.
-func (rs *Rows) Tag() Tag {
-	return Tag(rs.tag)
+// RowsAffected returns the number of rows affected by the query. It is only
+// valid after Next returns ErrComplete.
+func (rs *Rows) Result() Result {
+	return Result{RowsAffected: int(rs.rowsAffected)}
 }
 
 func (rs *Rows) Next() (Row, error) {
@@ -212,7 +213,7 @@ func (rs *Rows) Next() (Row, error) {
 			if err != nil {
 				return Row{}, err
 			}
-			rs.tag = m.Tag
+			rs.rowsAffected = m.RowsAffected
 		case 'G':
 			panic("TODO: CopyInResponse")
 		case 'H':

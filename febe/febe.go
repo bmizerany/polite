@@ -270,16 +270,9 @@ func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
 	return c.Err()
 }
 
-type Tag struct {
-	Command      string
-	OID          int
-	RowsAffected int
-}
-
 type CommandCompleteResponse struct {
 	MessageHeader
-	Tag
-	RawTag []byte
+	RowsAffected int64
 }
 
 func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (CommandCompleteResponse, error) {
@@ -293,30 +286,23 @@ func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (Comman
 	}
 	return CommandCompleteResponse{
 		MessageHeader: h,
-		RawTag:        t,
-		Tag:           ParseCommandCompleteTag(t),
+		RowsAffected:  ParseCommandCompleteTag(t),
 	}, nil
 }
 
 var space = []byte{' '}
 
-func ParseCommandCompleteTag(tag []byte) Tag {
-	var oid []byte
+func ParseCommandCompleteTag(tag []byte) (rowsAffected int64) {
 	cmd, data, _ := bytes.Cut(tag, space)
 	if bytes.Equal(cmd, []byte("INSERT")) {
-		oid, data, _ = bytes.Cut(data, space)
+		_, data, _ = bytes.Cut(data, space)
 	}
 	// TODO(bmizerany): check for UPDATE/DELETE/ETC and
 	// skip ParseInt if not of type that is returning
 	// rowsAffected. This _could_? return non-zero rows
 	// affected when it shouldn't?
 	rowsInt, _ := mem.ParseInt(mem.B(data), 10, 64)
-	oidInt, _ := mem.ParseInt(mem.B(oid), 10, 64)
-	return Tag{
-		Command:      string(cmd),
-		OID:          int(oidInt),
-		RowsAffected: int(rowsInt),
-	}
+	return rowsInt
 }
 
 func (c *Conn) WriteDataRow(ctx context.Context, vals ...string) error {

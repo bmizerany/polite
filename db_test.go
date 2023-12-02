@@ -58,12 +58,10 @@ func TestQuerySelectTag(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	want := Tag{
-		Command:      "SELECT",
-		OID:          0,
+	want := Result{
 		RowsAffected: 1,
 	}
-	diff.Test(t, t.Errorf, rows.Tag(), want)
+	diff.Test(t, t.Errorf, rows.Result(), want)
 }
 
 func TestQueryEmptyQueryResponse(t *testing.T) {
@@ -87,9 +85,7 @@ func TestExec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Tag{
-		Command:      "INSERT",
-		OID:          0,
+	want := Result{
 		RowsAffected: 1,
 	}
 	diff.Test(t, t.Errorf, got, want)
