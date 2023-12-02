@@ -44,6 +44,29 @@ func TestQuery(t *testing.T) {
 	}
 }
 
+func TestQuerySelectTag(t *testing.T) {
+	c := newConn(t)
+	rows, err := c.QueryRows(context.Background(), "SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		_, err := rows.Next()
+		if err != nil {
+			if errors.Is(err, ErrComplete) {
+				break
+			}
+			t.Fatal(err)
+		}
+	}
+	want := Tag{
+		Command:      mem.S("SELECT"),
+		OID:          0,
+		RowsAffected: 1,
+	}
+	diff.Test(t, t.Errorf, rows.Tag(), want)
+}
+
 func TestQueryEmptyQueryResponse(t *testing.T) {
 	c := newConn(t)
 	var got error
