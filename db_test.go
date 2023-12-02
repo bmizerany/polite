@@ -9,6 +9,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"go4.org/mem"
+	"kr.dev/diff"
 )
 
 func newConn(t *testing.T) *Conn {
@@ -62,10 +65,12 @@ func TestExec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Tag{RowsAffected: 1}
-	if got != want {
-		t.Errorf("got = %v, want %v", got, want)
+	want := Tag{
+		Command:      mem.S("INSERT"),
+		OID:          0,
+		RowsAffected: 1,
 	}
+	diff.Test(t, t.Errorf, got, want)
 }
 
 func checkPing(t *testing.T, c *Conn) {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"go4.org/mem"
 	"kr.dev/diff"
 )
 
@@ -280,9 +281,21 @@ func TestReadCommandComplete(t *testing.T) {
 			msgType: 'C',
 			msgLen:  13,
 		},
-		Tag: []byte("SELECT 1"),
+		RawTag: []byte("SELECT 1"),
+		Tag: Tag{
+			OID:          0,
+			Command:      mem.S("SELECT"),
+			RowsAffected: 1,
+		},
 	}
-	diff.Test(t, t.Errorf, got, want)
+
+	diff.Test(t, t.Errorf, got, want,
+		// With Tag, diff reports "uneven cycle", probably due to
+		// the shared []byte in RawTag and Tag. So we test Tag
+		// separately below.
+		diff.ZeroFields[CommandCompleteResponse]("Tag"))
+
+	diff.Test(t, t.Errorf, got.Tag, want.Tag)
 }
 
 // TODO: CopyInResponse

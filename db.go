@@ -1,7 +1,6 @@
 package pqlite
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -147,6 +146,8 @@ func (c *Conn) simpleQuery(ctx context.Context, sql string) iter_Seq2[Row, error
 }
 
 type Tag struct {
+	Command      mem.RO
+	OID          int
 	RowsAffected int
 }
 
@@ -190,19 +191,13 @@ type Rows struct {
 	ctx context.Context
 	c   *Conn
 
-	rowsAffected int
+	tag febe.Tag
 }
-
-func (rs *Rows) RowsAffected() int {
-	return rs.rowsAffected
-}
-
-var space = []byte(" ")
 
 // Tag returns the tag of the last command that was executed. It is only
 // valid afer Next return ErrComplete.
 func (rs *Rows) Tag() Tag {
-	return Tag{RowsAffected: rs.rowsAffected}
+	return Tag(rs.tag)
 }
 
 func (rs *Rows) Next() (Row, error) {
@@ -218,16 +213,7 @@ func (rs *Rows) Next() (Row, error) {
 			if err != nil {
 				return Row{}, err
 			}
-			op, data, _ := bytes.Cut(m.Tag, space)
-			if bytes.Equal(op, []byte("INSERT")) {
-				_, data, _ = bytes.Cut(data, space)
-			}
-			// TODO(bmizerany): check for UPDATE/DELETE/ETC and
-			// skip ParseInt if not of type that is returning
-			// rowsAffected. This _could_? return non-zero rows
-			// affected when it shouldn't?
-			n, _ := mem.ParseInt(mem.B(data), 10, 64)
-			rs.rowsAffected = int(n)
+			rs.tag = m.Tag
 		case 'G':
 			panic("TODO: CopyInResponse")
 		case 'H':
