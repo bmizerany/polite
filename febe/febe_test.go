@@ -280,7 +280,7 @@ func TestReadCommandComplete(t *testing.T) {
 			msgType: 'C',
 			msgLen:  13,
 		},
-		Tag: "SELECT 1",
+		Tag: []byte("SELECT 1"),
 	}
 	diff.Test(t, t.Errorf, got, want)
 }

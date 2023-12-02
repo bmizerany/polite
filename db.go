@@ -1,12 +1,14 @@
 package pqlite
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net"
 
 	"blake.io/pqlite/febe"
+	"go4.org/mem"
 )
 
 // TODO: https://www.postgresql.org/docs/current/protocol-flow.html
@@ -144,18 +146,25 @@ func (c *Conn) simpleQuery(ctx context.Context, sql string) iter_Seq2[Row, error
 	}
 }
 
-type ExecResult struct {
-	RowsAffected int64
+type Tag struct {
+	RowsAffected int
 }
 
-func (c *Conn) Exec(ctx context.Context, sql string) (ExecResult, error) {
-	for _, err := range c.simpleQuery(ctx, sql) {
-		if err != nil {
-			return ExecResult{}, err
-		}
-		// discard results
+func (c *Conn) Exec(ctx context.Context, sql string) (Tag, error) {
+	var zero Tag
+	rs, err := c.QueryRows(ctx, sql)
+	if err != nil {
+		return zero, err
 	}
-	return ExecResult{}, nil
+	for {
+		_, err := rs.Next()
+		if err != nil {
+			if errors.Is(err, ErrComplete) {
+				return rs.Tag(), nil
+			}
+			return rs.Tag(), err
+		}
+	}
 }
 
 func (c *Conn) QueryRows(ctx context.Context, sql string) (*Rows, error) {
@@ -180,6 +189,20 @@ func (r *Row) Values() [][]byte {
 type Rows struct {
 	ctx context.Context
 	c   *Conn
+
+	rowsAffected int
+}
+
+func (rs *Rows) RowsAffected() int {
+	return rs.rowsAffected
+}
+
+var space = []byte(" ")
+
+// Tag returns the tag of the last command that was executed. It is only
+// valid afer Next return ErrComplete.
+func (rs *Rows) Tag() Tag {
+	return Tag{RowsAffected: rs.rowsAffected}
 }
 
 func (rs *Rows) Next() (Row, error) {
@@ -190,12 +213,25 @@ func (rs *Rows) Next() (Row, error) {
 			return Row{}, err
 		}
 		switch h.Type() {
-		case 'E':
-			er, err := c.ReadError(rs.ctx, h)
+		case 'C':
+			m, err := c.ReadCommandComplete(rs.ctx, h)
 			if err != nil {
 				return Row{}, err
 			}
-			return Row{}, &er.ErrorFields
+			op, data, _ := bytes.Cut(m.Tag, space)
+			if bytes.Equal(op, []byte("INSERT")) {
+				_, data, _ = bytes.Cut(data, space)
+			}
+			// TODO(bmizerany): check for UPDATE/DELETE/ETC and
+			// skip ParseInt if not of type that is returning
+			// rowsAffected. This _could_? return non-zero rows
+			// affected when it shouldn't?
+			n, _ := mem.ParseInt(mem.B(data), 10, 64)
+			rs.rowsAffected = int(n)
+		case 'G':
+			panic("TODO: CopyInResponse")
+		case 'H':
+			panic("TODO: CopyOutResponse")
 		case 'T':
 			// Ignore row descriptions for now; they're pretty
 			// useless if you know the query you're running,
@@ -211,12 +247,14 @@ func (rs *Rows) Next() (Row, error) {
 				return Row{}, err
 			}
 			return Row{d: m}, nil
-		case 'C':
-			_, err := c.ReadCommandComplete(rs.ctx, h)
+		case 'I':
+			return Row{}, ErrEmptyQuery
+		case 'E':
+			er, err := c.ReadError(rs.ctx, h)
 			if err != nil {
 				return Row{}, err
 			}
-			// TODO(bmizerany): save the command tag
+			return Row{}, &er.ErrorFields
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx, h)
 			if err != nil {
@@ -224,8 +262,8 @@ func (rs *Rows) Next() (Row, error) {
 			}
 			// TODO(bmizerany): save the transaction status
 			return Row{}, ErrComplete
-		case 'I':
-			return Row{}, ErrEmptyQuery
+		case 'N':
+			panic("TODO: handle notice")
 		default:
 			return Row{}, fmt.Errorf("%w: unknown message type: %q", ErrProtocol, h.Type())
 		}

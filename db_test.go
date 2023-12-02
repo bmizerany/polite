@@ -55,6 +55,19 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 	checkPing(t, c)
 }
 
+func TestExec(t *testing.T) {
+	cn := newConn(t)
+	checkExec(t, cn, "CREATE TABLE foo (n INT)")
+	got, err := cn.Exec(context.Background(), "INSERT INTO foo VALUES (1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Tag{RowsAffected: 1}
+	if got != want {
+		t.Errorf("got = %v, want %v", got, want)
+	}
+}
+
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
 	for row, err := range c.Query(context.Background(), "SELECT 1") {

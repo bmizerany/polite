@@ -270,7 +270,7 @@ func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
 
 type CommandCompleteResponse struct {
 	MessageHeader
-	Tag string
+	Tag []byte
 }
 
 func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (CommandCompleteResponse, error) {
@@ -284,7 +284,7 @@ func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (Comman
 	}
 	return CommandCompleteResponse{
 		MessageHeader: h,
-		Tag:           string(t),
+		Tag:           t,
 	}, nil
 }
 
