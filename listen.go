@@ -13,27 +13,27 @@ type Notification struct {
 	Payload []byte // notification payload
 }
 
-// NotificationListener listens for notifications sent by the database via
+// Listener listens for notifications sent by the database via
 // NOTIFY commands. It only receives notifications on channels that have
 // been explicitly LISTENed to using the Listen method.
-type NotificationListener struct {
+type Listener struct {
 	c *Conn
 }
 
-func DialListener(ctx context.Context, dsnOrURL string) (*NotificationListener, error) {
+func DialListener(ctx context.Context, dsnOrURL string) (*Listener, error) {
 	c, err := Dial(ctx, dsnOrURL)
 	if err != nil {
 		return nil, err
 	}
-	return &NotificationListener{c: c}, nil
+	return &Listener{c: c}, nil
 }
 
-func (l *NotificationListener) Listen(ctx context.Context, channel string) error {
+func (l *Listener) Listen(ctx context.Context, channel string) error {
 	_, err := l.c.Exec(ctx, "LISTEN "+channel)
 	return err
 }
 
-func (l *NotificationListener) Notifications(ctx context.Context) iter_Seq2[Notification, error] {
+func (l *Listener) Notifications(ctx context.Context) iter_Seq2[Notification, error] {
 	return func(yield func(Notification, error) bool) {
 		var zero Notification
 		c := l.c.c
@@ -73,6 +73,6 @@ func (l *NotificationListener) Notifications(ctx context.Context) iter_Seq2[Noti
 	}
 }
 
-func (l *NotificationListener) Close() error {
+func (l *Listener) Close() error {
 	return l.c.Close()
 }
