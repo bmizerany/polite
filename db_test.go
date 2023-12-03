@@ -44,6 +44,25 @@ func TestQuery(t *testing.T) {
 	}
 }
 
+func TestQueryAll(t *testing.T) {
+	c := newConn(t)
+	var got [][][]byte
+	for row, err := range c.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, row.Values())
+	}
+	want := [][][]byte{
+		{{'1'}},
+		{{'2'}},
+		{{'3'}},
+		{{'4'}},
+		{{'5'}},
+	}
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func TestQuerySelectTag(t *testing.T) {
 	c := newConn(t)
 	got, err := c.Exec(context.Background(), "SELECT 1")

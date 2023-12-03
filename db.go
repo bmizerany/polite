@@ -188,23 +188,13 @@ func (rs *Rows) All(yield func(Row, error) bool) {
 		return
 	}
 
-	yield0 := yield
-	yield = func(row Row, err error) bool {
+	for {
+		row, err := rs.next()
 		if err != nil {
 			rs.err = err
-			yield0(Row{}, err)
-			return false
-		}
-		return yield0(row, nil)
-	}
-
-	for {
-		row, err := rs.Next()
-		if err != nil {
-			if errors.Is(err, ErrReadyForQuery) {
-				return
+			if !errors.Is(err, ErrReadyForQuery) {
+				yield(Row{}, err)
 			}
-			yield(Row{}, err)
 			return
 		}
 		if !yield(row, nil) {
@@ -213,7 +203,7 @@ func (rs *Rows) All(yield func(Row, error) bool) {
 	}
 }
 
-func (rs *Rows) Next() (Row, error) {
+func (rs *Rows) next() (Row, error) {
 	c := rs.c.c
 	for {
 		h, err := c.ReadHeader(rs.ctx)
