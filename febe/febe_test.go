@@ -326,12 +326,23 @@ func TestReadDataRow(t *testing.T) {
 			msgType: 'D',
 			msgLen:  24,
 		},
-		Values: [][]byte{
-			[]byte("hello"),
-			[]byte("world"),
-		},
+		N: 2,
 	}
 	diff.Test(t, t.Errorf, got, want)
+
+	gotValues := make([][]byte, got.N)
+	for i := range got.N {
+		v, err := c.ReadDataRowValue(ctx, h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotValues[i] = v.Data
+	}
+	wantValues := [][]byte{
+		[]byte("hello"),
+		[]byte("world"),
+	}
+	diff.Test(t, t.Errorf, gotValues, wantValues)
 }
 
 func TestReadEmptyQueryResponse(t *testing.T) {
@@ -522,6 +533,7 @@ func isReadMethod(t *testing.T, m reflect.Method) bool {
 }
 
 func (c *Conn) checkDone(t *testing.T) {
+	t.Helper()
 	_, err := c.c.ReadByte()
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Errorf("expected io.UnexpectedEOF, got %v", err)

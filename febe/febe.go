@@ -323,7 +323,12 @@ func (c *Conn) WriteDataRow(ctx context.Context, vals ...string) error {
 
 type DataRowResponse struct {
 	MessageHeader
-	Values [][]byte
+	N int16
+}
+
+type DataRowValueResponse struct {
+	MessageHeader
+	Data []byte
 }
 
 func (c *Conn) ReadDataRow(ctx context.Context, h MessageHeader) (DataRowResponse, error) {
@@ -334,20 +339,23 @@ func (c *Conn) ReadDataRow(ctx context.Context, h MessageHeader) (DataRowRespons
 	if err != nil {
 		return DataRowResponse{}, err
 	}
-	vals := make([][]byte, n)
-	for i := 0; i < int(n); i++ {
-		r, err := c.c.ReadBytes()
-		if err != nil {
-			return DataRowResponse{}, err
-		}
-		data, err := io.ReadAll(r)
-		if err != nil {
-			return DataRowResponse{}, err
-		}
-		vals[i] = data
-	}
 	return DataRowResponse{
 		MessageHeader: h,
-		Values:        vals,
+		N:             n,
 	}, nil
+}
+
+func (c *Conn) ReadDataRowValue(ctx context.Context, h MessageHeader) (DataRowValueResponse, error) {
+	if err := checkMessageHeader(h, 'D'); err != nil {
+		return DataRowValueResponse{}, err
+	}
+	r, err := c.c.ReadBytes()
+	if err != nil {
+		return DataRowValueResponse{}, err
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return DataRowValueResponse{}, err
+	}
+	return DataRowValueResponse{Data: data}, nil
 }
