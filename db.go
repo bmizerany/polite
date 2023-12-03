@@ -138,10 +138,32 @@ func (c *Conn) Query(ctx context.Context, sql string) *Rows {
 	return &Rows{ctx: ctx, c: c}
 }
 
+// QueryAll is short for:
+//
+//	rs := c.Query(ctx, sql)
+//	defer rs.Close()
+//	for row, err := range rs.All {
+//	  ...
+//	}
+//
+// Example:
+//
+//	for row, err := range c.QueryAll(ctx, "SELECT * FROM users") {
+//	  ...
+//	}
+func (c *Conn) QueryAll(ctx context.Context, sql string) iter_Seq2[Row, error] {
+	rs := c.Query(ctx, sql)
+	return func(yield func(Row, error) bool) {
+		defer rs.Close()
+		rs.All(yield)
+	}
+}
+
 type Row struct {
 	d febe.DataRowResponse
 }
 
+// TODO(bmizerany): replace with ReadInt, Bytes, etc
 func (r *Row) Values() [][]byte {
 	return r.d.Values
 }
@@ -247,9 +269,9 @@ func (rs *Rows) Next() (Row, error) {
 	}
 }
 
-func (r *Rows) Close() error {
+func (rs *Rows) Close() error {
 	var cerr error
-	for _, err := range r.All {
+	for _, err := range rs.All {
 		if cerr == nil {
 			cerr = err
 		}
