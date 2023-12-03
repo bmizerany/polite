@@ -26,9 +26,9 @@ import (
 
 // Errors
 var (
-	ErrProtocol   = errors.New("pqlite: protocol error")
-	ErrComplete   = errors.New("pqlite: complete")
-	ErrEmptyQuery = errors.New("pqlite: empty query")
+	ErrProtocol      = errors.New("pqlite: protocol error")
+	ErrReadyForQuery = errors.New("pqlite: complete")
+	ErrEmptyQuery    = errors.New("pqlite: empty query")
 )
 
 type Conn struct {
@@ -129,7 +129,13 @@ func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
 }
 
 func (c *Conn) Query(ctx context.Context, sql string) *Rows {
-	return &Rows{ctx: ctx, c: c, sql: sql}
+	if err := c.c.WriteQuery(ctx, sql); err != nil {
+		return &Rows{err: err}
+	}
+	if err := c.c.Flush(); err != nil {
+		return &Rows{err: err}
+	}
+	return &Rows{ctx: ctx, c: c}
 }
 
 type Row struct {
@@ -143,7 +149,7 @@ func (r *Row) Values() [][]byte {
 type Rows struct {
 	ctx context.Context
 	c   *Conn
-	sql string
+	err error
 
 	rowsAffected int64
 }
@@ -155,19 +161,25 @@ func (rs *Rows) Result() Result {
 }
 
 func (rs *Rows) All(yield func(Row, error) bool) {
-	c := rs.c.c
-	if err := c.WriteQuery(rs.ctx, rs.sql); err != nil {
-		yield(Row{}, err)
+	if rs.err != nil {
+		yield(Row{}, rs.err)
 		return
 	}
-	if err := c.Flush(); err != nil {
-		yield(Row{}, err)
-		return
+
+	yield0 := yield
+	yield = func(row Row, err error) bool {
+		if err != nil {
+			rs.err = err
+			yield0(Row{}, err)
+			return false
+		}
+		return yield0(row, nil)
 	}
+
 	for {
 		row, err := rs.Next()
 		if err != nil {
-			if errors.Is(err, ErrComplete) {
+			if errors.Is(err, ErrReadyForQuery) {
 				return
 			}
 			yield(Row{}, err)
@@ -226,7 +238,7 @@ func (rs *Rows) Next() (Row, error) {
 				return Row{}, err
 			}
 			// TODO(bmizerany): save the transaction status
-			return Row{}, ErrComplete
+			return Row{}, ErrReadyForQuery
 		case 'N':
 			panic("TODO: handle notice")
 		default:
