@@ -124,10 +124,7 @@ type Result struct {
 // number of rows matched) in a Result or any error encountered.
 func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
 	var zero Result
-	rs, err := c.Query(ctx, sql)
-	if err != nil {
-		return zero, err
-	}
+	rs := c.Query(ctx, sql)
 	for _, err := range rs.All {
 		if err != nil {
 			return zero, err
@@ -136,15 +133,8 @@ func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
 	return rs.Result(), nil
 }
 
-func (c *Conn) Query(ctx context.Context, sql string) (*Rows, error) {
-	if err := c.c.WriteQuery(ctx, sql); err != nil {
-		return nil, err
-	}
-	if err := c.c.Flush(); err != nil {
-		return nil, err
-	}
-	rows := &Rows{ctx: ctx, c: c}
-	return rows, nil
+func (c *Conn) Query(ctx context.Context, sql string) *Rows {
+	return &Rows{ctx: ctx, c: c, sql: sql}
 }
 
 type Row struct {
@@ -158,17 +148,27 @@ func (r *Row) Values() [][]byte {
 type Rows struct {
 	ctx context.Context
 	c   *Conn
+	sql string
 
 	rowsAffected int64
 }
 
 // RowsAffected returns the number of rows affected by the query. It is only
-// valid after Next returns ErrComplete.
+// valid after all rows have been read.
 func (rs *Rows) Result() Result {
 	return Result{RowsAffected: int(rs.rowsAffected)}
 }
 
 func (rs *Rows) All(yield func(Row, error) bool) {
+	c := rs.c.c
+	if err := c.WriteQuery(rs.ctx, rs.sql); err != nil {
+		yield(Row{}, err)
+		return
+	}
+	if err := c.Flush(); err != nil {
+		yield(Row{}, err)
+		return
+	}
 	for {
 		row, err := rs.Next()
 		if err != nil {

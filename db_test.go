@@ -31,10 +31,7 @@ func newConn(t *testing.T) *Conn {
 
 func TestQuery(t *testing.T) {
 	c := newConn(t)
-	rs, err := c.Query(context.Background(), "SELECT 1, 2, 'three'")
-	if err != nil {
-		t.Fatal(err)
-	}
+	rs := c.Query(context.Background(), "SELECT 1, 2, 'three'")
 	for row, err := range rs.All {
 		if err != nil {
 			t.Fatal(err)
@@ -62,10 +59,7 @@ func TestQuerySelectTag(t *testing.T) {
 func TestQueryEmptyQueryResponse(t *testing.T) {
 	c := newConn(t)
 	var got error
-	rs, err := c.Query(context.Background(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	rs := c.Query(context.Background(), "")
 	for _, got = range rs.All {
 		break
 	}
@@ -92,10 +86,7 @@ func TestExec(t *testing.T) {
 
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
-	rs, err := c.Query(context.Background(), "SELECT 1")
-	if err != nil {
-		t.Fatal(err)
-	}
+	rs := c.Query(context.Background(), "SELECT 1")
 	for row, err := range rs.All {
 		if err != nil {
 			t.Fatal(err)
