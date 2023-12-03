@@ -115,35 +115,6 @@ func (c *Conn) Close() error {
 // TODO(bmizerany): replace with iter.Seq2 in go1.22
 type iter_Seq2[T, U any] func(yield func(T, U) bool)
 
-func (c *Conn) Query(ctx context.Context, sql string) iter_Seq2[Row, error] {
-	// TODO(bmizerany): extended query
-	return c.simpleQuery(ctx, sql)
-}
-
-func (c *Conn) simpleQuery(ctx context.Context, sql string) iter_Seq2[Row, error] {
-	return func(yield func(Row, error) bool) {
-		rows, err := c.QueryRows(ctx, sql)
-		if err != nil {
-			yield(Row{}, err)
-			return
-		}
-		defer rows.Close()
-		for {
-			row, err := rows.Next()
-			if err != nil {
-				if errors.Is(err, ErrComplete) {
-					return
-				}
-				yield(Row{}, err)
-				return
-			}
-			if !yield(row, nil) {
-				return
-			}
-		}
-	}
-}
-
 type Result struct {
 	RowsAffected int
 }
@@ -153,22 +124,19 @@ type Result struct {
 // number of rows matched) in a Result or any error encountered.
 func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
 	var zero Result
-	rs, err := c.QueryRows(ctx, sql)
+	rs, err := c.Query(ctx, sql)
 	if err != nil {
 		return zero, err
 	}
-	for {
-		_, err := rs.Next()
+	for _, err := range rs.All {
 		if err != nil {
-			if errors.Is(err, ErrComplete) {
-				return rs.Result(), nil
-			}
-			return rs.Result(), err
+			return zero, err
 		}
 	}
+	return rs.Result(), nil
 }
 
-func (c *Conn) QueryRows(ctx context.Context, sql string) (*Rows, error) {
+func (c *Conn) Query(ctx context.Context, sql string) (*Rows, error) {
 	if err := c.c.WriteQuery(ctx, sql); err != nil {
 		return nil, err
 	}
@@ -198,6 +166,22 @@ type Rows struct {
 // valid after Next returns ErrComplete.
 func (rs *Rows) Result() Result {
 	return Result{RowsAffected: int(rs.rowsAffected)}
+}
+
+func (rs *Rows) All(yield func(Row, error) bool) {
+	for {
+		row, err := rs.Next()
+		if err != nil {
+			if errors.Is(err, ErrComplete) {
+				return
+			}
+			yield(Row{}, err)
+			return
+		}
+		if !yield(row, nil) {
+			return
+		}
+	}
 }
 
 func (rs *Rows) Next() (Row, error) {

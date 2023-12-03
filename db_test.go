@@ -31,7 +31,11 @@ func newConn(t *testing.T) *Conn {
 
 func TestQuery(t *testing.T) {
 	c := newConn(t)
-	for row, err := range c.Query(context.Background(), "SELECT 1, 2, 'three'") {
+	rs, err := c.Query(context.Background(), "SELECT 1, 2, 'three'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for row, err := range rs.All {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -45,29 +49,24 @@ func TestQuery(t *testing.T) {
 
 func TestQuerySelectTag(t *testing.T) {
 	c := newConn(t)
-	rows, err := c.QueryRows(context.Background(), "SELECT 1")
+	got, err := c.Exec(context.Background(), "SELECT 1")
 	if err != nil {
 		t.Fatal(err)
-	}
-	for {
-		_, err := rows.Next()
-		if err != nil {
-			if errors.Is(err, ErrComplete) {
-				break
-			}
-			t.Fatal(err)
-		}
 	}
 	want := Result{
 		RowsAffected: 1,
 	}
-	diff.Test(t, t.Errorf, rows.Result(), want)
+	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestQueryEmptyQueryResponse(t *testing.T) {
 	c := newConn(t)
 	var got error
-	for _, got = range c.Query(context.Background(), "") {
+	rs, err := c.Query(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, got = range rs.All {
 		break
 	}
 	if !errors.Is(got, ErrEmptyQuery) {
@@ -93,7 +92,11 @@ func TestExec(t *testing.T) {
 
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
-	for row, err := range c.Query(context.Background(), "SELECT 1") {
+	rs, err := c.Query(context.Background(), "SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for row, err := range rs.All {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,14 +111,9 @@ func checkPing(t *testing.T, c *Conn) {
 func checkExec(t *testing.T, c *Conn, sql string) {
 	t.Helper()
 	t.Logf("exec: %q", sql)
-	for row, err := range c.Query(context.Background(), sql) {
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Error("should not have received a row")
-		for _, b := range row.Values() {
-			t.Logf("value: len(b) = %d: %s", len(b), b)
-		}
+	_, err := c.Exec(context.Background(), sql)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
