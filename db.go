@@ -123,14 +123,9 @@ type Result struct {
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
 // number of rows matched) in a Result or any error encountered.
 func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
-	var zero Result
 	rs := c.Query(ctx, sql)
-	for _, err := range rs.All {
-		if err != nil {
-			return zero, err
-		}
-	}
-	return rs.Result(), nil
+	err := rs.Close()
+	return rs.Result(), err
 }
 
 func (c *Conn) Query(ctx context.Context, sql string) *Rows {
@@ -241,5 +236,11 @@ func (rs *Rows) Next() (Row, error) {
 }
 
 func (r *Rows) Close() error {
-	return nil
+	var cerr error
+	for _, err := range r.All {
+		if cerr == nil {
+			cerr = err
+		}
+	}
+	return cerr
 }
