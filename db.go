@@ -152,8 +152,8 @@ func (c *Conn) Query(ctx context.Context, sql string) *Rows {
 //	  ...
 //	}
 func (c *Conn) QueryAll(ctx context.Context, sql string) iter_Seq2[Row, error] {
-	rs := c.Query(ctx, sql)
 	return func(yield func(Row, error) bool) {
+		rs := c.Query(ctx, sql)
 		defer rs.Close()
 		rs.All(yield)
 	}
