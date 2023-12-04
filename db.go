@@ -75,12 +75,6 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 		}
 
 		switch h.Type() {
-		case 'E':
-			cr, err := c.c.ReadError(ctx, h)
-			if err != nil {
-				return nil, err
-			}
-			return nil, &cr
 		case 'R':
 			cr, err := c.c.ReadAuthentication(ctx, h)
 			if err != nil {
@@ -294,12 +288,6 @@ func (rs *Rows) next() (Row, error) {
 			return r, nil
 		case 'I':
 			return Row{}, ErrEmptyQuery
-		case 'E':
-			er, err := c.ReadError(rs.ctx, h)
-			if err != nil {
-				return Row{}, err
-			}
-			return Row{}, &er.ErrorFields
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx, h)
 			if err != nil {

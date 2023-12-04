@@ -67,16 +67,29 @@ func (h MessageHeader) String() string {
 	return fmt.Sprintf("<MessageHeader Type:%q Len:%d>", h.msgType, h.msgLen)
 }
 
+// ReadHeader reads the next febe message header on the Conn. It returns a
+// network or deserialization error if any.
+//
+// As a special case, if the message type is 'E', it will read the error
+// response and return an *ErrorFields as the error.
 func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
+	var zero MessageHeader
 	b, err := c.c.ReadByte()
 	if err != nil {
-		return MessageHeader{}, err
+		return zero, err
 	}
 	l, err := c.c.ReadInt32()
 	if err != nil {
-		return MessageHeader{}, err
+		return zero, err
 	}
 	h := MessageHeader{msgType: b, msgLen: int(l)}
+	if h.Type() == 'E' {
+		er, err := c.ReadError(ctx, h)
+		if err != nil {
+			return zero, err
+		}
+		return zero, er.ErrorFields
+	}
 	return h, nil
 }
 

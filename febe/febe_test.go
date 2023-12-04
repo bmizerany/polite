@@ -35,7 +35,7 @@ func TestErrorResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
 
-	fields := ErrorFields{
+	want := &ErrorFields{
 		Severity:   "ERROR",
 		Message:    "MESSAGE",
 		Code:       "CODE",
@@ -55,37 +55,20 @@ func TestErrorResponse(t *testing.T) {
 		Verbosity:  "VERBOSITY",
 	}
 
-	want := ErrorResponse{
-		ErrorFields: fields,
-	}
-
-	c.WriteErrorResponse(context.Background(), Error, fields)
+	c.WriteErrorResponse(context.Background(), Error, want)
 	c.Flush()
 
-	want.MessageHeader = MessageHeader{
-		msgType: 'E',
-		msgLen:  b.Len() - 1,
-	}
-
 	ctx := context.Background()
-	h, err := c.ReadHeader(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := c.ReadError(context.Background(), h)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	diff.Test(t, t.Errorf, got, want)
+	gotH, gotErr := c.ReadHeader(ctx)
+	diff.Test(t, t.Errorf, gotH, MessageHeader{})
+	diff.Test(t, t.Errorf, gotErr, want)
 }
 
 func BenchmarkWriteErrorResponse(b *testing.B) {
 	c := New(nil, io.Discard)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		err := c.WriteErrorResponse(context.Background(), Error, ErrorFields{
+		err := c.WriteErrorResponse(context.Background(), Error, &ErrorFields{
 			Severity: "ERROR",
 			Message:  "MESSAGE",
 			Code:     "CODE",
@@ -377,7 +360,7 @@ func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
 
-	fields := ErrorFields{
+	fields := &ErrorFields{
 		Severity:   "NOTICE",
 		Message:    "MESSAGE",
 		Code:       "CODE",
@@ -396,16 +379,15 @@ func TestNoticeResponse(t *testing.T) {
 		Routine:    "ROUTINE",
 	}
 
-	want := ErrorResponse{
-		ErrorFields: fields,
-	}
-
 	c.WriteErrorResponse(context.Background(), Notice, fields)
 	c.Flush()
 
-	want.MessageHeader = MessageHeader{
-		msgType: 'N',
-		msgLen:  b.Len() - 1,
+	want := &ErrorResponse{
+		MessageHeader: MessageHeader{
+			msgType: 'N',
+			msgLen:  b.Len() - 1,
+		},
+		ErrorFields: fields,
 	}
 
 	h, err := c.ReadHeader(context.Background())

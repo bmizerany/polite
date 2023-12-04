@@ -62,7 +62,7 @@ func (e *ErrorFields) forEachField(f func(t byte, s string)) {
 
 type ErrorResponse struct {
 	MessageHeader
-	ErrorFields
+	*ErrorFields
 }
 
 func (c *Conn) ReadNotice(ctx context.Context, h MessageHeader) (ErrorResponse, error) {
@@ -83,7 +83,10 @@ func (c *Conn) ReadError(ctx context.Context, h MessageHeader) (ErrorResponse, e
 
 func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (ErrorResponse, error) {
 	var zero ErrorResponse
-	e := ErrorResponse{MessageHeader: h}
+	e := ErrorResponse{
+		MessageHeader: h,
+		ErrorFields:   &ErrorFields{},
+	}
 	for {
 		k, err := c.c.ReadByte()
 		if err != nil {
@@ -138,7 +141,7 @@ func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (ErrorRes
 	return e, nil
 }
 
-func (c *Conn) WriteErrorResponse(ctx context.Context, t ErrorType, e ErrorFields) error {
+func (c *Conn) WriteErrorResponse(ctx context.Context, t ErrorType, e *ErrorFields) error {
 	var s sizer
 	s.addByte()
 	s.addInt32()

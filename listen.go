@@ -58,13 +58,6 @@ func (l *Listener) Notifications(ctx context.Context) iter_Seq2[Notification, er
 				if !yield(n, nil) {
 					return
 				}
-			case 'E':
-				m, err := c.ReadError(ctx, h)
-				if err != nil {
-					yield(zero, err)
-					return
-				}
-				yield(zero, &m.ErrorFields)
 			default:
 				yield(zero, fmt.Errorf("unexpected message type %q", h.Type()))
 				return
