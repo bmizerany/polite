@@ -27,11 +27,10 @@ import (
 
 // Errors
 var (
-	ErrProtocol           = errors.New("pqlite: protocol error")
-	ErrReadyForQuery      = errors.New("pqlite: complete")
-	ErrEmptyQuery         = errors.New("pqlite: empty query")
-	ErrUnprocessedColumns = errors.New("unprocessed columns")
-	ErrNoMoreColumns      = errors.New("pqlite: no more columns")
+	ErrProtocol      = errors.New("pqlite: protocol error")
+	ErrReadyForQuery = errors.New("pqlite: complete")
+	ErrEmptyQuery    = errors.New("pqlite: empty query")
+	ErrNoMoreColumns = errors.New("pqlite: no more columns")
 )
 
 type Conn struct {
@@ -163,8 +162,15 @@ type Row struct {
 	rem int
 }
 
+// NumCols returns the number of columns in a row.
 func (r *Row) NumCols() int {
 	return int(r.d.NumCols)
+}
+
+// NumUnprocessed returns the number of columns that have not been
+// processed.
+func (r *Row) NumUnprocessed() int {
+	return r.rem
 }
 
 func (r *Row) Reader() (io.ReadCloser, error) {
@@ -243,9 +249,17 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 			}
 			return
 		}
-		if !yieldAndClose(&row, yield) {
-			return
-		}
+
+		func() {
+			defer row.Close()
+			if !yield(&row, nil) {
+				if row.NumUnprocessed() > 0 {
+					err := fmt.Errorf("pqlite: %d columns unprocessed", row.rem)
+					yield(nil, err)
+				}
+				return
+			}
+		}()
 	}
 }
 
@@ -317,9 +331,7 @@ func (rs *Rows) Close() error {
 			return err
 		}
 		if err := row.Close(); err != nil {
-			if !errors.Is(err, ErrUnprocessedColumns) {
-				return err
-			}
+			return err
 		}
 	}
 	return nil
