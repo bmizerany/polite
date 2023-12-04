@@ -263,12 +263,6 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 	}
 }
 
-//go:noinline
-func yieldAndClose(row *Row, yield func(*Row, error) bool) bool {
-	defer row.Close()
-	return yield(row, nil)
-}
-
 func (rs *Rows) next() (Row, error) {
 	c := rs.c.c
 	for {
