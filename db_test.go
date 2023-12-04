@@ -49,7 +49,11 @@ func TestQuery(t *testing.T) {
 			t.Logf("data: %q", string(data))
 			got = append(got, data)
 		}
-		want := [][]byte{{'1'}, {'2'}, {'t', 'h', 'r', 'e', 'e'}}
+		want := [][]byte{
+			{'1'},
+			{'2'},
+			{'t', 'h', 'r', 'e', 'e'},
+		}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got = %v, want %v", got, want)
 		}
