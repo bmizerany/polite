@@ -27,9 +27,10 @@ import (
 
 // Errors
 var (
-	ErrProtocol      = errors.New("pqlite: protocol error")
-	ErrReadyForQuery = errors.New("pqlite: complete")
-	ErrEmptyQuery    = errors.New("pqlite: empty query")
+	ErrProtocol           = errors.New("pqlite: protocol error")
+	ErrReadyForQuery      = errors.New("pqlite: complete")
+	ErrEmptyQuery         = errors.New("pqlite: empty query")
+	ErrUnprocessedColumns = errors.New("unprocessed columns")
 )
 
 type Conn struct {
@@ -195,11 +196,16 @@ func (r *Row) Bytes() ([]byte, error) {
 	return data, nil
 }
 
-func (r *Row) Discard() error {
+// Close discards any remaining columns in the row.
+//
+// Most users will not need to call this method, since Rows.All will call it
+// automatically.
+func (r *Row) Close() error {
 	if r.rem == 0 {
 		// nothing to discard; carry on
 		return nil
 	}
+	rem0 := r.rem
 	for range r.NumCols() {
 		rc, err := r.Reader()
 		if err != nil {
@@ -209,8 +215,7 @@ func (r *Row) Discard() error {
 			return err
 		}
 	}
-	r.rem--
-	return nil
+	return fmt.Errorf("pqlite: %d %w", rem0, ErrUnprocessedColumns)
 }
 
 type Rows struct {
@@ -315,8 +320,10 @@ func (rs *Rows) Close() error {
 		if err != nil {
 			return err
 		}
-		if err := row.Discard(); err != nil {
-			return err
+		if err := row.Close(); err != nil {
+			if !errors.Is(err, ErrUnprocessedColumns) {
+				return err
+			}
 		}
 	}
 	return nil

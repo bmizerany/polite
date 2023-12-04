@@ -54,8 +54,7 @@ func TestQuery(t *testing.T) {
 
 func values(t testing.TB, row Row) [][]byte {
 	var got [][]byte
-	for i := range row.NumCols() {
-		t.Logf("reading column %d", i)
+	for range row.NumCols() {
 		data, err := row.Bytes()
 		if err != nil {
 			t.Fatal(err)
