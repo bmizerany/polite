@@ -45,7 +45,7 @@ func (l *Listener) Notifications(ctx context.Context) iter_Seq2[Notification, er
 			}
 			switch h.Type() {
 			case 'A':
-				m, err := c.ReadNotification(ctx, h)
+				m, err := c.ReadNotification(ctx)
 				if err != nil {
 					yield(zero, err)
 					return

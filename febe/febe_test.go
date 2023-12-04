@@ -89,11 +89,11 @@ func BenchmarkReadErrorResponse(b *testing.B) {
 	c := New(r, nil)
 	for i := 0; i < b.N; i++ {
 		r.Reset(data)
-		h, err := c.ReadHeader(ctx)
+		_, err := c.ReadHeader(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}
-		_, err = c.ReadError(context.Background(), h)
+		_, err = c.ReadError(context.Background())
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -125,7 +125,7 @@ func TestWriteStartupMessage(t *testing.T) {
 	diff.Test(t, t.Errorf, b.Bytes(), want)
 }
 
-func TestReadBackendKeyData(t *testing.T) {
+func TestWriteBackendKeyData(t *testing.T) {
 	var b bytes.Buffer
 	c := New(nil, &b)
 	c.WriteBackendKeyData(context.Background(), 123, 456)
@@ -144,6 +144,31 @@ func TestReadBackendKeyData(t *testing.T) {
 	}
 	diff.Test(t, t.Errorf, b.Bytes(), want)
 }
+
+// func TestReadBackendKeyData(t *testing.T) {
+// 	var b bytes.Buffer
+// 	c := New(&b, &b)
+// 	c.WriteBackendKeyData(context.Background(), 123, 456)
+// 	if err := c.Flush(); err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	h, err := c.ReadHeader(context.Background())
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	got, err := c.ReadBackendKeyData(context.Background(), h)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	want := ReadyForQueryResponse{
+// 		MessageHeader: MessageHeader{
+// 			msgType: 'Z',
+// 			msgLen:  5,
+// 		},
+// 		Status: 'I',
+// 	}
+// 	diff.Test(t, t.Errorf, got, want)
+// }
 
 func TestWriteParameterStatus(t *testing.T) {
 	var b bytes.Buffer
@@ -190,11 +215,11 @@ func TestReadReadyForQuery(t *testing.T) {
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := c.ReadHeader(context.Background())
+	_, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadReadyForQuery(context.Background(), h)
+	got, err := c.ReadReadyForQuery(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,11 +247,11 @@ func TestReadAuthentication(t *testing.T) {
 		if err := c.Flush(); err != nil {
 			t.Fatal(err)
 		}
-		h, err := c.ReadHeader(context.Background())
+		_, err := c.ReadHeader(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := c.ReadAuthentication(context.Background(), h)
+		got, err := c.ReadAuthentication(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -250,11 +275,11 @@ func TestReadCommandComplete(t *testing.T) {
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := c.ReadHeader(context.Background())
+	_, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadCommandComplete(context.Background(), h)
+	got, err := c.ReadCommandComplete(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,11 +321,11 @@ func TestReadDataRow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, err := c.ReadHeader(ctx)
+	_, err := c.ReadHeader(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadDataRow(ctx, h)
+	got, err := c.ReadDataRow(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +340,7 @@ func TestReadDataRow(t *testing.T) {
 
 	gotValues := make([][]byte, got.NumCols)
 	for i := range got.NumCols {
-		r, err := c.ReadDataRowValue(ctx, h)
+		r, err := c.ReadDataRowValue(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -335,15 +360,15 @@ func TestReadDataRow(t *testing.T) {
 func TestReadEmptyQueryResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
-	c.WriteEmptyQueryResponse(context.Background())
+	c.WriteEmptyQuery(context.Background())
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	h, err := c.ReadHeader(context.Background())
+	_, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadEmptyQuery(context.Background(), h)
+	got, err := c.ReadEmptyQuery(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,12 +415,12 @@ func TestNoticeResponse(t *testing.T) {
 		ErrorFields: fields,
 	}
 
-	h, err := c.ReadHeader(context.Background())
+	_, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := c.ReadNotice(context.Background(), h)
+	got, err := c.ReadNotice(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,52 +441,46 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 	var checked int
 
 	to := reflect.TypeOf(&Conn{})
-	vo := reflect.ValueOf(&Conn{})
+	c := &Conn{}
+	vo := reflect.ValueOf(c)
 	for i := 0; i < to.NumMethod(); i++ {
 		m := to.Method(i)
+		if !strings.HasPrefix(m.Name, "Read") {
+			continue
+		}
 		if m.Name == "ReadHeader" {
 			// only exception o our rule that ReadX methods must be like:
 			//   ReadX(context.Context, MessageHeader) (T, error)
 			continue
 		}
-		if len(m.Name) < 4 || m.Name[:4] != "Read" {
-			continue
-		}
 		t.Run(m.Name, func(t *testing.T) {
-			if strings.HasSuffix(m.Name, "Response") {
-				t.Errorf("%s should not end with Response", m.Name)
-			}
-			if !isReadMethod(t, m) {
-				return
+			testReadMethodSignature(t, m)
+
+			vm := vo.Method(i)
+			ctx := context.Background()
+			c.h = MessageHeader{
+				msgType: '!',
+				msgLen:  1,
 			}
 
+			// This is only a superficial check that the method is
+			// implemented with check that the header type is considered
+			// before returning, and returns an error if invalid.
+			//
+			// This check does not ensure the implementation is checking for the
+			// right byte value. This is left up to other tests, mostly
+			// integration, which would fail if a ReadX type field check
+			// would
+			out := vm.Call([]reflect.Value{
+				reflect.ValueOf(ctx),
+			})
+			if err := out[1].Interface().(error); err == nil {
+				t.Errorf("expected error, got nil")
+			}
+			checked++
 		})
 
-		vm := vo.Method(i)
-		ctx := context.Background()
-		h := MessageHeader{
-			msgType: '!',
-			msgLen:  1,
-		}
-
-		// This is only a superficial check that the method is
-		// implemented with check that the header type is considered
-		// before returning, and returns an error if invalid.
-		//
-		// This check does not ensure the implementation is checking for the
-		// right byte value. This is left up to other tests, mostly
-		// integration, which would fail if a ReadX type field check
-		// would
-		out := vm.Call([]reflect.Value{
-			reflect.ValueOf(ctx),
-			reflect.ValueOf(h),
-		})
-		if err := out[1].Interface().(error); err == nil {
-			t.Errorf("expected error, got nil")
-		}
-		checked++
 	}
-
 	if checked == 0 {
 		t.Fatal("expected to find at least one Read method to check")
 	}
@@ -476,46 +495,36 @@ func (errorWriter) Write([]byte) (int, error) {
 	return 0, fmt.Errorf("errorWriter.Write: %w", errTest)
 }
 
-func isReadMethod(t *testing.T, m reflect.Method) bool {
+func testReadMethodSignature(t *testing.T, m reflect.Method) {
 	t.Helper()
-	if m.Type.NumIn() != 3 || m.Type.NumOut() != 2 {
-		t.Errorf("wrong number of in/out params")
-		return false
+	if strings.HasSuffix(m.Name, "Response") {
+		t.Fatalf("%s should not end with Response", m.Name)
+	}
+	if m.Type.NumIn() != 2 || m.Type.NumOut() != 2 {
+		t.Fatalf("wrong number of in/out params: %d/%d", m.Type.NumIn(), m.Type.NumOut())
 	}
 	if m.Type.In(0) != reflect.TypeOf((*Conn)(nil)) {
 		t.Errorf("wrong type for first param")
-		return false
 	}
 	if m.Type.In(1) != reflect.TypeOf((*context.Context)(nil)).Elem() {
 		t.Errorf("wrong type for second param")
-		return false
-	}
-	if m.Type.In(2) != reflect.TypeOf((*MessageHeader)(nil)).Elem() {
-		t.Errorf("wrong type for third param")
-		return false
 	}
 	if m.Type.NumOut() != 2 {
-		t.Errorf("wrong number of out params")
-		return false
+		t.Fatal("wrong number of out params")
 	}
 	m0 := m.Type.Out(0)
 	if m0.Kind() == reflect.Ptr {
 		t.Errorf("first out param should not be a pointer")
-		return false
 	}
 	if !m0.Implements(reflect.TypeOf(new(Message)).Elem()) {
 		t.Errorf("first out param should implement Message")
-		return false
 	}
 	if !strings.HasSuffix(m0.Name(), "Response") {
 		t.Errorf("first out param %q should end with Response", m0.Name())
-		return false
 	}
 	if m.Type.Out(1) != reflect.TypeOf(new(error)).Elem() {
 		t.Errorf("second out param should be an error")
-		return false
 	}
-	return true
 }
 
 func (c *Conn) checkDone(t *testing.T) {

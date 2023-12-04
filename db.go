@@ -76,7 +76,7 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 
 		switch h.Type() {
 		case 'R':
-			cr, err := c.c.ReadAuthentication(ctx, h)
+			cr, err := c.c.ReadAuthentication(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -84,16 +84,16 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 				panic("TODO") // support passwrod
 			}
 		case 'S':
-			if err := c.c.DiscardMessage(ctx, h); err != nil {
+			if err := c.c.DiscardMessage(ctx); err != nil {
 				return nil, err
 			}
 		case 'K':
 			// TODO(bmizerany): save the key for cancellations later
-			if err := c.c.DiscardMessage(ctx, h); err != nil {
+			if err := c.c.DiscardMessage(ctx); err != nil {
 				return nil, err
 			}
 		case 'Z':
-			_, err := c.c.ReadReadyForQuery(ctx, h)
+			_, err := c.c.ReadReadyForQuery(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -178,7 +178,7 @@ func (r *Row) Reader() (io.ReadCloser, error) {
 		return nil, ErrNoMoreColumns
 	}
 	r.rem--
-	rc, err := r.c.c.ReadDataRowValue(r.ctx, r.d.MessageHeader)
+	rc, err := r.c.c.ReadDataRowValue(r.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +272,7 @@ func (rs *Rows) next() (Row, error) {
 		}
 		switch h.Type() {
 		case 'C':
-			m, err := c.ReadCommandComplete(rs.ctx, h)
+			m, err := c.ReadCommandComplete(rs.ctx)
 			if err != nil {
 				return Row{}, err
 			}
@@ -287,11 +287,11 @@ func (rs *Rows) next() (Row, error) {
 			// espcially when code can be generated from the
 			// query, which would already know the types. Save
 			// the energy.
-			if err := c.DiscardMessage(rs.ctx, h); err != nil {
+			if err := c.DiscardMessage(rs.ctx); err != nil {
 				return Row{}, err
 			}
 		case 'D':
-			m, err := c.ReadDataRow(rs.ctx, h)
+			m, err := c.ReadDataRow(rs.ctx)
 			if err != nil {
 				return Row{}, err
 			}
@@ -305,7 +305,7 @@ func (rs *Rows) next() (Row, error) {
 		case 'I':
 			return Row{}, ErrEmptyQuery
 		case 'Z':
-			_, err := c.ReadReadyForQuery(rs.ctx, h)
+			_, err := c.ReadReadyForQuery(rs.ctx)
 			if err != nil {
 				return Row{}, err
 			}

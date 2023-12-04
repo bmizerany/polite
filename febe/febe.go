@@ -35,6 +35,7 @@ func checkMessageHeader(h MessageHeader, want byte) error {
 
 type Conn struct {
 	c *febeio.Conn
+	h MessageHeader // the last header read
 }
 
 func New(r io.Reader, w io.Writer) *Conn {
@@ -82,19 +83,19 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	if err != nil {
 		return zero, err
 	}
-	h := MessageHeader{msgType: b, msgLen: int(l)}
-	if h.Type() == 'E' {
-		er, err := c.ReadError(ctx, h)
+	c.h = MessageHeader{msgType: b, msgLen: int(l)}
+	if c.h.Type() == 'E' {
+		er, err := c.ReadError(ctx)
 		if err != nil {
 			return zero, err
 		}
 		return zero, er.ErrorFields
 	}
-	return h, nil
+	return c.h, nil
 }
 
-func (c *Conn) DiscardMessage(ctx context.Context, h MessageHeader) error {
-	return c.c.ReadByteN(h.BodyLen()).Close()
+func (c *Conn) DiscardMessage(ctx context.Context) error {
+	return c.c.ReadByteN(c.h.BodyLen()).Close()
 }
 
 // TODO(bmizerany): https://www.postgresql.org/docs/current/errcodes-appendix.html
@@ -146,9 +147,9 @@ type AuthenticationResponse struct {
 	Type AuthenticationType
 }
 
-func (c *Conn) ReadAuthentication(ctx context.Context, h MessageHeader) (AuthenticationResponse, error) {
+func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, error) {
 	var zero AuthenticationResponse
-	if err := checkMessageHeader(h, 'R'); err != nil {
+	if err := checkMessageHeader(c.h, 'R'); err != nil {
 		return zero, err
 	}
 	t, err := c.c.ReadInt32()
@@ -156,7 +157,7 @@ func (c *Conn) ReadAuthentication(ctx context.Context, h MessageHeader) (Authent
 		return zero, err
 	}
 	return AuthenticationResponse{
-		MessageHeader: h,
+		MessageHeader: c.h,
 		Type:          AuthenticationType(t),
 	}, nil
 }
@@ -199,8 +200,8 @@ func (c *Conn) WriteReadyForQuery(ctx context.Context, status ReadyStatus) error
 	return c.Err()
 }
 
-func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyForQueryResponse, error) {
-	if err := checkMessageHeader(h, 'Z'); err != nil {
+func (c *Conn) ReadReadyForQuery(ctx context.Context) (ReadyForQueryResponse, error) {
+	if err := checkMessageHeader(c.h, 'Z'); err != nil {
 		return ReadyForQueryResponse{}, err
 	}
 	b, err := c.c.ReadByte()
@@ -208,7 +209,7 @@ func (c *Conn) ReadReadyForQuery(ctx context.Context, h MessageHeader) (ReadyFor
 		return ReadyForQueryResponse{}, err
 	}
 	return ReadyForQueryResponse{
-		MessageHeader: h,
+		MessageHeader: c.h,
 		Status:        ReadyStatus(b),
 	}, nil
 }
@@ -220,8 +221,8 @@ type NotificationResponse struct {
 	Payload []byte
 }
 
-func (c *Conn) ReadNotification(ctx context.Context, h MessageHeader) (NotificationResponse, error) {
-	if err := checkMessageHeader(h, 'A'); err != nil {
+func (c *Conn) ReadNotification(ctx context.Context) (NotificationResponse, error) {
+	if err := checkMessageHeader(c.h, 'A'); err != nil {
 		return NotificationResponse{}, err
 	}
 	pid, err := c.c.ReadInt32()
@@ -237,7 +238,7 @@ func (c *Conn) ReadNotification(ctx context.Context, h MessageHeader) (Notificat
 		return NotificationResponse{}, err
 	}
 	return NotificationResponse{
-		MessageHeader: h,
+		MessageHeader: c.h,
 		PID:           pid,
 		Channel:       channel,
 		Payload:       payload,
@@ -255,7 +256,7 @@ func (c *Conn) WriteQuery(ctx context.Context, query string) error {
 	return c.Err()
 }
 
-func (c *Conn) WriteEmptyQueryResponse(ctx context.Context) error {
+func (c *Conn) WriteEmptyQuery(ctx context.Context) error {
 	c.c.WriteByte('I')
 	c.c.WriteInt32(4)
 	return c.Err()
@@ -265,11 +266,11 @@ type EmptyQueryResponse struct {
 	MessageHeader
 }
 
-func (c *Conn) ReadEmptyQuery(ctx context.Context, h MessageHeader) (EmptyQueryResponse, error) {
-	if err := checkMessageHeader(h, 'I'); err != nil {
+func (c *Conn) ReadEmptyQuery(ctx context.Context) (EmptyQueryResponse, error) {
+	if err := checkMessageHeader(c.h, 'I'); err != nil {
 		return EmptyQueryResponse{}, err
 	}
-	return EmptyQueryResponse{MessageHeader: h}, nil
+	return EmptyQueryResponse{MessageHeader: c.h}, nil
 }
 
 func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
@@ -288,9 +289,9 @@ type CommandCompleteResponse struct {
 	RowsAffected int64
 }
 
-func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (CommandCompleteResponse, error) {
+func (c *Conn) ReadCommandComplete(ctx context.Context) (CommandCompleteResponse, error) {
 	var zero CommandCompleteResponse
-	if err := checkMessageHeader(h, 'C'); err != nil {
+	if err := checkMessageHeader(c.h, 'C'); err != nil {
 		return zero, err
 	}
 	t, err := c.c.ReadString()
@@ -298,7 +299,7 @@ func (c *Conn) ReadCommandComplete(ctx context.Context, h MessageHeader) (Comman
 		return zero, err
 	}
 	return CommandCompleteResponse{
-		MessageHeader: h,
+		MessageHeader: c.h,
 		RowsAffected:  ParseCommandCompleteTag(t),
 	}, nil
 }
@@ -344,8 +345,8 @@ type DataRowValueResponse struct {
 	io.ReadCloser
 }
 
-func (c *Conn) ReadDataRow(ctx context.Context, h MessageHeader) (DataRowResponse, error) {
-	if err := checkMessageHeader(h, 'D'); err != nil {
+func (c *Conn) ReadDataRow(ctx context.Context) (DataRowResponse, error) {
+	if err := checkMessageHeader(c.h, 'D'); err != nil {
 		return DataRowResponse{}, err
 	}
 	n, err := c.c.ReadInt16()
@@ -353,13 +354,13 @@ func (c *Conn) ReadDataRow(ctx context.Context, h MessageHeader) (DataRowRespons
 		return DataRowResponse{}, err
 	}
 	return DataRowResponse{
-		MessageHeader: h,
+		MessageHeader: c.h,
 		NumCols:       n,
 	}, nil
 }
 
-func (c *Conn) ReadDataRowValue(ctx context.Context, h MessageHeader) (DataRowValueResponse, error) {
-	if err := checkMessageHeader(h, 'D'); err != nil {
+func (c *Conn) ReadDataRowValue(ctx context.Context) (DataRowValueResponse, error) {
+	if err := checkMessageHeader(c.h, 'D'); err != nil {
 		return DataRowValueResponse{}, err
 	}
 	r, err := c.c.ReadBytes()

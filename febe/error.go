@@ -65,26 +65,26 @@ type ErrorResponse struct {
 	*ErrorFields
 }
 
-func (c *Conn) ReadNotice(ctx context.Context, h MessageHeader) (ErrorResponse, error) {
+func (c *Conn) ReadNotice(ctx context.Context) (ErrorResponse, error) {
 	var zero ErrorResponse
-	if err := checkMessageHeader(h, 'N'); err != nil {
+	if err := checkMessageHeader(c.h, 'N'); err != nil {
 		return zero, err
 	}
-	return c.readErrorResponse(ctx, h)
+	return c.readErrorResponse(ctx)
 }
 
-func (c *Conn) ReadError(ctx context.Context, h MessageHeader) (ErrorResponse, error) {
+func (c *Conn) ReadError(ctx context.Context) (ErrorResponse, error) {
 	var zero ErrorResponse
-	if err := checkMessageHeader(h, 'E'); err != nil {
+	if err := checkMessageHeader(c.h, 'E'); err != nil {
 		return zero, err
 	}
-	return c.readErrorResponse(ctx, h)
+	return c.readErrorResponse(ctx)
 }
 
-func (c *Conn) readErrorResponse(ctx context.Context, h MessageHeader) (ErrorResponse, error) {
+func (c *Conn) readErrorResponse(ctx context.Context) (ErrorResponse, error) {
 	var zero ErrorResponse
 	e := ErrorResponse{
-		MessageHeader: h,
+		MessageHeader: c.h,
 		ErrorFields:   &ErrorFields{},
 	}
 	for {
