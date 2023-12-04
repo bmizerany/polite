@@ -31,6 +31,7 @@ var (
 	ErrReadyForQuery      = errors.New("pqlite: complete")
 	ErrEmptyQuery         = errors.New("pqlite: empty query")
 	ErrUnprocessedColumns = errors.New("unprocessed columns")
+	ErrNoMoreColumns      = errors.New("pqlite: no more columns")
 )
 
 type Conn struct {
@@ -147,8 +148,8 @@ func (c *Conn) Query(ctx context.Context, sql string) *Rows {
 //	for row, err := range c.QueryAll(ctx, "SELECT * FROM users") {
 //	  ...
 //	}
-func (c *Conn) QueryAll(ctx context.Context, sql string) iter_Seq2[Row, error] {
-	return func(yield func(Row, error) bool) {
+func (c *Conn) QueryAll(ctx context.Context, sql string) iter_Seq2[*Row, error] {
+	return func(yield func(*Row, error) bool) {
 		rs := c.Query(ctx, sql)
 		defer rs.Close()
 		rs.All(yield)
@@ -168,13 +169,13 @@ func (r *Row) NumCols() int {
 
 func (r *Row) Reader() (io.ReadCloser, error) {
 	if r.rem == 0 {
-		return nil, errors.New("no more columns")
+		return nil, ErrNoMoreColumns
 	}
+	r.rem--
 	rc, err := r.c.c.ReadDataRowValue(r.ctx, r.d.MessageHeader)
 	if err != nil {
 		return nil, err
 	}
-	r.rem--
 	return rc, nil
 }
 
@@ -183,6 +184,7 @@ func (r *Row) Bytes() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer rc.Close()
 	data, err := io.ReadAll(rc)
 	if err != nil {
 		return nil, err
@@ -193,23 +195,24 @@ func (r *Row) Bytes() ([]byte, error) {
 // Close discards any remaining columns in the row.
 //
 // Most users will not need to call this method, since Rows.All will call it
-// automatically.
+// automatically after each yield.
 func (r *Row) Close() error {
 	if r.rem == 0 {
 		// nothing to discard; carry on
 		return nil
 	}
-	rem0 := r.rem
-	for range r.NumCols() {
+	for {
 		rc, err := r.Reader()
 		if err != nil {
+			if errors.Is(err, ErrNoMoreColumns) {
+				return nil
+			}
 			return err
 		}
 		if err := rc.Close(); err != nil {
 			return err
 		}
 	}
-	return fmt.Errorf("pqlite: %d %w", rem0, ErrUnprocessedColumns)
 }
 
 type Rows struct {
@@ -226,25 +229,30 @@ func (rs *Rows) Result() Result {
 	return Result{RowsAffected: int(rs.rowsAffected)}
 }
 
-func (rs *Rows) All(yield func(Row, error) bool) {
+func (rs *Rows) All(yield func(*Row, error) bool) {
 	if rs.err != nil {
-		yield(Row{}, rs.err)
+		yield(nil, rs.err)
 		return
 	}
-
 	for {
 		row, err := rs.next()
 		if err != nil {
 			rs.err = err
 			if !errors.Is(err, ErrReadyForQuery) {
-				yield(Row{}, err)
+				yield(nil, err)
 			}
 			return
 		}
-		if !yield(row, nil) {
+		if !yieldAndClose(&row, yield) {
 			return
 		}
 	}
+}
+
+//go:noinline
+func yieldAndClose(row *Row, yield func(*Row, error) bool) bool {
+	defer row.Close()
+	return yield(row, nil)
 }
 
 func (rs *Rows) next() (Row, error) {

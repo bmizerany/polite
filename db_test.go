@@ -38,11 +38,15 @@ func TestQuery(t *testing.T) {
 			t.Fatal(err)
 		}
 		var got [][]byte
-		for range row.NumCols() {
+		for {
 			data, err := row.Bytes()
 			if err != nil {
+				if errors.Is(err, ErrNoMoreColumns) {
+					break
+				}
 				t.Fatal(err)
 			}
+			t.Logf("data: %q", string(data))
 			got = append(got, data)
 		}
 		want := [][]byte{{'1'}, {'2'}, {'t', 'h', 'r', 'e', 'e'}}
@@ -52,7 +56,7 @@ func TestQuery(t *testing.T) {
 	}
 }
 
-func values(t testing.TB, row Row) [][]byte {
+func values(t testing.TB, row *Row) [][]byte {
 	var got [][]byte
 	for range row.NumCols() {
 		data, err := row.Bytes()
@@ -126,15 +130,22 @@ func TestExec(t *testing.T) {
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
 	rs := c.Query(context.Background(), "SELECT 1")
+	var ok bool
 	for row, err := range rs.All {
+		if ok {
+			t.Fatal("got more than one row")
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := values(t, row)
-		want := [][]byte{{'1'}}
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("got = %v, want %v", got, want)
+		data, err := row.Bytes()
+		if err != nil {
+			t.Fatal(err)
 		}
+		if string(data) != "1" {
+			t.Fatalf("got %q, want %q", data, "1")
+		}
+		ok = true
 	}
 }
 

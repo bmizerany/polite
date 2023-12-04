@@ -382,7 +382,7 @@ func TestNoticeResponse(t *testing.T) {
 	c.WriteErrorResponse(context.Background(), Notice, fields)
 	c.Flush()
 
-	want := &ErrorResponse{
+	want := ErrorResponse{
 		MessageHeader: MessageHeader{
 			msgType: 'N',
 			msgLen:  b.Len() - 1,
