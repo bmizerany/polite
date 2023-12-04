@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 
 	"blake.io/pqlite/febe"
@@ -160,12 +161,56 @@ func (c *Conn) QueryAll(ctx context.Context, sql string) iter_Seq2[Row, error] {
 }
 
 type Row struct {
-	d febe.DataRowResponse
+	ctx context.Context
+	c   *Conn
+	d   febe.DataRowResponse
+	rem int
 }
 
-// TODO(bmizerany): replace with ReadInt, Bytes, etc
-func (r *Row) Values() [][]byte {
-	return r.d.Values
+func (r *Row) NumCols() int {
+	return int(r.d.NumCols)
+}
+
+func (r *Row) Reader() (io.ReadCloser, error) {
+	if r.rem == 0 {
+		return nil, errors.New("no more columns")
+	}
+	rc, err := r.c.c.ReadDataRowValue(r.ctx, r.d.MessageHeader)
+	if err != nil {
+		return nil, err
+	}
+	r.rem--
+	return rc, nil
+}
+
+func (r *Row) Bytes() ([]byte, error) {
+	rc, err := r.Reader()
+	if err != nil {
+		return nil, err
+	}
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (r *Row) Discard() error {
+	if r.rem == 0 {
+		// nothing to discard; carry on
+		return nil
+	}
+	for range r.NumCols() {
+		rc, err := r.Reader()
+		if err != nil {
+			return err
+		}
+		if err := rc.Close(); err != nil {
+			return err
+		}
+	}
+	r.rem--
+	return nil
 }
 
 type Rows struct {
@@ -235,7 +280,13 @@ func (rs *Rows) next() (Row, error) {
 			if err != nil {
 				return Row{}, err
 			}
-			return Row{d: m}, nil
+			r := Row{
+				ctx: rs.ctx,
+				c:   rs.c,
+				d:   m,
+				rem: int(m.NumCols),
+			}
+			return r, nil
 		case 'I':
 			return Row{}, ErrEmptyQuery
 		case 'E':
@@ -260,11 +311,13 @@ func (rs *Rows) next() (Row, error) {
 }
 
 func (rs *Rows) Close() error {
-	var cerr error
-	for _, err := range rs.All {
-		if cerr == nil {
-			cerr = err
+	for row, err := range rs.All {
+		if err != nil {
+			return err
+		}
+		if err := row.Discard(); err != nil {
+			return err
 		}
 	}
-	return cerr
+	return nil
 }

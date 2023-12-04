@@ -14,6 +14,7 @@ import (
 )
 
 func newConn(t *testing.T) *Conn {
+	t.Helper()
 	dsn := createDB(t)
 	ctx := context.Background()
 	c, err := Dial(ctx, dsn)
@@ -36,12 +37,32 @@ func TestQuery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := row.Values()
+		var got [][]byte
+		for range row.NumCols() {
+			data, err := row.Bytes()
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, data)
+		}
 		want := [][]byte{{'1'}, {'2'}, {'t', 'h', 'r', 'e', 'e'}}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got = %v, want %v", got, want)
 		}
 	}
+}
+
+func values(t testing.TB, row Row) [][]byte {
+	var got [][]byte
+	for i := range row.NumCols() {
+		t.Logf("reading column %d", i)
+		data, err := row.Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, data)
+	}
+	return got
 }
 
 func TestQueryAll(t *testing.T) {
@@ -51,7 +72,7 @@ func TestQueryAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, row.Values())
+		got = append(got, values(t, row))
 	}
 	want := [][][]byte{
 		{{'1'}},
@@ -110,7 +131,7 @@ func checkPing(t *testing.T, c *Conn) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := row.Values()
+		got := values(t, row)
 		want := [][]byte{{'1'}}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got = %v, want %v", got, want)
@@ -148,6 +169,7 @@ var (
 )
 
 func createDB(t *testing.T) (dsn string) {
+	t.Helper()
 	dbname := fmt.Sprintf("test_%s_%s", t.Name(), randomString())
 	dbname = strings.ToLower(dbname)
 	checkExec(t, mc, fmt.Sprintf("CREATE DATABASE %s", dbname))

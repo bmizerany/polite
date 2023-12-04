@@ -326,17 +326,21 @@ func TestReadDataRow(t *testing.T) {
 			msgType: 'D',
 			msgLen:  24,
 		},
-		N: 2,
+		NumCols: 2,
 	}
 	diff.Test(t, t.Errorf, got, want)
 
-	gotValues := make([][]byte, got.N)
-	for i := range got.N {
-		v, err := c.ReadDataRowValue(ctx, h)
+	gotValues := make([][]byte, got.NumCols)
+	for i := range got.NumCols {
+		r, err := c.ReadDataRowValue(ctx, h)
 		if err != nil {
 			t.Fatal(err)
 		}
-		gotValues[i] = v.Data
+		data, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotValues[i] = data
 	}
 	wantValues := [][]byte{
 		[]byte("hello"),
