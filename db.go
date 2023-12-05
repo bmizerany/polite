@@ -140,6 +140,12 @@ func (c *Conn) Query(ctx context.Context, sql string) *Rows {
 //	  ...
 //	}
 //
+// Callers must process all columns in a row. If a call to yield does not
+// process all columns in the provided rows before returning, QueryAll panics.
+//
+// If a caller needs to discard any remaining rows, it should call rs.Close
+// before returning from yield.
+//
 // Example:
 //
 //	for row, err := range c.QueryAll(ctx, "SELECT * FROM users") {
@@ -149,7 +155,15 @@ func (c *Conn) QueryAll(ctx context.Context, sql string) iter.Seq2[*Row, error] 
 	return func(yield func(*Row, error) bool) {
 		rs := c.Query(ctx, sql)
 		defer rs.Close()
-		rs.All(yield)
+		for row, err := range rs.All {
+			ok := yield(row, err)
+			if row.Unprocessed() > 0 {
+				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
+			}
+			if !ok {
+				return
+			}
+		}
 	}
 }
 
