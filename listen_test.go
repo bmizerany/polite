@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"kr.dev/diff"
 )
 
 func ExampleListener() {
@@ -52,17 +54,21 @@ func TestListenNotify(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	for got, err := range l.Notifications(ctx) {
+	var got Notification
+	for n, err := range l.Notifications(ctx) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("notification: %+v", got)
-		if string(got.Channel) != "foo" {
-			t.Errorf("got = %q, want %q", got.Channel, "foo")
-		}
-		if string(got.Payload) != "bar" {
-			t.Errorf("got = %q, want %q", got.Payload, "bar")
-		}
+		got = n
 		break
 	}
+	if got.PID == 0 {
+		t.Error("expected non-zero PID")
+	}
+	got.PID = 0
+	want := Notification{
+		Channel: []byte("foo"),
+		Payload: []byte("bar"),
+	}
+	diff.Test(t, t.Errorf, got, want)
 }

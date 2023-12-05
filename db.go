@@ -17,10 +17,12 @@ import (
 // [ ]    -- tls
 // [x] 55.2.2. Simple Query
 // [ ] 55.2.3. Extended Query
-// [/] 55.2.4. Pipelining (not supporting)
 // [?] 55.2.5. Function Call
 // [ ] 55.2.6. COPY Operations
 // [ ] 55.2.7. Asynchronous Operations
+//     [ ] ParameterStatus
+//     [ ] Notice
+//     [x] Notification
 // [ ] 55.2.8. Canceling Requests in Progress
 // [ ] 55.2.9. Termination
 // [ ] 55.2.10. SSL Session Encryption
@@ -102,7 +104,7 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 		case 'N':
 			panic("TODO: handle notice")
 		default:
-			return nil, fmt.Errorf("%w: unknown message %q", ErrProtocol, h.Type())
+			return nil, fmt.Errorf("%w: unexpected message %q", ErrProtocol, h.Type())
 		}
 	}
 }
@@ -124,14 +126,37 @@ func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
 	return rs.Result(), err
 }
 
-func (c *Conn) Query(ctx context.Context, sql string) *Rows {
-	if err := c.c.WriteQuery(ctx, sql); err != nil {
-		return &Rows{err: err}
+func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
+	bargs := make([][]byte, len(args))
+	for i, arg := range args {
+		bargs[i] = []byte(arg)
+	}
+	if len(args) > 0 {
+		if err := c.writeExtendedQuery(ctx, sql, bargs...); err != nil {
+			return &Rows{err: err}
+		}
+	} else {
+		if err := c.c.WriteQuery(ctx, sql); err != nil {
+			return &Rows{err: err}
+		}
 	}
 	if err := c.c.Flush(); err != nil {
 		return &Rows{err: err}
 	}
 	return &Rows{ctx: ctx, c: c}
+}
+
+func (c *Conn) writeExtendedQuery(ctx context.Context, sql string, args ...[]byte) (err error) {
+	if err := c.c.WriteParse(ctx, "", sql); err != nil {
+		return err
+	}
+	if err := c.c.WriteBind(ctx, "", "", args); err != nil {
+		return err
+	}
+	if err := c.c.WriteExecute(ctx, "", 0); err != nil {
+		return err
+	}
+	return c.c.WriteSync(ctx)
 }
 
 // QueryAll is short for:
@@ -153,9 +178,9 @@ func (c *Conn) Query(ctx context.Context, sql string) *Rows {
 //	for row, err := range c.QueryAll(ctx, "SELECT * FROM users") {
 //	  ...
 //	}
-func (c *Conn) QueryAll(ctx context.Context, sql string) iter.Seq2[*Row, error] {
+func (c *Conn) QueryAll(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
-		rs := c.Query(ctx, sql)
+		rs := c.Query(ctx, sql, args...)
 		defer rs.Close()
 		for row, err := range rs.All {
 			if !yield(row, err) {
@@ -277,6 +302,8 @@ func (rs *Rows) next() (Row, error) {
 			return Row{}, err
 		}
 		switch h.Type() {
+		case '1', '2':
+			// Headers only; No discard needed
 		case 'C':
 			m, err := c.ReadCommandComplete(rs.ctx)
 			if err != nil {
@@ -320,7 +347,7 @@ func (rs *Rows) next() (Row, error) {
 		case 'N':
 			panic("TODO: handle notice")
 		default:
-			return Row{}, fmt.Errorf("%w: unknown message type: %q", ErrProtocol, h.Type())
+			return Row{}, fmt.Errorf("%w: unexpected message type: %q", ErrProtocol, h.Type())
 		}
 	}
 }

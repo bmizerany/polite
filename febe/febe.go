@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"blake.io/postgres/febe/febeio"
+	"blake.io/postgres/iter"
 	"go4.org/mem"
 )
 
@@ -94,6 +95,21 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	return c.h, nil
 }
 
+func (c *Conn) Messages(ctx context.Context) iter.Seq2[MessageHeader, error] {
+	return func(yield func(MessageHeader, error) bool) {
+		for {
+			h, err := c.ReadHeader(ctx)
+			if err != nil {
+				yield(h, err)
+				return
+			}
+			if !yield(h, nil) {
+				return
+			}
+		}
+	}
+}
+
 func (c *Conn) DiscardMessage(ctx context.Context) error {
 	return c.c.ReadByteN(c.h.BodyLen()).Close()
 }
@@ -102,17 +118,12 @@ func (c *Conn) DiscardMessage(ctx context.Context) error {
 
 type sizer int32
 
-func (s *sizer) addInt32()               { *s += 4 }
-func (s *sizer) addInt16()               { *s += 2 }
-func (s *sizer) addByte()                { *s += 1 }
-func (s *sizer) addBytesString(v string) { *s += 4 + sizer(len(v)) }
-func (s *sizer) addBytesN(n int64)       { *s += 4 + sizer(n) }
-func (s *sizer) addStrings(vv ...string) {
-	for _, v := range vv {
-		*s += sizer(len(v) + 1)
-	}
-}
-func (s *sizer) size() int32 { return int32(*s) }
+func (s *sizer) addByte()           { *s += 1 }
+func (s *sizer) addInt32()          { *s += 4 }
+func (s *sizer) addInt16()          { *s += 2 }
+func (s *sizer) addBytesN(n int64)  { *s += 4 + sizer(n) }
+func (s *sizer) addString(v string) { *s += sizer(len(v) + 1) }
+func (s *sizer) size() int32        { return int32(*s) }
 
 func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err error) {
 	var s sizer
@@ -120,10 +131,10 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 	s.addInt32() // protocol version
 	for i := 0; i < len(params); i++ {
 		k, v, _ := strings.Cut(params[i], "=")
-		s.addStrings(k)
-		s.addStrings(v)
+		s.addString(k)
+		s.addString(v)
 	}
-	s.addStrings("")
+	s.addString("")
 
 	c.c.WriteInt32(s.size())
 	c.c.WriteInt32(196608)
@@ -161,44 +172,6 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 		MessageHeader: c.h,
 		Type:          AuthenticationType(t),
 	}, nil
-}
-
-func (c *Conn) WriteAuthentication(ctx context.Context, typ AuthenticationType) error {
-	var s sizer
-	s.addInt32() // length
-	s.addInt32() // type
-
-	c.c.WriteByte('R')
-	c.c.WriteInt32(s.size())
-	c.c.WriteInt32(int32(typ))
-	return c.Err()
-}
-
-func (c *Conn) WriteBackendKeyData(ctx context.Context, pid, secret int32) error {
-	c.c.WriteByte('K')
-	c.c.WriteInt32(12)
-	c.c.WriteInt32(pid)
-	c.c.WriteInt32(secret)
-	return c.Err()
-}
-
-func (c *Conn) WriteParameterStatus(ctx context.Context, name, value string) error {
-	var s sizer
-	s.addInt32() // length
-	s.addStrings(name, value)
-
-	c.c.WriteByte('S')
-	c.c.WriteInt32(s.size())
-	c.c.WriteString(name)
-	c.c.WriteString(value)
-	return c.Err()
-}
-
-func (c *Conn) WriteReadyForQuery(ctx context.Context, status ReadyStatus) error {
-	c.c.WriteByte('Z')
-	c.c.WriteInt32(5)
-	c.c.WriteByte(byte(status))
-	return c.Err()
 }
 
 func (c *Conn) ReadReadyForQuery(ctx context.Context) (ReadyForQueryResponse, error) {
@@ -249,7 +222,7 @@ func (c *Conn) ReadNotification(ctx context.Context) (NotificationResponse, erro
 func (c *Conn) WriteQuery(ctx context.Context, query string) error {
 	var s sizer
 	s.addInt32() // length
-	s.addStrings(query)
+	s.addString(query)
 
 	c.c.WriteByte('Q')
 	c.c.WriteInt32(s.size())
@@ -257,9 +230,63 @@ func (c *Conn) WriteQuery(ctx context.Context, query string) error {
 	return c.Err()
 }
 
-func (c *Conn) WriteEmptyQuery(ctx context.Context) error {
-	c.c.WriteByte('I')
+func (c *Conn) WriteParse(ctx context.Context, portal, sql string) error {
+	var s sizer
+	s.addInt32() // length
+	s.addString(portal)
+	s.addString(sql)
+	s.addInt16() // 0 for no param types
+
+	c.c.WriteByte('P')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString("")
+	c.c.WriteString(sql)
+	c.c.WriteInt16(0) // 0 for no param types
+	return c.Err()
+
+}
+
+func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args [][]byte) error {
+	var s sizer
+	s.addInt32() // length
+	s.addString(portal)
+	s.addString(statement)
+	s.addInt16() // 0 format codes
+	s.addInt16() // number of parameters
+	for _, arg := range args {
+		s.addBytesN(int64(len(arg)))
+	}
+	s.addInt16() // 0 result format codes
+
+	c.c.WriteByte('B')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(portal)
+	c.c.WriteString(statement)
+	c.c.WriteInt16(0) // format code
+	c.c.WriteInt16(int16(len(args)))
+	for _, arg := range args {
+		c.c.WriteBytes(arg)
+	}
+	c.c.WriteInt16(0) // number of result columns
+	return c.Err()
+}
+
+func (c *Conn) WriteSync(ctx context.Context) error {
+	c.c.WriteByte('S')
 	c.c.WriteInt32(4)
+	return c.Err()
+}
+
+func (c *Conn) WriteExecute(ctx context.Context, portal string, limit int) error {
+	var s sizer
+	s.addInt32() // length
+	s.addString(portal)
+	s.addInt32() // limit
+
+	c.c.WriteByte('E')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(portal)
+	c.c.WriteInt32(int32(limit))
 	return c.Err()
 }
 
@@ -274,20 +301,9 @@ func (c *Conn) ReadEmptyQuery(ctx context.Context) (EmptyQueryResponse, error) {
 	return EmptyQueryResponse{MessageHeader: c.h}, nil
 }
 
-func (c *Conn) WriteCommandComplete(ctx context.Context, tag string) error {
-	var s sizer
-	s.addInt32() // length
-	s.addStrings(tag)
-
-	c.c.WriteByte('C')
-	c.c.WriteInt32(s.size())
-	c.c.WriteString(tag)
-	return c.Err()
-}
-
 type CommandCompleteResponse struct {
 	MessageHeader
-	RowsAffected int64
+	Tag
 }
 
 func (c *Conn) ReadCommandComplete(ctx context.Context) (CommandCompleteResponse, error) {
@@ -301,13 +317,18 @@ func (c *Conn) ReadCommandComplete(ctx context.Context) (CommandCompleteResponse
 	}
 	return CommandCompleteResponse{
 		MessageHeader: c.h,
-		RowsAffected:  ParseCommandCompleteTag(t),
+		Tag:           ParseCommandTag(t),
 	}, nil
 }
 
 var space = []byte{' '}
 
-func ParseCommandCompleteTag(tag []byte) (rowsAffected int64) {
+type Tag struct {
+	Command      string
+	RowsAffected int64
+}
+
+func ParseCommandTag(tag []byte) Tag {
 	cmd, data, _ := bytes.Cut(tag, space)
 	if bytes.Equal(cmd, []byte("INSERT")) {
 		_, data, _ = bytes.Cut(data, space)
@@ -317,7 +338,10 @@ func ParseCommandCompleteTag(tag []byte) (rowsAffected int64) {
 	// rowsAffected. This _could_? return non-zero rows
 	// affected when it shouldn't?
 	rowsInt, _ := mem.ParseInt(mem.B(data), 10, 64)
-	return rowsInt
+	return Tag{
+		Command:      string(cmd),
+		RowsAffected: rowsInt,
+	}
 }
 
 type DataRowResponse struct {
@@ -328,27 +352,6 @@ type DataRowResponse struct {
 type DataRowValueResponse struct {
 	MessageHeader
 	io.ReadCloser
-}
-
-func (c *Conn) WriteDataRow(ctx context.Context, cols ...*io.LimitedReader) error {
-	var s sizer
-	s.addInt32() // length
-	s.addInt16() // number of columns
-	for _, col := range cols {
-		s.addBytesN(col.N)
-	}
-
-	c.c.WriteByte('D')
-	c.c.WriteInt32(s.size())
-	c.c.WriteInt16(int16(len(cols)))
-	for _, col := range cols {
-		c.c.WriteInt32(int32(col.N))
-		_, err := io.Copy(c.c, col) // TODO(bmizerany): use pooled buffer
-		if err != nil {
-			return err
-		}
-	}
-	return c.Err()
 }
 
 func (c *Conn) ReadDataRow(ctx context.Context) (DataRowResponse, error) {

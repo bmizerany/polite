@@ -61,6 +61,28 @@ func TestQuery(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestQueryExtended(t *testing.T) {
+	c := newConn(t)
+	const q = `
+		SELECT $1
+		UNION ALL
+		SELECT $2
+	`
+	var got []string
+	for row, err := range c.QueryAll(context.Background(), q, "hello", "world") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := row.Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, string(data))
+	}
+	want := []string{"hello", "world"}
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func values(t testing.TB, row *Row) [][]byte {
 	var got [][]byte
 	for range row.Columns() {

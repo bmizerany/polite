@@ -31,73 +31,80 @@ func TestError(t *testing.T) {
 	}
 }
 
-func TestErrorResponse(t *testing.T) {
+var testErrorFields = &ErrorFields{
+	Severity:   "ERROR",
+	Code:       "CODE",
+	Message:    "MESSAGE",
+	Detail:     "DETAIL",
+	Hint:       "HINT",
+	Position:   "POS",
+	Internal:   "INTERNAL",
+	Where:      "WHERE",
+	Schema:     "SCHEMA",
+	Table:      "TABLE",
+	Column:     "COLUMN",
+	DataType:   "DATATYPE",
+	Constraint: "CONSTRAINT",
+	File:       "FILE",
+	Line:       "LINE",
+	Routine:    "ROUTINE",
+	Verbosity:  "VERBOSITY",
+}
+
+func writeErrorResponse(t *testing.T, EorN byte, c *Conn) {
+	t.Helper()
+
+	var s sizer
+	s.addInt32()
+	testErrorFields.forEachField(func(t byte, v string) {
+		s.addByte()
+		s.addString(v)
+	})
+	s.addByte() // terminating byte
+
+	c.c.WriteByte(EorN)
+	c.c.WriteInt32(s.size())
+	testErrorFields.forEachField(func(t byte, v string) {
+		c.c.WriteByte(t)
+		c.c.WriteString(v)
+	})
+	c.c.WriteByte(0)
+	c.c.Flush()
+}
+
+func TestReadHeaderReadErrorResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
-
-	want := &ErrorFields{
-		Severity:   "ERROR",
-		Message:    "MESSAGE",
-		Code:       "CODE",
-		Detail:     "DETAIL",
-		Hint:       "HINT",
-		Position:   "POS",
-		Internal:   "INTERNAL",
-		Where:      "WHERE",
-		Schema:     "SCHEMA",
-		Table:      "TABLE",
-		Column:     "COLUMN",
-		DataType:   "DATATYPE",
-		Constraint: "CONSTRAINT",
-		File:       "FILE",
-		Line:       "LINE",
-		Routine:    "ROUTINE",
-		Verbosity:  "VERBOSITY",
-	}
-
-	c.WriteErrorResponse(context.Background(), Error, want)
-	c.Flush()
-
+	writeErrorResponse(t, 'E', c)
 	ctx := context.Background()
 	gotH, gotErr := c.ReadHeader(ctx)
 	diff.Test(t, t.Errorf, gotH, MessageHeader{})
-	diff.Test(t, t.Errorf, gotErr, want)
+	diff.Test(t, t.Errorf, gotErr, testErrorFields)
 }
 
-func BenchmarkWriteErrorResponse(b *testing.B) {
-	c := New(nil, io.Discard)
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		err := c.WriteErrorResponse(context.Background(), Error, &ErrorFields{
-			Severity: "ERROR",
-			Message:  "MESSAGE",
-			Code:     "CODE",
-		})
-		if err != nil {
-			b.Fatal(err)
-		}
+func TestNoticeResponse(t *testing.T) {
+	var b bytes.Buffer
+	c := New(&b, &b)
+	writeErrorResponse(t, 'N', c)
+	want := ErrorResponse{
+		MessageHeader: MessageHeader{
+			msgType: 'N',
+			msgLen:  b.Len() - 1,
+		},
+		ErrorFields: testErrorFields,
 	}
-}
 
-func BenchmarkReadErrorResponse(b *testing.B) {
-	b.ReportAllocs()
-
-	const data = "E\x00\x00\x00\x05\x00"
-
-	ctx := context.Background()
-	r := strings.NewReader("")
-	c := New(r, nil)
-	for i := 0; i < b.N; i++ {
-		r.Reset(data)
-		_, err := c.ReadHeader(ctx)
-		if err != nil {
-			b.Fatal(err)
-		}
-		_, err = c.ReadError(context.Background())
-		if err != nil {
-			b.Fatal(err)
-		}
+	_, err := c.ReadHeader(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
+
+	got, err := c.ReadNotice(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestWriteStartupMessage(t *testing.T) {
@@ -125,96 +132,14 @@ func TestWriteStartupMessage(t *testing.T) {
 	diff.Test(t, t.Errorf, b.Bytes(), want)
 }
 
-func TestWriteBackendKeyData(t *testing.T) {
-	var b bytes.Buffer
-	c := New(nil, &b)
-	c.WriteBackendKeyData(context.Background(), 123, 456)
-	if err := c.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	want := []byte{
-		// protocol version
-		'K',
-		// length of message
-		0, 0, 0, 12,
-		// 123 (int32 big endian)
-		0, 0, 0, 123,
-		// 456 (int32 big endian)
-		0, 0, 1, 200,
-	}
-	diff.Test(t, t.Errorf, b.Bytes(), want)
-}
-
-// func TestReadBackendKeyData(t *testing.T) {
-// 	var b bytes.Buffer
-// 	c := New(&b, &b)
-// 	c.WriteBackendKeyData(context.Background(), 123, 456)
-// 	if err := c.Flush(); err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	h, err := c.ReadHeader(context.Background())
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	got, err := c.ReadBackendKeyData(context.Background(), h)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	want := ReadyForQueryResponse{
-// 		MessageHeader: MessageHeader{
-// 			msgType: 'Z',
-// 			msgLen:  5,
-// 		},
-// 		Status: 'I',
-// 	}
-// 	diff.Test(t, t.Errorf, got, want)
-// }
-
-func TestWriteParameterStatus(t *testing.T) {
-	var b bytes.Buffer
-	c := New(nil, &b)
-	c.WriteParameterStatus(context.Background(), "key", "value")
-	if err := c.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	want := []byte{
-		// protocol version
-		'S',
-		// length of message
-		0, 0, 0, 14,
-		// key
-		'k', 'e', 'y', 0,
-		// value
-		'v', 'a', 'l', 'u', 'e', 0,
-	}
-	diff.Test(t, t.Errorf, b.Bytes(), want)
-}
-
-func TestWriteReadyForQuery(t *testing.T) {
-	var b bytes.Buffer
-	c := New(nil, &b)
-	c.WriteReadyForQuery(context.Background(), 'I')
-	if err := c.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	want := []byte{
-		// protocol version
-		'Z',
-		// length of message
-		0, 0, 0, 5,
-		// transaction status
-		'I',
-	}
-	diff.Test(t, t.Errorf, b.Bytes(), want)
-}
-
 func TestReadReadyForQuery(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
-	c.WriteReadyForQuery(context.Background(), 'I')
-	if err := c.Flush(); err != nil {
-		t.Fatal(err)
-	}
+	c.c.WriteByte('Z')
+	c.c.WriteInt32(5)
+	c.c.WriteByte('I')
+	c.c.Flush()
+
 	_, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -243,10 +168,12 @@ func TestReadAuthentication(t *testing.T) {
 	for _, tt := range cases {
 		var b bytes.Buffer
 		c := New(&b, &b)
-		c.WriteAuthentication(context.Background(), tt.typ)
-		if err := c.Flush(); err != nil {
-			t.Fatal(err)
-		}
+
+		c.c.WriteByte('R')
+		c.c.WriteInt32(8)
+		c.c.WriteInt32(int32(tt.typ))
+		c.c.Flush()
+
 		_, err := c.ReadHeader(context.Background())
 		if err != nil {
 			t.Fatal(err)
@@ -266,15 +193,33 @@ func TestReadAuthentication(t *testing.T) {
 	}
 }
 
-// CommandComplete
-// An SQL command completed normally.
+func TestParseCommandTag(t *testing.T) {
+	cases := []struct {
+		in   string
+		want Tag
+	}{
+		{in: "SELECT 1", want: Tag{Command: "SELECT", RowsAffected: 1}},
+		{in: "INSERT 0 2", want: Tag{Command: "INSERT", RowsAffected: 2}},
+		{in: "DELETE 3", want: Tag{Command: "DELETE", RowsAffected: 3}},
+		{in: "UPDATE 4", want: Tag{Command: "UPDATE", RowsAffected: 4}},
+		{in: "MOVE 5", want: Tag{Command: "MOVE", RowsAffected: 5}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.in, func(t *testing.T) {
+			got := ParseCommandTag([]byte(tt.in))
+			diff.Test(t, t.Errorf, got, tt.want)
+		})
+	}
+}
+
 func TestReadCommandComplete(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
-	c.WriteCommandComplete(context.Background(), "SELECT 1")
-	if err := c.Flush(); err != nil {
-		t.Fatal(err)
-	}
+	c.c.WriteByte('C')
+	c.c.WriteInt32(13)
+	c.c.WriteString("SELECT 1")
+	c.c.Flush()
+
 	_, err := c.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -288,7 +233,10 @@ func TestReadCommandComplete(t *testing.T) {
 			msgType: 'C',
 			msgLen:  13,
 		},
-		RowsAffected: 1,
+		Tag: Tag{
+			Command:      "SELECT",
+			RowsAffected: 1,
+		},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }
@@ -316,10 +264,12 @@ func TestReadDataRow(t *testing.T) {
 	c := New(&b, &b)
 	defer c.checkDone(t)
 
-	c.WriteDataRow(ctx, limitReaders("hello", "world")...)
-	if err := c.Flush(); err != nil {
-		t.Fatal(err)
-	}
+	c.c.WriteByte('D')
+	c.c.WriteInt32(24)
+	c.c.WriteInt16(2) // number of cols
+	c.c.WriteBytes([]byte("hello"))
+	c.c.WriteBytes([]byte("world"))
+	c.c.Flush()
 
 	_, err := c.ReadHeader(ctx)
 	if err != nil {
@@ -361,7 +311,9 @@ func TestReadDataRow(t *testing.T) {
 func TestReadEmptyQueryResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
-	c.WriteEmptyQuery(context.Background())
+	c.c.WriteByte('I')
+	c.c.WriteInt32(4)
+	c.c.Flush()
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
@@ -379,53 +331,6 @@ func TestReadEmptyQueryResponse(t *testing.T) {
 			msgLen:  4,
 		},
 	}
-	diff.Test(t, t.Errorf, got, want)
-}
-
-func TestNoticeResponse(t *testing.T) {
-	var b bytes.Buffer
-	c := New(&b, &b)
-
-	fields := &ErrorFields{
-		Severity:   "NOTICE",
-		Message:    "MESSAGE",
-		Code:       "CODE",
-		Detail:     "DETAIL",
-		Hint:       "HINT",
-		Position:   "POS",
-		Internal:   "INTERNAL",
-		Where:      "WHERE",
-		Schema:     "SCHEMA",
-		Table:      "TABLE",
-		Column:     "COLUMN",
-		DataType:   "DATATYPE",
-		Constraint: "CONSTRAINT",
-		File:       "FILE",
-		Line:       "LINE",
-		Routine:    "ROUTINE",
-	}
-
-	c.WriteErrorResponse(context.Background(), Notice, fields)
-	c.Flush()
-
-	want := ErrorResponse{
-		MessageHeader: MessageHeader{
-			msgType: 'N',
-			msgLen:  b.Len() - 1,
-		},
-		ErrorFields: fields,
-	}
-
-	_, err := c.ReadHeader(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := c.ReadNotice(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	diff.Test(t, t.Errorf, got, want)
 }
 
