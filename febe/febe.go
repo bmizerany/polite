@@ -106,6 +106,7 @@ func (s *sizer) addInt32()               { *s += 4 }
 func (s *sizer) addInt16()               { *s += 2 }
 func (s *sizer) addByte()                { *s += 1 }
 func (s *sizer) addBytesString(v string) { *s += 4 + sizer(len(v)) }
+func (s *sizer) addBytesN(n int64)       { *s += 4 + sizer(n) }
 func (s *sizer) addStrings(vv ...string) {
 	for _, v := range vv {
 		*s += sizer(len(v) + 1)
@@ -319,22 +320,6 @@ func ParseCommandCompleteTag(tag []byte) (rowsAffected int64) {
 	return rowsInt
 }
 
-func (c *Conn) WriteDataRow(ctx context.Context, vals ...string) error {
-	var s sizer
-	s.addInt32() // length
-	s.addInt16() // number of columns
-	for _, v := range vals {
-		s.addBytesString(v)
-	}
-	c.c.WriteByte('D')
-	c.c.WriteInt32(s.size())
-	c.c.WriteInt16(int16(len(vals)))
-	for _, v := range vals {
-		c.c.WriteBytesString(v)
-	}
-	return c.Err()
-}
-
 type DataRowResponse struct {
 	MessageHeader
 	NumCols int16
@@ -343,6 +328,27 @@ type DataRowResponse struct {
 type DataRowValueResponse struct {
 	MessageHeader
 	io.ReadCloser
+}
+
+func (c *Conn) WriteDataRow(ctx context.Context, cols ...*io.LimitedReader) error {
+	var s sizer
+	s.addInt32() // length
+	s.addInt16() // number of columns
+	for _, col := range cols {
+		s.addBytesN(col.N)
+	}
+
+	c.c.WriteByte('D')
+	c.c.WriteInt32(s.size())
+	c.c.WriteInt16(int16(len(cols)))
+	for _, col := range cols {
+		c.c.WriteInt32(int32(col.N))
+		_, err := io.Copy(c.c, col) // TODO(bmizerany): use pooled buffer
+		if err != nil {
+			return err
+		}
+	}
+	return c.Err()
 }
 
 func (c *Conn) ReadDataRow(ctx context.Context) (DataRowResponse, error) {
@@ -363,9 +369,14 @@ func (c *Conn) ReadDataRowValue(ctx context.Context) (DataRowValueResponse, erro
 	if err := checkMessageHeader(c.h, 'D'); err != nil {
 		return DataRowValueResponse{}, err
 	}
-	r, err := c.c.ReadBytes()
+	rc, err := c.c.ReadBytes()
 	if err != nil {
 		return DataRowValueResponse{}, err
 	}
-	return DataRowValueResponse{ReadCloser: r}, nil
+	return DataRowValueResponse{ReadCloser: rc}, nil
 }
+
+// This comment exits to say; we don't need this method. Most others should
+// have parity, but this one is not needed because it is handled best in
+// WriteDataRow.
+// func (c *Conn) WriteDataRowValue(ctx context.Context, r *io.LimitedReader) error {}

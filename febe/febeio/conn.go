@@ -119,6 +119,19 @@ func (c *Conn) WriteString(s string) error {
 	return c.w.WriteByte(0)
 }
 
+func (c *Conn) WriteBytes(b []byte) error {
+	if err := c.WriteInt32(int32(len(b))); err != nil {
+		return err
+	}
+	c.w.Write(b)
+	return c.Err()
+}
+
+// Write writes b to the underlying writer.
+func (c *Conn) Write(b []byte) (int, error) {
+	return c.w.Write(b)
+}
+
 func (c *Conn) ReadBytes() (io.ReadCloser, error) {
 	n, err := c.ReadInt32()
 	if err != nil {

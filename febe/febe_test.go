@@ -316,7 +316,7 @@ func TestReadDataRow(t *testing.T) {
 	c := New(&b, &b)
 	defer c.checkDone(t)
 
-	c.WriteDataRow(ctx, "hello", "world")
+	c.WriteDataRow(ctx, limitReaders("hello", "world")...)
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
@@ -325,6 +325,7 @@ func TestReadDataRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	got, err := c.ReadDataRow(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -533,4 +534,15 @@ func (c *Conn) checkDone(t *testing.T) {
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Errorf("expected io.UnexpectedEOF, got %v", err)
 	}
+}
+
+func limitReaders(ss ...string) []*io.LimitedReader {
+	lrs := make([]*io.LimitedReader, len(ss))
+	for i, s := range ss {
+		lrs[i] = &io.LimitedReader{
+			N: int64(len(s)),
+			R: strings.NewReader(s),
+		}
+	}
+	return lrs
 }

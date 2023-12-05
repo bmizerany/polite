@@ -1,6 +1,4 @@
 TODO: 
-[ ] BackendKeyData(ctx context.Context, pid, secret int32) error {
-[ ] DataRowValue(ctx context.Context, h MessageHeader) (DataRowValueResponse, error) {
 [ ] Notification(ctx context.Context, h MessageHeader) (NotificationResponse, error) {
 [ ] ParameterStatus(ctx context.Context, name, value string) error {
 [ ] Query(ctx context.Context, query string) error {
