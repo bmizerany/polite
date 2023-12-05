@@ -109,17 +109,13 @@ func (c *Conn) Close() error {
 	return c.cn.Close()
 }
 
-type Result struct {
-	RowsAffected int
-}
-
 // Exec executes a query that is not intended to return rows, such as an
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
 // number of rows matched) in a Result or any error encountered.
-func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
+func (c *Conn) Exec(ctx context.Context, sql string) ([]Result, error) {
 	rs := c.Query(ctx, sql)
 	err := rs.Close()
-	return rs.Result(), err
+	return rs.Results(), err
 }
 
 func (c *Conn) Query(ctx context.Context, sql string) *Rows {
@@ -219,18 +215,19 @@ func (r *Row) Close() error {
 	}
 }
 
-type Rows struct {
-	ctx context.Context
-	c   *Conn
-	err error
-
-	rowsAffected int64
+type Result struct {
+	RowsAffected int
 }
 
-// RowsAffected returns the number of rows affected by the query. It is only
-// valid after all rows have been read.
-func (rs *Rows) Result() Result {
-	return Result{RowsAffected: int(rs.rowsAffected)}
+type Rows struct {
+	ctx     context.Context
+	c       *Conn
+	results []Result
+	err     error
+}
+
+func (rs *Rows) Results() []Result {
+	return rs.results
 }
 
 func (rs *Rows) All(yield func(*Row, error) bool) {
@@ -274,7 +271,10 @@ func (rs *Rows) next() (Row, error) {
 			if err != nil {
 				return Row{}, err
 			}
-			rs.rowsAffected = m.RowsAffected
+			rs.results = append(rs.results, Result{
+				RowsAffected: int(m.RowsAffected),
+			})
+			fmt.Println("rows affected:", m.RowsAffected)
 		case 'G':
 			panic("TODO: CopyInResponse")
 		case 'H':

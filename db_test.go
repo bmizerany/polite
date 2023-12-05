@@ -60,6 +60,20 @@ func TestQuery(t *testing.T) {
 	}
 }
 
+func TestQueryMultiStatment(t *testing.T) {
+	c := newConn(t)
+	rs := c.Query(context.Background(), "SELECT 1; SELECT generate_series(1, 5)")
+	if err := rs.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got := rs.Results()
+	want := []Result{
+		{RowsAffected: 1},
+		{RowsAffected: 5},
+	}
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func values(t testing.TB, row *Row) [][]byte {
 	var got [][]byte
 	for range row.Columns() {
@@ -97,8 +111,8 @@ func TestQuerySelectTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Result{
-		RowsAffected: 1,
+	want := []Result{
+		{RowsAffected: 1},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }
@@ -125,8 +139,8 @@ func TestExec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Result{
-		RowsAffected: 1,
+	want := []Result{
+		{RowsAffected: 1},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }
