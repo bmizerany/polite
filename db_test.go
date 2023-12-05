@@ -62,7 +62,7 @@ func TestQuery(t *testing.T) {
 
 func values(t testing.TB, row *Row) [][]byte {
 	var got [][]byte
-	for range row.NumCols() {
+	for range row.Columns() {
 		data, err := row.Bytes()
 		if err != nil {
 			t.Fatal(err)

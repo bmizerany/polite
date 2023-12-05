@@ -162,14 +162,14 @@ type Row struct {
 	rem int
 }
 
-// NumCols returns the number of columns in a row.
-func (r *Row) NumCols() int {
+// Columns returns the number of columns in a row.
+func (r *Row) Columns() int {
 	return int(r.d.NumCols)
 }
 
-// NumUnprocessed returns the number of columns that have not been
+// Unprocessed returns the number of columns that have not been
 // processed.
-func (r *Row) NumUnprocessed() int {
+func (r *Row) Unprocessed() int {
 	return r.rem
 }
 
@@ -253,7 +253,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		func() {
 			defer row.Close()
 			if !yield(&row, nil) {
-				if row.NumUnprocessed() > 0 {
+				if row.Unprocessed() > 0 {
 					err := fmt.Errorf("pqlite: %d columns unprocessed", row.rem)
 					yield(nil, err)
 				}
