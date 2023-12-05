@@ -264,16 +264,12 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 			return
 		}
 
-		func() {
-			defer row.Close()
-			if !yield(&row, nil) {
-				if row.Unprocessed() > 0 {
-					err := fmt.Errorf("pqlite: %d columns unprocessed", row.rem)
-					yield(nil, err)
-				}
-				return
+		if !yield(&row, nil) {
+			if row.Unprocessed() > 0 {
+				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
 			}
-		}()
+			return
+		}
 	}
 }
 

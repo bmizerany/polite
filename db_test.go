@@ -92,6 +92,27 @@ func TestQueryAll(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestQueryAllUnprocceedColumnsPanic(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil || !strings.Contains(fmt.Sprint(r), "unprocessed columns") {
+			t.Error("expected panic about unprocessed columns; got:", r)
+		}
+	}()
+
+	c := newConn(t)
+	var n int
+	for row, err := range c.QueryAll(context.Background(), "SELECT generate_series(1, 3)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n++; n == 1 {
+			break
+		}
+		row.Close()
+	}
+}
+
 func TestQuerySelectTag(t *testing.T) {
 	c := newConn(t)
 	got, err := c.Exec(context.Background(), "SELECT 1")
