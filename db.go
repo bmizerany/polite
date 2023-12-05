@@ -8,6 +8,7 @@ import (
 	"net"
 
 	"blake.io/pqlite/febe"
+	"blake.io/pqlite/iter"
 )
 
 // TODO: https://www.postgresql.org/docs/current/protocol-flow.html
@@ -108,9 +109,6 @@ func (c *Conn) Close() error {
 	return c.cn.Close()
 }
 
-// TODO(bmizerany): replace with iter.Seq2 in go1.22
-type iter_Seq2[T, U any] func(yield func(T, U) bool)
-
 type Result struct {
 	RowsAffected int
 }
@@ -147,7 +145,7 @@ func (c *Conn) Query(ctx context.Context, sql string) *Rows {
 //	for row, err := range c.QueryAll(ctx, "SELECT * FROM users") {
 //	  ...
 //	}
-func (c *Conn) QueryAll(ctx context.Context, sql string) iter_Seq2[*Row, error] {
+func (c *Conn) QueryAll(ctx context.Context, sql string) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
 		rs := c.Query(ctx, sql)
 		defer rs.Close()

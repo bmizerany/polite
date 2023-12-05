@@ -3,6 +3,8 @@ package pqlite
 import (
 	"context"
 	"fmt"
+
+	"blake.io/pqlite/iter"
 )
 
 // Notification represents a notification received from the database sent by
@@ -33,7 +35,7 @@ func (l *Listener) Listen(ctx context.Context, channel string) error {
 	return err
 }
 
-func (l *Listener) Notifications(ctx context.Context) iter_Seq2[Notification, error] {
+func (l *Listener) Notifications(ctx context.Context) iter.Seq2[Notification, error] {
 	return func(yield func(Notification, error) bool) {
 		var zero Notification
 		c := l.c.c
