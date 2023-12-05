@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os/user"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -33,11 +32,12 @@ func newConn(t *testing.T) *Conn {
 func TestQuery(t *testing.T) {
 	c := newConn(t)
 	rs := c.Query(context.Background(), "SELECT 1, 2, 'three'")
+	var got [][][]byte
 	for row, err := range rs.All {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var got [][]byte
+		var coldata [][]byte
 		for {
 			data, err := row.Bytes()
 			if err != nil {
@@ -47,17 +47,18 @@ func TestQuery(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Logf("data: %q", string(data))
-			got = append(got, data)
+			coldata = append(coldata, data)
 		}
-		want := [][]byte{
+		got = append(got, coldata)
+	}
+	want := [][][]byte{
+		{
 			{'1'},
 			{'2'},
 			{'t', 'h', 'r', 'e', 'e'},
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("got = %v, want %v", got, want)
-		}
+		},
 	}
+	diff.Test(t, t.Errorf, got, want)
 }
 
 func values(t testing.TB, row *Row) [][]byte {
