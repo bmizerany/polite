@@ -92,6 +92,22 @@ func TestQueryAll(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestQueryBreakInAll(t *testing.T) {
+	c := newConn(t)
+	var got [][][]byte
+	for row, err := range c.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, values(t, row))
+		break
+	}
+	want := [][][]byte{
+		{{'1'}},
+	}
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 	defer func() {
 		r := recover()
