@@ -26,13 +26,6 @@ type ReadyForQueryResponse struct {
 	Status ReadyStatus
 }
 
-func checkMessageHeader(h MessageHeader, want byte) error {
-	if h.Type() != want {
-		return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", h.Type(), want)
-	}
-	return nil
-}
-
 type Conn struct {
 	c *febeio.Conn
 	h MessageHeader // the last header read
@@ -41,6 +34,13 @@ type Conn struct {
 func New(r io.Reader, w io.Writer) *Conn {
 	c := febeio.NewConn(r, w)
 	return &Conn{c: c}
+}
+
+func (c *Conn) checkMessageHeader(want byte) error {
+	if c.h.Type() != want {
+		return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", c.h.Type(), want)
+	}
+	return nil
 }
 
 func (c *Conn) Err() error {
@@ -150,7 +150,7 @@ type AuthenticationResponse struct {
 
 func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, error) {
 	var zero AuthenticationResponse
-	if err := checkMessageHeader(c.h, 'R'); err != nil {
+	if err := c.checkMessageHeader('R'); err != nil {
 		return zero, err
 	}
 	t, err := c.c.ReadInt32()
@@ -202,7 +202,7 @@ func (c *Conn) WriteReadyForQuery(ctx context.Context, status ReadyStatus) error
 }
 
 func (c *Conn) ReadReadyForQuery(ctx context.Context) (ReadyForQueryResponse, error) {
-	if err := checkMessageHeader(c.h, 'Z'); err != nil {
+	if err := c.checkMessageHeader('Z'); err != nil {
 		return ReadyForQueryResponse{}, err
 	}
 	b, err := c.c.ReadByte()
@@ -223,7 +223,7 @@ type NotificationResponse struct {
 }
 
 func (c *Conn) ReadNotification(ctx context.Context) (NotificationResponse, error) {
-	if err := checkMessageHeader(c.h, 'A'); err != nil {
+	if err := c.checkMessageHeader('A'); err != nil {
 		return NotificationResponse{}, err
 	}
 	pid, err := c.c.ReadInt32()
@@ -268,7 +268,7 @@ type EmptyQueryResponse struct {
 }
 
 func (c *Conn) ReadEmptyQuery(ctx context.Context) (EmptyQueryResponse, error) {
-	if err := checkMessageHeader(c.h, 'I'); err != nil {
+	if err := c.checkMessageHeader('I'); err != nil {
 		return EmptyQueryResponse{}, err
 	}
 	return EmptyQueryResponse{MessageHeader: c.h}, nil
@@ -292,7 +292,7 @@ type CommandCompleteResponse struct {
 
 func (c *Conn) ReadCommandComplete(ctx context.Context) (CommandCompleteResponse, error) {
 	var zero CommandCompleteResponse
-	if err := checkMessageHeader(c.h, 'C'); err != nil {
+	if err := c.checkMessageHeader('C'); err != nil {
 		return zero, err
 	}
 	t, err := c.c.ReadString()
@@ -352,7 +352,7 @@ func (c *Conn) WriteDataRow(ctx context.Context, cols ...*io.LimitedReader) erro
 }
 
 func (c *Conn) ReadDataRow(ctx context.Context) (DataRowResponse, error) {
-	if err := checkMessageHeader(c.h, 'D'); err != nil {
+	if err := c.checkMessageHeader('D'); err != nil {
 		return DataRowResponse{}, err
 	}
 	n, err := c.c.ReadInt16()
@@ -366,7 +366,7 @@ func (c *Conn) ReadDataRow(ctx context.Context) (DataRowResponse, error) {
 }
 
 func (c *Conn) ReadDataRowValue(ctx context.Context) (DataRowValueResponse, error) {
-	if err := checkMessageHeader(c.h, 'D'); err != nil {
+	if err := c.checkMessageHeader('D'); err != nil {
 		return DataRowValueResponse{}, err
 	}
 	rc, err := c.c.ReadBytes()

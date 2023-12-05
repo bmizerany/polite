@@ -67,7 +67,7 @@ type ErrorResponse struct {
 
 func (c *Conn) ReadNotice(ctx context.Context) (ErrorResponse, error) {
 	var zero ErrorResponse
-	if err := checkMessageHeader(c.h, 'N'); err != nil {
+	if err := c.checkMessageHeader('N'); err != nil {
 		return zero, err
 	}
 	return c.readErrorResponse(ctx)
@@ -75,7 +75,7 @@ func (c *Conn) ReadNotice(ctx context.Context) (ErrorResponse, error) {
 
 func (c *Conn) ReadError(ctx context.Context) (ErrorResponse, error) {
 	var zero ErrorResponse
-	if err := checkMessageHeader(c.h, 'E'); err != nil {
+	if err := c.checkMessageHeader('E'); err != nil {
 		return zero, err
 	}
 	return c.readErrorResponse(ctx)
