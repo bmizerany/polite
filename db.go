@@ -1,4 +1,4 @@
-package pqlite
+package postgres
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"io"
 	"net"
 
-	"blake.io/pqlite/febe"
-	"blake.io/pqlite/iter"
+	"blake.io/postgres/febe"
+	"blake.io/postgres/iter"
 )
 
 // TODO: https://www.postgresql.org/docs/current/protocol-flow.html

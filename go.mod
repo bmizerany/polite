@@ -1,6 +1,6 @@
-module blake.io/pqlite
+module blake.io/postgres
 
-go 1.20
+go 1.22
 
 require (
 	go4.org/mem v0.0.0-20220726221520-4f986261bf13

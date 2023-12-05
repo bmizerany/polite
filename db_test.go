@@ -1,4 +1,4 @@
-package pqlite
+package postgres
 
 import (
 	"context"

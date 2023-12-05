@@ -1,10 +1,10 @@
-package pqlite
+package postgres
 
 import (
 	"context"
 	"fmt"
 
-	"blake.io/pqlite/iter"
+	"blake.io/postgres/iter"
 )
 
 // Notification represents a notification received from the database sent by

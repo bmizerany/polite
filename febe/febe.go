@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	"blake.io/pqlite/febe/febeio"
+	"blake.io/postgres/febe/febeio"
 	"go4.org/mem"
 )
 
