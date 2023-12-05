@@ -92,7 +92,7 @@ func TestQueryAll(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func TestQueryAllUnprocceedColumnsPanic(t *testing.T) {
+func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil || !strings.Contains(fmt.Sprint(r), "unprocessed columns") {
@@ -102,7 +102,9 @@ func TestQueryAllUnprocceedColumnsPanic(t *testing.T) {
 
 	c := newConn(t)
 	var n int
-	for row, err := range c.QueryAll(context.Background(), "SELECT generate_series(1, 3)") {
+	rs := c.Query(context.Background(), "SELECT generate_series(1, 3)")
+	defer rs.Close()
+	for row, err := range rs.All {
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -158,11 +158,7 @@ func (c *Conn) QueryAll(ctx context.Context, sql string) iter.Seq2[*Row, error] 
 		rs := c.Query(ctx, sql)
 		defer rs.Close()
 		for row, err := range rs.All {
-			ok := yield(row, err)
-			if row.Unprocessed() > 0 {
-				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
-			}
-			if !ok {
+			if !yield(row, err) {
 				return
 			}
 		}
