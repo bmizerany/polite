@@ -140,22 +140,3 @@ func (c *Conn) readErrorResponse(ctx context.Context) (ErrorResponse, error) {
 	}
 	return e, nil
 }
-
-func (c *Conn) WriteErrorResponse(ctx context.Context, t ErrorType, e *ErrorFields) error {
-	var s sizer
-	s.addByte()
-	s.addInt32()
-	e.forEachField(func(t byte, v string) {
-		s.addByte()
-		s.addStrings(v)
-	})
-
-	c.c.WriteByte(byte(t))
-	c.c.WriteInt32(s.size())
-	e.forEachField(func(t byte, v string) {
-		c.c.WriteByte(t)
-		c.c.WriteString(v)
-	})
-	c.c.WriteByte(0)
-	return nil
-}
