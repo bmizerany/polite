@@ -234,7 +234,7 @@ func TestNotice(t *testing.T) {
 	checkPing(t, c) // check notice is dropped
 
 	var got []*febe.Notice
-	ctx = WithTrace(context.Background(), &Trace{
+	ctx = febe.WithTrace(context.Background(), &febe.Trace{
 		ReceivedNotice: func(ctx context.Context, notice *febe.Notice) {
 			got = append(got, notice)
 		},

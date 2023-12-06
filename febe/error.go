@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-type Async struct {
+type Notice struct {
 	Severity   string
 	Code       string
 	Message    string
@@ -26,7 +26,7 @@ type Async struct {
 	Verbosity  string
 }
 
-func (e *Async) Fields(yield func(fieldID byte, val string) bool) {
+func (e *Notice) Fields(yield func(fieldID byte, val string) bool) {
 	fields := []struct {
 		k byte
 		v string
@@ -56,10 +56,14 @@ func (e *Async) Fields(yield func(fieldID byte, val string) bool) {
 	}
 }
 
-type Notice Async
-
 // Error represents an error received from the backend.
-type Error Async
+type Error struct {
+	*Notice
+}
+
+func (n *Notice) AsError() *Error {
+	return &Error{Notice: n}
+}
 
 func (e *Error) Error() string {
 	var b strings.Builder
@@ -68,38 +72,19 @@ func (e *Error) Error() string {
 	return b.String()
 }
 
-type AsyncMessage struct {
+type NoticeResponse struct {
 	MessageHeader
-	*Async
+	*Notice
 }
 
-func (c *Conn) ReadNotice(ctx context.Context) (*Notice, error) {
-	if err := c.checkMessageHeader('N'); err != nil {
-		return nil, err
+func (c *Conn) readNoticeResponse(ctx context.Context) (NoticeResponse, error) {
+	if err := c.checkMessageHeader('N', 'E'); err != nil {
+		return NoticeResponse{}, err
 	}
-	m, err := c.readErrorResponse(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return (*Notice)(m.Async), nil
-}
-
-func (c *Conn) ReadError(ctx context.Context) (*Error, error) {
-	if err := c.checkMessageHeader('E'); err != nil {
-		return nil, err
-	}
-	m, err := c.readErrorResponse(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return (*Error)(m.Async), nil
-}
-
-func (c *Conn) readErrorResponse(ctx context.Context) (AsyncMessage, error) {
-	var zero AsyncMessage
-	e := AsyncMessage{
+	var zero NoticeResponse
+	n := NoticeResponse{
 		MessageHeader: c.h,
-		Async:         &Async{},
+		Notice:        &Notice{},
 	}
 	for {
 		k, err := c.c.ReadByte()
@@ -115,42 +100,67 @@ func (c *Conn) readErrorResponse(ctx context.Context) (AsyncMessage, error) {
 		}
 		switch k {
 		case 'S':
-			e.Severity = string(v)
+			n.Severity = string(v)
 		case 'C':
-			e.Code = string(v)
+			n.Code = string(v)
 		case 'M':
-			e.Message = string(v)
+			n.Message = string(v)
 		case 'D':
-			e.Detail = string(v)
+			n.Detail = string(v)
 		case 'H':
-			e.Hint = string(v)
+			n.Hint = string(v)
 		case 'P':
-			e.Position = string(v)
+			n.Position = string(v)
 		case 'p':
-			e.Internal = string(v)
+			n.Internal = string(v)
 		case 'W':
-			e.Where = string(v)
+			n.Where = string(v)
 		case 's':
-			e.Schema = string(v)
+			n.Schema = string(v)
 		case 't':
-			e.Table = string(v)
+			n.Table = string(v)
 		case 'c':
-			e.Column = string(v)
+			n.Column = string(v)
 		case 'd':
-			e.DataType = string(v)
+			n.DataType = string(v)
 		case 'n':
-			e.Constraint = string(v)
+			n.Constraint = string(v)
 		case 'F':
-			e.File = string(v)
+			n.File = string(v)
 		case 'L':
-			e.Line = string(v)
+			n.Line = string(v)
 		case 'R':
-			e.Routine = string(v)
+			n.Routine = string(v)
 		case 'V':
-			e.Verbosity = string(v)
+			n.Verbosity = string(v)
 		default:
 			return zero, fmt.Errorf("pqlite: unexpected error response key %q", k)
 		}
 	}
-	return e, nil
+	return n, nil
+}
+
+type ParameterStatusResponse struct {
+	MessageHeader
+	Name  string
+	Value string
+}
+
+func (c *Conn) ReadParameterStatus(ctx context.Context) (ParameterStatusResponse, error) {
+	var zero ParameterStatusResponse
+	if err := c.checkMessageHeader('S'); err != nil {
+		return zero, err
+	}
+	name, err := c.c.ReadString()
+	if err != nil {
+		return zero, err
+	}
+	value, err := c.c.ReadString()
+	if err != nil {
+		return zero, err
+	}
+	return ParameterStatusResponse{
+		Name:  string(name),
+		Value: string(value),
+	}, nil
 }

@@ -1,15 +1,15 @@
-package postgres
+package febe
 
 import (
 	"cmp"
 	"context"
-
-	"blake.io/postgres/febe"
 )
 
 type Trace struct {
-	ReceivedNotice func(ctx context.Context, err *febe.Notice)
-	ReceivedError  func(ctx context.Context, err *febe.Error)
+	ReceivedHeader          func(context.Context, MessageHeader)
+	ReceivedNotice          func(context.Context, *Notice)
+	ReceivedError           func(context.Context, *Error)
+	ReceivedParameterStatus func(context.Context, ParameterStatusResponse)
 
 	WroteExecute func(ctx context.Context, portal, statement string, args []string)
 }

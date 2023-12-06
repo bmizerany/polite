@@ -344,15 +344,6 @@ func (rs *Rows) next() (Row, error) {
 			}
 			// TODO(bmizerany): save the transaction status
 			return Row{}, ErrReadyForQuery
-		case 'N':
-			m, err := c.ReadNotice(rs.ctx)
-			if err != nil {
-				return Row{}, err
-			}
-			t := traceFromContext(rs.ctx)
-			if t.ReceivedNotice != nil {
-				t.ReceivedNotice(rs.ctx, m)
-			}
 		default:
 			return Row{}, fmt.Errorf("%w: unexpected message type: %q", ErrProtocol, h.Type())
 		}

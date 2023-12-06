@@ -36,16 +36,18 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 
 func (c *Conn) Err() error {
 	_, err := c.w.Write(nil)
+	if err != nil {
+		return err
+	}
+	_, err = c.r.Read(nil)
 	return err
 }
 
 // ReadByte reads a single byte from the stream.
 func (c *Conn) ReadByte() (byte, error) {
 	b, err := c.r.ReadByte()
-	if err != nil {
-		return 0, eofAsUnexpectedEOF(err)
-	}
-	return b, nil
+	err = eofAsUnexpectedEOF(err)
+	return b, err
 }
 
 func (c *Conn) WriteByte(b byte) error {
@@ -68,6 +70,7 @@ func (c *Conn) WriteInt16(n int16) error {
 }
 
 func (c *Conn) ReadInt32() (int32, error) {
+	// TODO(bmizerany): use ctx to SetDeadline
 	b, err := c.r.Peek(4)
 	if err != nil {
 		return 0, eofAsUnexpectedEOF(err)

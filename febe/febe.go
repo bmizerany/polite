@@ -7,11 +7,19 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"blake.io/postgres/febe/febeio"
 	"blake.io/postgres/iter"
 	"go4.org/mem"
+)
+
+// Errors
+var (
+	// ErrTerminate is returned when the server has terminated a
+	// connection.
+	ErrTerminated = fmt.Errorf("febe: terminated")
 )
 
 type ReadyStatus byte
@@ -37,11 +45,11 @@ func New(r io.Reader, w io.Writer) *Conn {
 	return &Conn{c: c}
 }
 
-func (c *Conn) checkMessageHeader(want byte) error {
-	if c.h.Type() != want {
-		return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", c.h.Type(), want)
+func (c *Conn) checkMessageHeader(want ...byte) error {
+	if slices.Contains(want, c.h.Type()) {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", c.h.Type(), want)
 }
 
 func (c *Conn) Err() error {
@@ -58,12 +66,12 @@ type Message interface {
 
 type MessageHeader struct {
 	msgType byte
-	msgLen  int
+	msgLen  int32
 }
 
 func (h MessageHeader) Type() byte            { return h.msgType }
-func (h MessageHeader) Len() int              { return h.msgLen }
-func (h MessageHeader) BodyLen() int          { return h.msgLen - 4 }
+func (h MessageHeader) Len() int              { return int(h.msgLen) }
+func (h MessageHeader) BodyLen() int          { return int(h.msgLen - 4) }
 func (h MessageHeader) Header() MessageHeader { return h }
 func (h MessageHeader) String() string {
 	return fmt.Sprintf("<MessageHeader Type:%q Len:%d>", h.msgType, h.msgLen)
@@ -76,23 +84,61 @@ func (h MessageHeader) String() string {
 // response and return an *ErrorFields as the error.
 func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	var zero MessageHeader
-	b, err := c.c.ReadByte()
-	if err != nil {
-		return zero, err
-	}
-	l, err := c.c.ReadInt32()
-	if err != nil {
-		return zero, err
-	}
-	c.h = MessageHeader{msgType: b, msgLen: int(l)}
-	if c.h.Type() == 'E' {
-		er, err := c.ReadError(ctx)
-		if err != nil {
+	t := traceFromContext(ctx)
+	for {
+		if err := c.advanceHeader(); err != nil {
 			return zero, err
 		}
-		return zero, er
+		if t.ReceivedHeader != nil {
+			t.ReceivedHeader(ctx, c.h)
+		}
+		switch c.h.Type() {
+		case 'N':
+			m, err := c.readNoticeResponse(ctx)
+			if err != nil {
+				return zero, err
+			}
+			if t.ReceivedNotice != nil {
+				t.ReceivedNotice(ctx, m.Notice)
+			}
+			continue
+		case 'E':
+			m, err := c.readNoticeResponse(ctx)
+			if err != nil {
+				return zero, err
+			}
+			e := m.Notice.AsError()
+			if t.ReceivedError != nil {
+				t.ReceivedError(ctx, e)
+			}
+			return zero, e
+		case 'S':
+			s, err := c.ReadParameterStatus(ctx)
+			if err != nil {
+				return zero, err
+			}
+			if t.ReceivedParameterStatus != nil {
+				t.ReceivedParameterStatus(ctx, s)
+			}
+			continue
+		case 'X':
+			return zero, ErrTerminated
+		default:
+			return c.h, c.c.Err()
+		}
 	}
-	return c.h, nil
+}
+
+func (c *Conn) advanceHeader() (err error) {
+	// TODO(bmizerany): take a context and use it to set a deadline
+	var h MessageHeader
+	h.msgType, err = c.c.ReadByte()
+	if err != nil {
+		return err
+	}
+	h.msgLen, err = c.c.ReadInt32()
+	c.h = h
+	return err
 }
 
 func (c *Conn) Messages(ctx context.Context) iter.Seq2[MessageHeader, error] {
@@ -239,7 +285,7 @@ func (c *Conn) WriteParse(ctx context.Context, portal, sql string) error {
 
 	c.c.WriteByte('P')
 	c.c.WriteInt32(s.size())
-	c.c.WriteString("")
+	c.c.WriteString(portal)
 	c.c.WriteString(sql)
 	c.c.WriteInt16(0) // 0 for no param types
 	return c.Err()

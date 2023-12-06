@@ -31,7 +31,7 @@ func TestError(t *testing.T) {
 	}
 }
 
-var testAsyncFields = &Async{
+var testNotice = &Notice{
 	Severity:   "ERROR",
 	Code:       "CODE",
 	Message:    "MESSAGE",
@@ -51,12 +51,12 @@ var testAsyncFields = &Async{
 	Verbosity:  "VERBOSITY",
 }
 
-func writeErrorResponse(t *testing.T, EorN byte, c *Conn) {
+func writeNoticeResponse(t *testing.T, EorN byte, c *Conn) {
 	t.Helper()
 
 	var s sizer
 	s.addInt32()
-	for _, v := range testAsyncFields.Fields {
+	for _, v := range testNotice.Fields {
 		s.addByte()
 		s.addString(v)
 	}
@@ -64,7 +64,7 @@ func writeErrorResponse(t *testing.T, EorN byte, c *Conn) {
 
 	c.c.WriteByte(EorN)
 	c.c.WriteInt32(s.size())
-	for t, v := range testAsyncFields.Fields {
+	for t, v := range testNotice.Fields {
 		c.c.WriteByte(t)
 		c.c.WriteString(v)
 	}
@@ -75,30 +75,48 @@ func writeErrorResponse(t *testing.T, EorN byte, c *Conn) {
 func TestReadHeaderReadErrorResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
-	writeErrorResponse(t, 'E', c)
+	writeNoticeResponse(t, 'E', c)
+	ctx := context.Background()
+	h, err := c.ReadHeader(ctx)
+	diff.Test(t, t.Errorf, h, MessageHeader{})
+	diff.Test(t, t.Errorf, err, testNotice.AsError())
+}
+
+func TestReadHeaderEmpty(t *testing.T) {
+	var b bytes.Buffer
+	c := New(&b, &b)
+
 	ctx := context.Background()
 	gotH, gotErr := c.ReadHeader(ctx)
 	diff.Test(t, t.Errorf, gotH, MessageHeader{})
-	diff.Test(t, t.Errorf, gotErr, (*Error)(testAsyncFields))
+	diff.Test(t, t.Errorf, gotErr, io.ErrUnexpectedEOF)
 }
 
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
-	writeErrorResponse(t, 'N', c)
+	writeNoticeResponse(t, 'N', c)
+	c.c.WriteByte('X') // Terminate
+	c.c.WriteInt32(4)
+	c.c.Flush()
 
-	_, err := c.ReadHeader(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	var got *Notice
+	ctx := WithTrace(context.Background(), &Trace{
+		ReceivedHeader: func(ctx context.Context, h MessageHeader) {
+			t.Logf("got header: %v", h)
+		},
+		ReceivedNotice: func(ctx context.Context, n *Notice) {
+			t.Logf("got notice: %v", n)
+			got = n
+		},
+	})
+
+	_, err := c.ReadHeader(ctx)
+	if !errors.Is(err, ErrTerminated) {
+		t.Fatalf("err = %v; want %v", err, ErrTerminated)
 	}
 
-	got, err := c.ReadNotice(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	want := (*Notice)(testAsyncFields)
-	diff.Test(t, t.Errorf, got, want)
+	diff.Test(t, t.Errorf, got, testNotice)
 }
 
 func TestWriteStartupMessage(t *testing.T) {
@@ -384,6 +402,181 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("expected to find at least one Read method to check")
 	}
+}
+
+func TestReadNotification(t *testing.T) {
+	// write a test to check that ReadNotification reads the message
+	// from postgres and returns the correct NotificationResponse
+	// struct.
+
+	var b bytes.Buffer
+	c := New(&b, &b)
+	defer c.checkDone(t)
+
+	c.c.WriteByte('A')
+	c.c.WriteInt32(33)
+	c.c.WriteInt32(1234) // pid
+	c.c.WriteString("hello")
+	c.c.WriteString("world")
+	c.c.Flush()
+
+	_, err := c.ReadHeader(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.ReadNotification(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := NotificationResponse{
+		MessageHeader: MessageHeader{
+			msgType: 'A',
+			msgLen:  33,
+		},
+		PID:     1234,
+		Channel: []byte("hello"),
+		Payload: []byte("world"),
+	}
+
+	diff.Test(t, t.Errorf, got, want)
+
+}
+
+func TestWriteQuery(t *testing.T) {
+	var b bytes.Buffer
+	c := New(&b, &b)
+
+	q := "SELECT 1"
+	if err := c.WriteQuery(context.Background(), q); err != nil {
+		t.Fatal(err)
+	}
+	c.Flush()
+
+	want := []byte{
+		'Q', 0, 0, 0, 13, // message header
+		'S', 'E', 'L', 'E', 'C', 'T', ' ', '1', 0, // query
+	}
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestWriteParse(t *testing.T) {
+	var b bytes.Buffer
+	c := New(&b, &b)
+
+	if err := c.WriteParse(context.Background(), "test", "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+	c.Flush()
+
+	want := []byte{
+		'P', 0, 0, 0, 20, // message header
+		't', 'e', 's', 't', 0, // portal name
+		'S', 'E', 'L', 'E', 'C', 'T', ' ', '1', 0, // sql
+		0, 0, // number of params (int16)
+	}
+	t.Logf("got:  %q", b.Bytes())
+	t.Logf("want: %q", want)
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestWriteBind(t *testing.T) {
+	// func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args [][]byte) error {
+	var b bytes.Buffer
+	c := New(&b, &b)
+
+	args := [][]byte{
+		[]byte("hello"),
+		[]byte("world"),
+	}
+	if err := c.WriteBind(context.Background(), "portal", "stmt", args); err != nil {
+		t.Fatal(err)
+	}
+	c.Flush()
+
+	want := []byte{
+		'B',         // message type
+		0, 0, 0, 40, // message length
+		'p', 'o', 'r', 't', 'a', 'l', 0, // portal name (string)
+		's', 't', 'm', 't', 0, // statement name (string)
+		0, 0, // number of format codes (int16)
+		0, 2, // number of arguments (int16)
+		0, 0, 0, 5, // argument length (int32)
+		'h', 'e', 'l', 'l', 'o', // argument value
+		0, 0, 0, 5, // argument length (int32)
+		'w', 'o', 'r', 'l', 'd', // argument value
+		0, 0, // number of result column types (int16)
+	}
+	t.Logf("len:  %d", b.Len())
+	t.Logf("got:  %q", b.Bytes())
+	t.Logf("want: %q", want)
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestWriteSync(t *testing.T) {
+	var b bytes.Buffer
+	c := New(&b, &b)
+
+	if err := c.WriteSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	c.Flush()
+
+	want := []byte{
+		'S', 0, 0, 0, 4, // message header
+	}
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestWriteExecute(t *testing.T) {
+	var b bytes.Buffer
+	c := New(&b, &b)
+
+	if err := c.WriteExecute(context.Background(), "portal", 0); err != nil {
+		t.Fatal(err)
+	}
+	c.Flush()
+
+	want := []byte{
+		'E',         // message type
+		0, 0, 0, 15, // message length
+		'p', 'o', 'r', 't', 'a', 'l', 0, // portal name
+		0, 0, 0, 0, // max rows
+	}
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestReadParameterStatus(t *testing.T) {
+	var b bytes.Buffer
+	c := New(&b, &b)
+
+	c.c.WriteByte('S')
+	c.c.WriteInt32(21)
+	c.c.WriteString("server_version")
+	c.c.WriteString("9.6.5")
+	c.c.WriteByte('X')
+	c.c.WriteInt32(4)
+	c.Flush()
+
+	var got ParameterStatusResponse
+	ctx := context.Background()
+	ctx = WithTrace(ctx, &Trace{
+		ReceivedParameterStatus: func(ctx context.Context, ps ParameterStatusResponse) {
+			got = ps
+		},
+	})
+
+	_, err := c.ReadHeader(ctx)
+	if !errors.Is(err, ErrTerminated) {
+		t.Fatal(err)
+	}
+
+	want := ParameterStatusResponse{
+		Name:  "server_version",
+		Value: "9.6.5",
+	}
+	diff.Test(t, t.Errorf, got, want)
 }
 
 var errTest = errors.New("febe_test: test error")
