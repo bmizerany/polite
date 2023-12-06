@@ -6,14 +6,7 @@ import (
 	"strings"
 )
 
-type ErrorType byte
-
-const (
-	Error  ErrorType = 'E'
-	Notice ErrorType = 'N'
-)
-
-type ErrorFields struct {
+type Async struct {
 	Severity   string
 	Code       string
 	Message    string
@@ -33,36 +26,55 @@ type ErrorFields struct {
 	Verbosity  string
 }
 
-func (e *ErrorFields) Error() string {
+func (e *Async) Fields(yield func(fieldID byte, val string) bool) {
+	fields := []struct {
+		k byte
+		v string
+	}{
+		{'S', e.Severity},
+		{'C', e.Code},
+		{'M', e.Message},
+		{'D', e.Detail},
+		{'H', e.Hint},
+		{'P', e.Position},
+		{'p', e.Internal},
+		{'W', e.Where},
+		{'s', e.Schema},
+		{'t', e.Table},
+		{'c', e.Column},
+		{'d', e.DataType},
+		{'n', e.Constraint},
+		{'F', e.File},
+		{'L', e.Line},
+		{'R', e.Routine},
+		{'V', e.Verbosity},
+	}
+	for _, f := range fields {
+		if !yield(f.k, f.v) {
+			return
+		}
+	}
+}
+
+type Notice struct {
+	Async
+}
+
+// Error represents an error received from the backend.
+type Error struct {
+	Async
+}
+
+func (e *Error) Error() string {
 	var b strings.Builder
 	b.WriteString("postgres: ")
 	b.WriteString(e.Message)
 	return b.String()
 }
 
-func (e *ErrorFields) forEachField(f func(t byte, s string)) {
-	f('S', e.Severity)
-	f('C', e.Code)
-	f('M', e.Message)
-	f('D', e.Detail)
-	f('H', e.Hint)
-	f('P', e.Position)
-	f('p', e.Internal)
-	f('W', e.Where)
-	f('s', e.Schema)
-	f('t', e.Table)
-	f('c', e.Column)
-	f('d', e.DataType)
-	f('n', e.Constraint)
-	f('F', e.File)
-	f('L', e.Line)
-	f('R', e.Routine)
-	f('V', e.Verbosity)
-}
-
 type ErrorResponse struct {
 	MessageHeader
-	*ErrorFields
+	*Error
 }
 
 func (c *Conn) ReadNotice(ctx context.Context) (ErrorResponse, error) {
@@ -85,7 +97,7 @@ func (c *Conn) readErrorResponse(ctx context.Context) (ErrorResponse, error) {
 	var zero ErrorResponse
 	e := ErrorResponse{
 		MessageHeader: c.h,
-		ErrorFields:   &ErrorFields{},
+		Error:         &Error{},
 	}
 	for {
 		k, err := c.c.ReadByte()

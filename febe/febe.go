@@ -90,7 +90,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		if err != nil {
 			return zero, err
 		}
-		return zero, er.ErrorFields
+		return zero, er.Error
 	}
 	return c.h, nil
 }

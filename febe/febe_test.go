@@ -31,24 +31,26 @@ func TestError(t *testing.T) {
 	}
 }
 
-var testErrorFields = &ErrorFields{
-	Severity:   "ERROR",
-	Code:       "CODE",
-	Message:    "MESSAGE",
-	Detail:     "DETAIL",
-	Hint:       "HINT",
-	Position:   "POS",
-	Internal:   "INTERNAL",
-	Where:      "WHERE",
-	Schema:     "SCHEMA",
-	Table:      "TABLE",
-	Column:     "COLUMN",
-	DataType:   "DATATYPE",
-	Constraint: "CONSTRAINT",
-	File:       "FILE",
-	Line:       "LINE",
-	Routine:    "ROUTINE",
-	Verbosity:  "VERBOSITY",
+var testErrorFields = &Error{
+	Async: Async{
+		Severity:   "ERROR",
+		Code:       "CODE",
+		Message:    "MESSAGE",
+		Detail:     "DETAIL",
+		Hint:       "HINT",
+		Position:   "POS",
+		Internal:   "INTERNAL",
+		Where:      "WHERE",
+		Schema:     "SCHEMA",
+		Table:      "TABLE",
+		Column:     "COLUMN",
+		DataType:   "DATATYPE",
+		Constraint: "CONSTRAINT",
+		File:       "FILE",
+		Line:       "LINE",
+		Routine:    "ROUTINE",
+		Verbosity:  "VERBOSITY",
+	},
 }
 
 func writeErrorResponse(t *testing.T, EorN byte, c *Conn) {
@@ -56,18 +58,18 @@ func writeErrorResponse(t *testing.T, EorN byte, c *Conn) {
 
 	var s sizer
 	s.addInt32()
-	testErrorFields.forEachField(func(t byte, v string) {
+	for _, v := range testErrorFields.Fields {
 		s.addByte()
 		s.addString(v)
-	})
+	}
 	s.addByte() // terminating byte
 
 	c.c.WriteByte(EorN)
 	c.c.WriteInt32(s.size())
-	testErrorFields.forEachField(func(t byte, v string) {
+	for t, v := range testErrorFields.Fields {
 		c.c.WriteByte(t)
 		c.c.WriteString(v)
-	})
+	}
 	c.c.WriteByte(0)
 	c.c.Flush()
 }
@@ -91,7 +93,7 @@ func TestNoticeResponse(t *testing.T) {
 			msgType: 'N',
 			msgLen:  b.Len() - 1,
 		},
-		ErrorFields: testErrorFields,
+		Error: testErrorFields,
 	}
 
 	_, err := c.ReadHeader(context.Background())
