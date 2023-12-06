@@ -31,26 +31,24 @@ func TestError(t *testing.T) {
 	}
 }
 
-var testErrorFields = &Error{
-	Async: Async{
-		Severity:   "ERROR",
-		Code:       "CODE",
-		Message:    "MESSAGE",
-		Detail:     "DETAIL",
-		Hint:       "HINT",
-		Position:   "POS",
-		Internal:   "INTERNAL",
-		Where:      "WHERE",
-		Schema:     "SCHEMA",
-		Table:      "TABLE",
-		Column:     "COLUMN",
-		DataType:   "DATATYPE",
-		Constraint: "CONSTRAINT",
-		File:       "FILE",
-		Line:       "LINE",
-		Routine:    "ROUTINE",
-		Verbosity:  "VERBOSITY",
-	},
+var testAsyncFields = &Async{
+	Severity:   "ERROR",
+	Code:       "CODE",
+	Message:    "MESSAGE",
+	Detail:     "DETAIL",
+	Hint:       "HINT",
+	Position:   "POS",
+	Internal:   "INTERNAL",
+	Where:      "WHERE",
+	Schema:     "SCHEMA",
+	Table:      "TABLE",
+	Column:     "COLUMN",
+	DataType:   "DATATYPE",
+	Constraint: "CONSTRAINT",
+	File:       "FILE",
+	Line:       "LINE",
+	Routine:    "ROUTINE",
+	Verbosity:  "VERBOSITY",
 }
 
 func writeErrorResponse(t *testing.T, EorN byte, c *Conn) {
@@ -58,7 +56,7 @@ func writeErrorResponse(t *testing.T, EorN byte, c *Conn) {
 
 	var s sizer
 	s.addInt32()
-	for _, v := range testErrorFields.Fields {
+	for _, v := range testAsyncFields.Fields {
 		s.addByte()
 		s.addString(v)
 	}
@@ -66,7 +64,7 @@ func writeErrorResponse(t *testing.T, EorN byte, c *Conn) {
 
 	c.c.WriteByte(EorN)
 	c.c.WriteInt32(s.size())
-	for t, v := range testErrorFields.Fields {
+	for t, v := range testAsyncFields.Fields {
 		c.c.WriteByte(t)
 		c.c.WriteString(v)
 	}
@@ -81,20 +79,13 @@ func TestReadHeaderReadErrorResponse(t *testing.T) {
 	ctx := context.Background()
 	gotH, gotErr := c.ReadHeader(ctx)
 	diff.Test(t, t.Errorf, gotH, MessageHeader{})
-	diff.Test(t, t.Errorf, gotErr, testErrorFields)
+	diff.Test(t, t.Errorf, gotErr, (*Error)(testAsyncFields))
 }
 
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
 	writeErrorResponse(t, 'N', c)
-	want := ErrorResponse{
-		MessageHeader: MessageHeader{
-			msgType: 'N',
-			msgLen:  b.Len() - 1,
-		},
-		Error: testErrorFields,
-	}
 
 	_, err := c.ReadHeader(context.Background())
 	if err != nil {
@@ -106,6 +97,7 @@ func TestNoticeResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	want := (*Notice)(testAsyncFields)
 	diff.Test(t, t.Errorf, got, want)
 }
 
@@ -405,6 +397,13 @@ func (errorWriter) Write([]byte) (int, error) {
 
 func testReadMethodSignature(t *testing.T, m reflect.Method) {
 	t.Helper()
+	exempt := map[string]bool{
+		"ReadError":  true,
+		"ReadNotice": true,
+	}
+	if exempt[m.Name] {
+		return
+	}
 	if strings.HasSuffix(m.Name, "Response") {
 		t.Fatalf("%s should not end with Response", m.Name)
 	}

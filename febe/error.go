@@ -56,14 +56,10 @@ func (e *Async) Fields(yield func(fieldID byte, val string) bool) {
 	}
 }
 
-type Notice struct {
-	Async
-}
+type Notice Async
 
 // Error represents an error received from the backend.
-type Error struct {
-	Async
-}
+type Error Async
 
 func (e *Error) Error() string {
 	var b strings.Builder
@@ -72,32 +68,38 @@ func (e *Error) Error() string {
 	return b.String()
 }
 
-type ErrorResponse struct {
+type AsyncMessage struct {
 	MessageHeader
-	*Error
+	*Async
 }
 
-func (c *Conn) ReadNotice(ctx context.Context) (ErrorResponse, error) {
-	var zero ErrorResponse
+func (c *Conn) ReadNotice(ctx context.Context) (*Notice, error) {
 	if err := c.checkMessageHeader('N'); err != nil {
-		return zero, err
+		return nil, err
 	}
-	return c.readErrorResponse(ctx)
+	m, err := c.readErrorResponse(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return (*Notice)(m.Async), nil
 }
 
-func (c *Conn) ReadError(ctx context.Context) (ErrorResponse, error) {
-	var zero ErrorResponse
+func (c *Conn) ReadError(ctx context.Context) (*Error, error) {
 	if err := c.checkMessageHeader('E'); err != nil {
-		return zero, err
+		return nil, err
 	}
-	return c.readErrorResponse(ctx)
+	m, err := c.readErrorResponse(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return (*Error)(m.Async), nil
 }
 
-func (c *Conn) readErrorResponse(ctx context.Context) (ErrorResponse, error) {
-	var zero ErrorResponse
-	e := ErrorResponse{
+func (c *Conn) readErrorResponse(ctx context.Context) (AsyncMessage, error) {
+	var zero AsyncMessage
+	e := AsyncMessage{
 		MessageHeader: c.h,
-		Error:         &Error{},
+		Async:         &Async{},
 	}
 	for {
 		k, err := c.c.ReadByte()

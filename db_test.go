@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"blake.io/postgres/febe"
 	"kr.dev/diff"
 )
 
@@ -191,6 +192,65 @@ func TestExec(t *testing.T) {
 		RowsAffected: 1,
 	}
 	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestError(t *testing.T) {
+	c := newConn(t)
+	_, err := c.Exec(context.Background(), "SELECT * FROM nothing")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	t.Log(err)
+}
+
+func TestNotice(t *testing.T) {
+	c := newConn(t)
+	defer checkPing(t, c) // ensure we leave in a good state
+
+	_, err := c.Exec(context.Background(), `
+		CREATE FUNCTION raise_notice() RETURNS integer
+		   LANGUAGE plpgsql AS
+		$$BEGIN
+		   RAISE NOTICE 'boom';
+		   RETURN 42;
+		END;$$;
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	notice := func(ctx context.Context) {
+		t.Helper()
+		_, err = c.Exec(ctx, "SELECT raise_notice()")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx := context.Background()
+
+	// no handler
+	notice(ctx)
+	checkPing(t, c) // check notice is dropped
+
+	var got []*febe.Notice
+	ctx = WithTrace(context.Background(), &Trace{
+		ReceivedNotice: func(ctx context.Context, notice *febe.Notice) {
+			got = append(got, notice)
+		},
+	})
+
+	notice(ctx)
+	want := []*febe.Notice{
+		{
+			Severity:  "NOTICE",
+			Verbosity: "NOTICE",
+			Message:   "boom",
+		},
+	}
+	keep := diff.KeepFields[febe.Notice]("Severity", "Verbosity", "Message")
+	diff.Test(t, t.Errorf, got, want, keep)
+
 }
 
 func checkPing(t *testing.T, c *Conn) {
