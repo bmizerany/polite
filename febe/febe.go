@@ -118,7 +118,10 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 				return zero, err
 			}
 			if t.ReceivedParameterStatus != nil {
-				t.ReceivedParameterStatus(ctx, s)
+				t.ReceivedParameterStatus(ctx, Parameter{
+					Name:  s.Name,
+					Value: s.Value,
+				})
 			}
 			continue
 		case 'X':

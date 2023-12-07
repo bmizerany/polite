@@ -5,11 +5,16 @@ import (
 	"context"
 )
 
+type Parameter struct {
+	Name  string
+	Value string
+}
+
 type Trace struct {
 	ReceivedHeader          func(context.Context, MessageHeader)
 	ReceivedNotice          func(context.Context, *Notice)
 	ReceivedError           func(context.Context, *Error)
-	ReceivedParameterStatus func(context.Context, ParameterStatusResponse)
+	ReceivedParameterStatus func(context.Context, Parameter)
 
 	WroteExecute func(ctx context.Context, portal, statement string, args []string)
 }

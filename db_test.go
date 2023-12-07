@@ -253,6 +253,29 @@ func TestNotice(t *testing.T) {
 
 }
 
+func TestParameterStatus(t *testing.T) {
+	c := newConn(t)
+	defer checkPing(t, c) // ensure we leave in a good state
+
+	var got []febe.Parameter
+	ctx := febe.WithTrace(context.Background(), &febe.Trace{
+		ReceivedParameterStatus: func(ctx context.Context, p febe.Parameter) {
+			got = append(got, p)
+		},
+	})
+
+	_, err := c.Exec(ctx, "SET datestyle TO postgres, dmy")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkPing(t, c) // flush out parameter status if not received by Exec
+
+	diff.Test(t, t.Errorf, got, []febe.Parameter{
+		{Name: "DateStyle", Value: "Postgres, DMY"},
+	})
+}
+
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
 	rs := c.Query(context.Background(), "SELECT 1")

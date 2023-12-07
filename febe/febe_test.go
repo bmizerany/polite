@@ -559,11 +559,11 @@ func TestReadParameterStatus(t *testing.T) {
 	c.c.WriteInt32(4)
 	c.Flush()
 
-	var got ParameterStatusResponse
+	var got []Parameter
 	ctx := context.Background()
 	ctx = WithTrace(ctx, &Trace{
-		ReceivedParameterStatus: func(ctx context.Context, ps ParameterStatusResponse) {
-			got = ps
+		ReceivedParameterStatus: func(ctx context.Context, ps Parameter) {
+			got = append(got, ps)
 		},
 	})
 
@@ -572,9 +572,11 @@ func TestReadParameterStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := ParameterStatusResponse{
-		Name:  "server_version",
-		Value: "9.6.5",
+	want := []Parameter{
+		{
+			Name:  "server_version",
+			Value: "9.6.5",
+		},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }
