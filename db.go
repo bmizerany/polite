@@ -31,7 +31,7 @@ import (
 // Errors
 var (
 	ErrProtocol      = errors.New("pqlite: protocol error")
-	ErrReadyForQuery = errors.New("pqlite: complete")
+	ErrDone          = errors.New("pqlite: done")
 	ErrEmptyQuery    = errors.New("pqlite: empty query")
 	ErrNoMoreColumns = errors.New("pqlite: no more columns")
 )
@@ -279,7 +279,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		row, err := rs.next()
 		if err != nil {
 			rs.err = err
-			if !errors.Is(err, ErrReadyForQuery) {
+			if !errors.Is(err, ErrDone) {
 				yield(nil, err)
 			}
 			return
@@ -343,7 +343,7 @@ func (rs *Rows) next() (Row, error) {
 				return Row{}, err
 			}
 			// TODO(bmizerany): save the transaction status
-			return Row{}, ErrReadyForQuery
+			return Row{}, ErrDone
 		default:
 			return Row{}, fmt.Errorf("%w: unexpected message type: %q", ErrProtocol, h.Type())
 		}
