@@ -39,7 +39,7 @@ var (
 type Conn struct {
 	dsnOrURL string
 	cn       net.Conn
-	c        *febe.Conn
+	fc       *febe.Conn
 }
 
 // Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
@@ -61,25 +61,25 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 	c := &Conn{
 		dsnOrURL: dsnOrURL,
 		cn:       cn,
-		c:        febe.New(cn, cn),
+		fc:       febe.New(cn, cn),
 	}
-	if err := c.c.WriteStartupMessage(ctx, o.Extra...); err != nil {
+	if err := c.fc.WriteStartupMessage(ctx, o.Extra...); err != nil {
 		return nil, err
 	}
 
-	if err := c.c.Flush(); err != nil {
+	if err := c.fc.Flush(); err != nil {
 		return nil, err
 	}
 
 	for {
-		h, err := c.c.ReadHeader(ctx)
+		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
 			return nil, err
 		}
 
 		switch h.Type() {
 		case 'R':
-			cr, err := c.c.ReadAuthentication(ctx)
+			cr, err := c.fc.ReadAuthentication(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -87,16 +87,16 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 				panic("TODO") // support passwrod
 			}
 		case 'S':
-			if err := c.c.DiscardMessage(ctx); err != nil {
+			if err := c.fc.DiscardMessage(ctx); err != nil {
 				return nil, err
 			}
 		case 'K':
 			// TODO(bmizerany): save the key for cancellations later
-			if err := c.c.DiscardMessage(ctx); err != nil {
+			if err := c.fc.DiscardMessage(ctx); err != nil {
 				return nil, err
 			}
 		case 'Z':
-			_, err := c.c.ReadReadyForQuery(ctx)
+			_, err := c.fc.ReadReadyForQuery(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -136,27 +136,27 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 			return &Rows{err: err}
 		}
 	} else {
-		if err := c.c.WriteQuery(ctx, sql); err != nil {
+		if err := c.fc.WriteQuery(ctx, sql); err != nil {
 			return &Rows{err: err}
 		}
 	}
-	if err := c.c.Flush(); err != nil {
+	if err := c.fc.Flush(); err != nil {
 		return &Rows{err: err}
 	}
 	return &Rows{ctx: ctx, c: c}
 }
 
 func (c *Conn) writeExtendedQuery(ctx context.Context, sql string, args ...[]byte) (err error) {
-	if err := c.c.WriteParse(ctx, "", sql); err != nil {
+	if err := c.fc.WriteParse(ctx, "", sql); err != nil {
 		return err
 	}
-	if err := c.c.WriteBind(ctx, "", "", args); err != nil {
+	if err := c.fc.WriteBind(ctx, "", "", args); err != nil {
 		return err
 	}
-	if err := c.c.WriteExecute(ctx, "", 0); err != nil {
+	if err := c.fc.WriteExecute(ctx, "", 0); err != nil {
 		return err
 	}
-	return c.c.WriteSync(ctx)
+	return c.fc.WriteSync(ctx)
 }
 
 // QueryAll is short for:
@@ -213,7 +213,7 @@ func (r *Row) Reader() (io.ReadCloser, error) {
 		return nil, ErrNoMoreColumns
 	}
 	r.rem--
-	rc, err := r.c.c.ReadDataRowValue(r.ctx)
+	rc, err := r.c.fc.ReadDataRowValue(r.ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +295,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 }
 
 func (rs *Rows) next() (Row, error) {
-	c := rs.c.c
+	c := rs.c.fc
 	for {
 		h, err := c.ReadHeader(rs.ctx)
 		if err != nil {
