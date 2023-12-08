@@ -179,15 +179,15 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 		rs := c.Query(context.Background(), "")
 		defer rs.Close()
 
-		var errs []error
+		var got []error
 		for _, err := range rs.All {
-			errs = append(errs, err)
+			got = append(got, err)
 		}
-		if len(errs) != 1 {
-			t.Fatalf("expected 1 error; got %d", len(errs))
+		if len(got) != 1 {
+			t.Fatalf("expected 1 error; got %d", len(got))
 		}
-		if !errors.Is(errs[0], ErrEmptyQuery) {
-			t.Fatalf("expected ErrEmptyQuery; got %v", errs[0])
+		if !errors.Is(got[0], ErrEmptyQuery) {
+			t.Fatalf("expected ErrEmptyQuery; got %v", got[0])
 		}
 	})
 
