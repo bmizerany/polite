@@ -13,10 +13,22 @@ import (
 	"kr.dev/diff"
 )
 
+func createDB(t *testing.T) string {
+	tname := strings.Replace(t.Name(), "/", "_", -1)
+	dbname := fmt.Sprintf("test_%s_%s", tname, randomString())
+	dbname = strings.ToLower(dbname)
+	_, err := mc.Exec(context.Background(), "CREATE DATABASE "+dbname)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn := mainDSN + " dbname=" + dbname
+	t.Logf("newConn: dsn: %q", dsn)
+	return dsn
+}
+
 func newConn(t *testing.T) *Conn {
-	t.Helper()
-	dsn := createDB(t)
 	ctx := context.Background()
+	dsn := createDB(t)
 	c, err := Dial(ctx, dsn)
 	if err != nil {
 		t.Fatal(err)
@@ -26,7 +38,10 @@ func newConn(t *testing.T) *Conn {
 			t.Fatal(err)
 		}
 	})
-	checkPing(t, c)
+	_, err = c.Exec(ctx, "SELECT 1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	return c
 }
 
@@ -150,23 +165,40 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 		if n++; n == 1 {
 			break
 		}
-		row.Close()
+		if err := row.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
 func TestQueryEmptyQueryResponse(t *testing.T) {
-	c := newConn(t)
-	var got error
-	rs := c.Query(context.Background(), "")
-	for _, got = range rs.All {
-		break
-	}
-	if !errors.Is(got, ErrEmptyQuery) {
-		t.Errorf("got = %v, want %v", got, ErrEmptyQuery)
-	}
+	t.Run("All", func(t *testing.T) {
+		c := newConn(t)
+		defer checkPing(t, c)
 
-	// check there is no residue left on the wire
-	checkPing(t, c)
+		rs := c.Query(context.Background(), "")
+		defer rs.Close()
+
+		var errs []error
+		for _, err := range rs.All {
+			errs = append(errs, err)
+		}
+		if len(errs) != 1 {
+			t.Fatalf("expected 1 error; got %d", len(errs))
+		}
+		if !errors.Is(errs[0], ErrEmptyQuery) {
+			t.Fatalf("expected ErrEmptyQuery; got %v", errs[0])
+		}
+	})
+
+	t.Run("Close", func(t *testing.T) {
+		c := newConn(t)
+		defer checkPing(t, c)
+		got := c.Query(context.Background(), "").Close()
+		if !errors.Is(got, ErrEmptyQuery) {
+			t.Fatalf("got %v; want ErrEmptyQuery", got)
+		}
+	})
 }
 
 func TestExecSelectTag(t *testing.T) {
@@ -203,7 +235,10 @@ func TestExecLimit1(t *testing.T) {
 
 func TestExec(t *testing.T) {
 	cn := newConn(t)
-	checkExec(t, cn, "CREATE TABLE foo (n INT)")
+	_, err := cn.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)")
+	if err != nil {
+		t.Fatal(err)
+	}
 	got, err := cn.Exec(context.Background(), "INSERT INTO foo VALUES (1)")
 	if err != nil {
 		t.Fatal(err)
@@ -318,15 +353,6 @@ func checkPing(t *testing.T, c *Conn) {
 	}
 }
 
-func checkExec(t *testing.T, c *Conn, sql string) {
-	t.Helper()
-	t.Logf("exec: %q", sql)
-	_, err := c.Exec(context.Background(), sql)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func mustGetUsername() string {
 	cu, err := user.Current()
 	if err != nil {
@@ -346,17 +372,6 @@ var (
 		return c
 	}()
 )
-
-func createDB(t *testing.T) (dsn string) {
-	t.Helper()
-	tname := strings.Replace(t.Name(), "/", "_", 0)
-	dbname := fmt.Sprintf("test_%s_%s", tname, randomString())
-	dbname = strings.ToLower(dbname)
-	checkExec(t, mc, fmt.Sprintf("CREATE DATABASE %s", dbname))
-	dsn = mainDSN + " dbname=" + dbname
-	t.Logf("createDB: dsn: %q", dsn)
-	return dsn
-}
 
 // randomString uses math/rand to generate a random string of 8 printable
 // characters.

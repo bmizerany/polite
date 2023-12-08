@@ -49,7 +49,10 @@ func TestListenNotify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	checkExec(t, c, "NOTIFY foo, 'bar'")
+	_, err = c.Exec(ctx, "NOTIFY foo, 'bar'")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
