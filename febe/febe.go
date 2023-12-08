@@ -279,16 +279,16 @@ func (c *Conn) WriteQuery(ctx context.Context, query string) error {
 	return c.Err()
 }
 
-func (c *Conn) WriteParse(ctx context.Context, portal, sql string) error {
+func (c *Conn) WriteParse(ctx context.Context, stmt, sql string) error {
 	var s sizer
 	s.addInt32() // length
-	s.addString(portal)
+	s.addString(stmt)
 	s.addString(sql)
 	s.addInt16() // 0 for no param types
 
 	c.c.WriteByte('P')
 	c.c.WriteInt32(s.size())
-	c.c.WriteString(portal)
+	c.c.WriteString(stmt)
 	c.c.WriteString(sql)
 	c.c.WriteInt16(0) // 0 for no param types
 	return c.Err()
