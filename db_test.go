@@ -349,7 +349,8 @@ var (
 
 func createDB(t *testing.T) (dsn string) {
 	t.Helper()
-	dbname := fmt.Sprintf("test_%s_%s", t.Name(), randomString())
+	tname := strings.Replace(t.Name(), "/", "_", 0)
+	dbname := fmt.Sprintf("test_%s_%s", tname, randomString())
 	dbname = strings.ToLower(dbname)
 	checkExec(t, mc, fmt.Sprintf("CREATE DATABASE %s", dbname))
 	dsn = mainDSN + " dbname=" + dbname
