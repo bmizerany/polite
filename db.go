@@ -131,8 +131,9 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 	for i, arg := range args {
 		bargs[i] = []byte(arg)
 	}
-	if len(args) > 0 {
-		if err := c.writeExtendedQuery(ctx, sql, bargs...); err != nil {
+	extended := len(args) > 0
+	if extended {
+		if err := c.prepare(ctx, sql, bargs...); err != nil {
 			return &Rows{err: err}
 		}
 	} else {
@@ -143,20 +144,14 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 	if err := c.fc.Flush(); err != nil {
 		return &Rows{err: err}
 	}
-	return &Rows{ctx: ctx, c: c}
+	return &Rows{ctx: ctx, c: c, extended: extended}
 }
 
-func (c *Conn) writeExtendedQuery(ctx context.Context, sql string, args ...[]byte) (err error) {
+func (c *Conn) prepare(ctx context.Context, sql string, args ...[]byte) (err error) {
 	if err := c.fc.WriteParse(ctx, "", sql); err != nil {
 		return err
 	}
-	if err := c.fc.WriteBind(ctx, "", "", args); err != nil {
-		return err
-	}
-	if err := c.fc.WriteExecute(ctx, "", 0); err != nil {
-		return err
-	}
-	return c.fc.WriteSync(ctx)
+	return c.fc.WriteBind(ctx, "", "", args)
 }
 
 // QueryAll is short for:
@@ -261,6 +256,8 @@ type Rows struct {
 	c   *Conn
 	err error
 
+	extended bool // TODO(bmizerany): replace this
+
 	rowsAffected int64
 }
 
@@ -274,6 +271,20 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 	if rs.err != nil {
 		yield(nil, rs.err)
 		return
+	}
+	if rs.extended {
+		if err := rs.c.fc.WriteExecute(rs.ctx, "", 0); err != nil {
+			yield(nil, err)
+			return
+		}
+		if err := rs.c.fc.WriteSync(rs.ctx); err != nil {
+			yield(nil, err)
+			return
+		}
+		if err := rs.c.fc.Flush(); err != nil {
+			yield(nil, err)
+			return
+		}
 	}
 	for {
 		row, err := rs.next()

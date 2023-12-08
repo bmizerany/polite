@@ -41,7 +41,7 @@ func (l *Listener) Listen(ctx context.Context, channel string) error {
 func (l *Listener) Notifications(ctx context.Context) iter.Seq2[Notification, error] {
 	return func(yield func(Notification, error) bool) {
 		var zero Notification
-		c := l.c.c
+		c := l.c.fc
 		for {
 			h, err := c.ReadHeader(ctx)
 			if err != nil {
