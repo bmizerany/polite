@@ -121,13 +121,6 @@ type Result struct {
 func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
 	rs := c.Query(ctx, sql)
 
-	// Calls to EXec are not expected to return rows, however, they
-	// might. In the event that an Exec may produce rows. For those that
-	// do, we want to limit the time spent processing results, so set
-	// the limit to 1 row, which is the minimum allowed per the protocol
-	// (e.g. 0 mean no limit).
-	rs.SetLimit(1)
-
 	// This is subtle: Result is not set until after all rows are read.
 	// This means `return rs.Result(), rs.Close()` will always return an
 	// empty Result because the Close is called after rs.Result().
@@ -263,13 +256,8 @@ type Rows struct {
 	err error
 
 	extended bool // TODO(bmizerany): replace this
-	limit    int  // only valid if extended is true
 
 	rowsAffected int64
-}
-
-func (rs *Rows) SetLimit(n int) {
-	rs.limit = n
 }
 
 // RowsAffected returns the number of rows affected by the query. It is only
@@ -284,7 +272,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		return
 	}
 	if rs.extended {
-		if err := rs.c.fc.WriteExecute(rs.ctx, "", rs.limit); err != nil {
+		if err := rs.c.fc.WriteExecute(rs.ctx, "", 0); err != nil {
 			yield(nil, err)
 			return
 		}
@@ -301,9 +289,10 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		row, err := rs.next()
 		if err != nil {
 			rs.err = err
-			if !errors.Is(err, ErrDone) {
-				yield(nil, err)
+			if errors.Is(err, ErrDone) {
+				return
 			}
+			yield(nil, err)
 			return
 		}
 
