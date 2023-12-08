@@ -154,6 +154,21 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 	}
 }
 
+func TestQueryEmptyQueryResponse(t *testing.T) {
+	c := newConn(t)
+	var got error
+	rs := c.Query(context.Background(), "")
+	for _, got = range rs.All {
+		break
+	}
+	if !errors.Is(got, ErrEmptyQuery) {
+		t.Errorf("got = %v, want %v", got, ErrEmptyQuery)
+	}
+
+	// check there is no residue left on the wire
+	checkPing(t, c)
+}
+
 func TestExecSelectTag(t *testing.T) {
 	c := newConn(t)
 	got, err := c.Exec(context.Background(), "SELECT 1")
@@ -184,21 +199,6 @@ func TestExecLimit1(t *testing.T) {
 
 	want := []byte{'T'} // the first of the three data rows
 	diff.Test(t, t.Errorf, got, want)
-}
-
-func TestQueryEmptyQueryResponse(t *testing.T) {
-	c := newConn(t)
-	var got error
-	rs := c.Query(context.Background(), "")
-	for _, got = range rs.All {
-		break
-	}
-	if !errors.Is(got, ErrEmptyQuery) {
-		t.Errorf("got = %v, want %v", got, ErrEmptyQuery)
-	}
-
-	// check there is no residue left on the wire
-	checkPing(t, c)
 }
 
 func TestExec(t *testing.T) {
