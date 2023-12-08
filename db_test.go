@@ -154,7 +154,7 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 	}
 }
 
-func TestQuerySelectTag(t *testing.T) {
+func TestExecSelectTag(t *testing.T) {
 	c := newConn(t)
 	got, err := c.Exec(context.Background(), "SELECT 1")
 	if err != nil {
@@ -163,6 +163,26 @@ func TestQuerySelectTag(t *testing.T) {
 	want := Result{
 		RowsAffected: 1,
 	}
+	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestExecLimit1(t *testing.T) {
+	c := newConn(t)
+	var got []byte
+	ctx := febe.WithTrace(context.Background(), &febe.Trace{
+		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
+			const dataRow = 'T'
+			if h.Type() == dataRow {
+				got = append(got, h.Type())
+			}
+		},
+	})
+	_, err := c.Exec(ctx, "SELECT generate_series(1, 3)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []byte{'T'} // the first of the three data rows
 	diff.Test(t, t.Errorf, got, want)
 }
 
