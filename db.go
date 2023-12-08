@@ -101,8 +101,6 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 				return nil, err
 			}
 			return c, nil
-		case 'N':
-			panic("TODO: handle notice")
 		default:
 			return nil, fmt.Errorf("%w: unexpected message %q", ErrProtocol, h.Type())
 		}
