@@ -150,9 +150,6 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 			return &Rows{err: err}
 		}
 	}
-	if err := c.fc.Flush(); err != nil {
-		return &Rows{err: err}
-	}
 	return &Rows{ctx: ctx, c: c, extended: extended}
 }
 
@@ -295,10 +292,10 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 			yield(nil, err)
 			return
 		}
-		if err := rs.c.fc.Flush(); err != nil {
-			yield(nil, err)
-			return
-		}
+	}
+	if err := rs.c.fc.Flush(); err != nil {
+		yield(nil, err)
+		return
 	}
 	for {
 		row, err := rs.next()
