@@ -14,19 +14,19 @@ import (
 // TODO: https://www.postgresql.org/docs/current/protocol-flow.html
 //
 // [x] 55.2.1. Start-up
-// [ ]    -- tls
 // [x] 55.2.2. Simple Query
-// [ ] 55.2.3. Extended Query
+// [x] 55.2.3. Extended Query
 // [?] 55.2.5. Function Call
+// [ ] 55.2.8. Canceling Requests in Progress
 // [ ] 55.2.6. COPY Operations
 // [ ] 55.2.7. Asynchronous Operations
-//     [ ] ParameterStatus
-//     [ ] Notice
+//     [x] ParameterStatus
+//     [x] Notice
 //     [x] Notification
-// [ ] 55.2.8. Canceling Requests in Progress
-// [ ] 55.2.9. Termination
+// [x] 55.2.9. Termination
 // [ ] 55.2.10. SSL Session Encryption
-// [/] 55.2.11. GSSAPI Session Encryption
+//
+// TODO(bmizerany): QueryOne
 
 // Errors
 var (
@@ -44,7 +44,7 @@ type Conn struct {
 
 // Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
 // or URL. The host, port, and sslmode parameters are defaulted to localhost,
-// 5432, and verirfy, respectivly. No other parameter has a default, including
+// 5432, and verify, respectively. No other parameter has a default, including
 // user, which must be specified by users of Dial.
 func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 	o, err := ParseOptions(dsnOrURL)
@@ -84,7 +84,7 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 				return nil, err
 			}
 			if cr.Type != 0 {
-				panic("TODO") // support passwrod
+				panic("TODO") // support password
 			}
 		case 'S':
 			if err := c.fc.DiscardMessage(ctx); err != nil {
@@ -117,7 +117,7 @@ type Result struct {
 
 // Exec executes a query that is not intended to return rows, such as an
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
-// number of rows matched) in a Result or any error encountered.
+// number of rows matched) in a [Result] or any error encountered.
 func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
 	rs := c.Query(ctx, sql)
 
@@ -130,7 +130,7 @@ func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
 
 	// This is subtle: Result is not set until after all rows are read.
 	// This means `return rs.Result(), rs.Close()` will always return an
-	// empty Result because the CLose is called after rs.Result().
+	// empty Result because the Close is called after rs.Result().
 	err := rs.Close()
 	return rs.Result(), err
 }
@@ -342,7 +342,7 @@ func (rs *Rows) next() (Row, error) {
 		case 'T':
 			// Ignore row descriptions for now; they're pretty
 			// useless if you know the query you're running,
-			// espcially when code can be generated from the
+			// especially when code can be generated from the
 			// query, which would already know the types. Save
 			// the energy.
 			if err := c.DiscardMessage(rs.ctx); err != nil {
