@@ -16,17 +16,8 @@ import (
 
 // TODO: https://www.postgresql.org/docs/current/protocol-flow.html
 //
-// [x] 55.2.1. Start-up
-// [x] 55.2.2. Simple Query
-// [x] 55.2.3. Extended Query
-// [?] 55.2.5. Function Call
 // [ ] 55.2.8. Canceling Requests in Progress
 // [ ] 55.2.6. COPY Operations
-// [ ] 55.2.7. Asynchronous Operations
-//     [x] ParameterStatus
-//     [x] Notice
-//     [x] Notification
-// [x] 55.2.9. Termination
 // [ ] 55.2.10. SSL Session Encryption
 //
 // TODO(bmizerany): QueryOne
