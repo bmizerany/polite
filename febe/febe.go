@@ -9,6 +9,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"unsafe"
 
 	"blake.io/postgres/febe/febeio"
 	"blake.io/postgres/iter"
@@ -317,14 +318,23 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []m
 		if err := c.c.WriteInt32(int32(arg.Len())); err != nil {
 			return err
 		}
-		for i := range arg.Len() {
-			if err := c.c.WriteByte(arg.At(i)); err != nil {
-				return err
-			}
+		_, err := writeROTo(c.c, arg)
+		if err != nil {
+			return err
 		}
 	}
 	c.c.WriteInt16(0) // number of result columns
 	return c.Err()
+}
+
+func writeROTo(dst io.Writer, m mem.RO) (int, error) {
+	type S struct {
+		_ [0]func()
+
+		unsafeBytes []byte
+	}
+	v := (*S)(unsafe.Pointer(&m))
+	return dst.Write(v.unsafeBytes)
 }
 
 func (c *Conn) WriteSync(ctx context.Context) error {
