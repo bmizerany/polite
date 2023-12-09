@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 
 	"blake.io/postgres/febe"
@@ -40,6 +41,8 @@ type Conn struct {
 	dsnOrURL string
 	cn       net.Conn
 	fc       *febe.Conn
+
+	cache map[string]string // sql -> stmt name
 }
 
 // Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
@@ -147,10 +150,43 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 }
 
 func (c *Conn) prepare(ctx context.Context, sql string, args ...[]byte) (err error) {
-	if err := c.fc.WriteParse(ctx, "", sql); err != nil {
+	stmt, err := c.getStmt(ctx, sql)
+	if err != nil {
 		return err
 	}
-	return c.fc.WriteBind(ctx, "", "", args)
+	return c.fc.WriteBind(ctx, "", stmt, args)
+}
+
+func (c *Conn) newStmtName() (string, error) {
+	for range 10 {
+		stmt := fmt.Sprintf("stmt_%d", rand.Int63())
+		_, ok := c.cache[stmt]
+		if ok {
+			continue
+		}
+		c.cache[stmt] = stmt
+		return stmt, nil
+	}
+	return "", fmt.Errorf("pqlite: failed to generate a unique statement name")
+}
+
+func (c *Conn) getStmt(ctx context.Context, sql string) (string, error) {
+	if c.cache == nil {
+		c.cache = make(map[string]string)
+	}
+	stmt := c.cache[sql]
+	if stmt != "" {
+		return stmt, nil
+	}
+	stmt, err := c.newStmtName()
+	if err != nil {
+		return "", err
+	}
+	if err := c.fc.WriteParse(ctx, stmt, sql); err != nil {
+		return "", err
+	}
+	c.cache[sql] = stmt
+	return stmt, nil
 }
 
 // QueryAll is short for:
