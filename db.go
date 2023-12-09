@@ -24,10 +24,10 @@ import (
 
 // Errors
 var (
-	ErrProtocol      = errors.New("pqlite: protocol error")
-	ErrDone          = errors.New("pqlite: done")
-	ErrEmptyQuery    = errors.New("pqlite: empty query")
-	ErrNoMoreColumns = errors.New("pqlite: no more columns")
+	ErrProtocol     = errors.New("pqlite: protocol error")
+	ErrDone         = errors.New("pqlite: done")
+	ErrEmptyQuery   = errors.New("pqlite: empty query")
+	ErrOutOfColumns = errors.New("pqlite: out of columns")
 )
 
 type Conn struct {
@@ -235,7 +235,7 @@ func (r *Row) Unprocessed() int {
 
 func (r *Row) Reader() (io.ReadCloser, error) {
 	if r.rem == 0 {
-		return nil, ErrNoMoreColumns
+		return nil, ErrOutOfColumns
 	}
 	r.rem--
 	rc, err := r.c.fc.ReadDataRowValue(r.ctx)
@@ -270,7 +270,7 @@ func (r *Row) Close() error {
 	for {
 		rc, err := r.Reader()
 		if err != nil {
-			if errors.Is(err, ErrNoMoreColumns) {
+			if errors.Is(err, ErrOutOfColumns) {
 				return nil
 			}
 			return err

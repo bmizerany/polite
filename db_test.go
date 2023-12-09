@@ -58,7 +58,7 @@ func TestQuery(t *testing.T) {
 		for {
 			data, err := row.Bytes()
 			if err != nil {
-				if errors.Is(err, ErrNoMoreColumns) {
+				if errors.Is(err, ErrOutOfColumns) {
 					break
 				}
 				t.Fatal(err)
