@@ -118,8 +118,8 @@ type Result struct {
 // Exec executes a query that is not intended to return rows, such as an
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
 // number of rows matched) in a [Result] or any error encountered.
-func (c *Conn) Exec(ctx context.Context, sql string) (Result, error) {
-	rs := c.Query(ctx, sql)
+func (c *Conn) Exec(ctx context.Context, sql string, args ...string) (Result, error) {
+	rs := c.Query(ctx, sql, args...)
 
 	// This is subtle: Result is not set until after all rows are read.
 	// This means `return rs.Result(), rs.Close()` will always return an
