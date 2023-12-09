@@ -317,10 +317,10 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []m
 		if err := c.c.WriteInt32(int32(arg.Len())); err != nil {
 			return err
 		}
-		r := mem.NewReader(arg)
-		_, err := c.c.ReadFrom(r)
-		if err != nil {
-			return err
+		for i := range arg.Len() {
+			if err := c.c.WriteByte(arg.At(i)); err != nil {
+				return err
+			}
 		}
 	}
 	c.c.WriteInt16(0) // number of result columns
