@@ -6,6 +6,8 @@ import (
 	"io"
 )
 
+const postgresBufferSize = 8 << 10
+
 // Conn reads and writes postgres wire protocol message types to and from it's
 // underlying Reader and Writers, without allocating.
 //
@@ -28,8 +30,8 @@ type Conn struct {
 // bufio.Reader and bufio.Writer.
 func NewConn(r io.Reader, w io.Writer) *Conn {
 	c := &Conn{
-		r: bufio.NewReaderSize(r, 8<<10),
-		w: bufio.NewWriterSize(w, 8<<10),
+		r: bufio.NewReaderSize(r, postgresBufferSize),
+		w: bufio.NewWriterSize(w, postgresBufferSize),
 	}
 	return c
 }
