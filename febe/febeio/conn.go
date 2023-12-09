@@ -28,8 +28,8 @@ type Conn struct {
 // bufio.Reader and bufio.Writer.
 func NewConn(r io.Reader, w io.Writer) *Conn {
 	c := &Conn{
-		r: bufio.NewReader(r),
-		w: bufio.NewWriter(w),
+		r: bufio.NewReaderSize(r, 8<<10),
+		w: bufio.NewWriterSize(w, 8<<10),
 	}
 	return c
 }

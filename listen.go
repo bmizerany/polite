@@ -31,9 +31,11 @@ func DialListener(ctx context.Context, dsnOrURL string) (*Listener, error) {
 }
 
 func (l *Listener) Listen(ctx context.Context, channel string) error {
-	// TODO(bmizerany): use a prepared statement, do not build query
-	// string here. We need extended query support for this to work.
-	// Coming soon.
+	// NOTE: Using bind parameters with LISTEN is illegal, so
+	// we have to build the query here.
+	//
+	// TODO: validate channel name (pg doesn't provide nice
+	// feedback on invalid channel names).
 	_, err := l.c.Exec(ctx, "LISTEN "+channel)
 	return err
 }
