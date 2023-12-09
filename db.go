@@ -7,9 +7,11 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"slices"
 
 	"blake.io/postgres/febe"
 	"blake.io/postgres/iter"
+	"go4.org/mem"
 )
 
 // TODO: https://www.postgresql.org/docs/current/protocol-flow.html
@@ -43,6 +45,8 @@ type Conn struct {
 	fc       *febe.Conn
 
 	cache map[string]string // sql -> stmt name
+
+	args []mem.RO
 }
 
 // Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
@@ -132,13 +136,13 @@ func (c *Conn) Exec(ctx context.Context, sql string, args ...string) (Result, er
 }
 
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
-	bargs := make([][]byte, len(args))
-	for i, arg := range args {
-		bargs[i] = []byte(arg)
+	c.args = slices.Grow(c.args[:0], min(len(args), 100))
+	for _, arg := range args {
+		c.args = append(c.args, mem.S(arg))
 	}
 	extended := len(args) > 0
 	if extended {
-		if err := c.prepare(ctx, sql, bargs...); err != nil {
+		if err := c.prepare(ctx, sql, c.args...); err != nil {
 			return &Rows{err: err}
 		}
 	} else {
@@ -149,7 +153,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 	return &Rows{ctx: ctx, c: c, extended: extended}
 }
 
-func (c *Conn) prepare(ctx context.Context, sql string, args ...[]byte) (err error) {
+func (c *Conn) prepare(ctx context.Context, sql string, args ...mem.RO) (err error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		return err

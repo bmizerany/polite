@@ -135,6 +135,10 @@ func (c *Conn) Write(b []byte) (int, error) {
 	return c.w.Write(b)
 }
 
+func (c *Conn) ReadFrom(r io.Reader) (int64, error) {
+	return c.w.ReadFrom(r)
+}
+
 func (c *Conn) ReadBytes() (io.ReadCloser, error) {
 	n, err := c.ReadInt32()
 	if err != nil {

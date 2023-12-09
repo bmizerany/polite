@@ -295,7 +295,7 @@ func (c *Conn) WriteParse(ctx context.Context, stmt, sql string) error {
 
 }
 
-func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args [][]byte) error {
+func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []mem.RO) error {
 	var s sizer
 	s.addInt32() // length
 	s.addString(portal)
@@ -303,7 +303,7 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args [][
 	s.addInt16() // 0 format codes
 	s.addInt16() // number of parameters
 	for _, arg := range args {
-		s.addBytesN(int64(len(arg)))
+		s.addBytesN(int64(arg.Len()))
 	}
 	s.addInt16() // 0 result format codes
 
@@ -314,7 +314,14 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args [][
 	c.c.WriteInt16(0) // format code
 	c.c.WriteInt16(int16(len(args)))
 	for _, arg := range args {
-		c.c.WriteBytes(arg)
+		if err := c.c.WriteInt32(int32(arg.Len())); err != nil {
+			return err
+		}
+		r := mem.NewReader(arg)
+		_, err := c.c.ReadFrom(r)
+		if err != nil {
+			return err
+		}
 	}
 	c.c.WriteInt16(0) // number of result columns
 	return c.Err()
