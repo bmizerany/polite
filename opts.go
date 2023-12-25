@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"cmp"
 	"fmt"
 	"net/url"
 	"strings"
@@ -40,9 +41,9 @@ func ParseOptions(dsn string) (Options, error) {
 			q.Del(s)
 			return v
 		}
-		o.Host = coallesce(u.Hostname(), o.Host)
-		o.Port = coallesce(u.Port(), o.Port)
-		o.SSLMode = coallesce(yank("sslmode"), o.SSLMode)
+		o.Host = cmp.Or(u.Hostname(), o.Host)
+		o.Port = cmp.Or(u.Port(), o.Port)
+		o.SSLMode = cmp.Or(yank("sslmode"), o.SSLMode)
 		for k := range q {
 			// TODO(bmizerany): escape k and v?
 			o.Extra = append(o.Extra, fmt.Sprintf("%s=%s", k, q.Get(k)))
@@ -68,11 +69,4 @@ func ParseOptions(dsn string) (Options, error) {
 		}
 	}
 	return o, nil
-}
-
-func coallesce(a, b string) string {
-	if a == "" {
-		return b
-	}
-	return a
 }
