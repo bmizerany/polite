@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 	"unsafe"
 
@@ -47,10 +46,12 @@ func New(r io.Reader, w io.Writer) *Conn {
 }
 
 func (c *Conn) checkMessageHeader(want ...byte) error {
-	if slices.Contains(want, c.h.Type()) {
-		return nil
+	for _, w := range want {
+		if c.h.Type() == w {
+			return nil
+		}
 	}
-	return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", c.h.Type(), want)
+	return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", c.h.Type(), string(want))
 }
 
 func (c *Conn) Err() error {
