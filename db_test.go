@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"blake.io/postgres/febe"
-	"github.com/jackc/pgx/v5"
 	"kr.dev/diff"
 )
 
@@ -330,51 +329,6 @@ func TestParameterStatus(t *testing.T) {
 	diff.Test(t, t.Errorf, got, []febe.Parameter{
 		{Name: "DateStyle", Value: "Postgres, DMY"},
 	})
-}
-
-func BenchmarkQuery(b *testing.B) {
-	ctx := context.Background()
-
-	b.Run("Simple", func(b *testing.B) {
-		c := newConn(b)
-		b.ReportAllocs()
-		b.ResetTimer()
-		for range b.N {
-			if err := c.Query(ctx, "SELECT 1").Close(); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-
-	b.Run("Extended", func(b *testing.B) {
-		c := newConn(b)
-		b.ReportAllocs()
-		b.ResetTimer()
-		for range b.N {
-			if err := c.Query(ctx, "SELECT $1", "1").Close(); err != nil {
-				b.Fatal(err)
-			}
-		}
-	})
-}
-
-func BenchmarkPGX(b *testing.B) {
-	dsn := createDB(b)
-
-	conn, err := pgx.Connect(context.Background(), dsn)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer conn.Close(context.Background())
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		err := conn.QueryRow(context.Background(), "SELECT 1").Scan(nil)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
 }
 
 func checkPing(t *testing.T, c *Conn) {
