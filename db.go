@@ -268,18 +268,17 @@ func (r *Row) Close() error {
 		// nothing to discard; carry on
 		return nil
 	}
-	for {
-		rc, err := r.Reader()
+	for range r.rem {
+		rc, err := r.c.fc.ReadDataRowValue(r.ctx)
 		if err != nil {
-			if errors.Is(err, ErrOutOfColumns) {
-				return nil
-			}
 			return err
 		}
 		if err := rc.Close(); err != nil {
 			return err
 		}
+		r.rem--
 	}
+	return nil
 }
 
 type Rows struct {
