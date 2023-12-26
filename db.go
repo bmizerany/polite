@@ -39,8 +39,7 @@ type Conn struct {
 
 	args []mem.RO
 
-	// owned by Rows.next; used to avoid extra allocs per query
-	row *Row
+	rows *Rows
 }
 
 // Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
@@ -144,7 +143,11 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 			return &Rows{err: err}
 		}
 	}
-	return &Rows{ctx: ctx, c: c, extended: extended}
+	if c.rows == nil {
+		c.rows = &Rows{}
+	}
+	*c.rows = Rows{ctx: ctx, c: c, extended: extended, row: c.rows.row}
+	return c.rows
 }
 
 func (c *Conn) prepare(ctx context.Context, sql string, args ...mem.RO) (err error) {
@@ -292,6 +295,8 @@ type Rows struct {
 	extended bool // TODO(bmizerany): replace this
 
 	rowsAffected int64
+
+	row *Row // owned by next()
 }
 
 // RowsAffected returns the number of rows affected by the query. It is only
@@ -373,16 +378,16 @@ func (rs *Rows) next() (*Row, error) {
 			if err != nil {
 				return nil, err
 			}
-			if rs.c.row == nil {
-				rs.c.row = &Row{}
+			if rs.row == nil {
+				rs.row = &Row{}
 			}
-			*rs.c.row = Row{
+			*rs.row = Row{
 				ctx: rs.ctx,
 				c:   rs.c,
 				d:   m,
 				rem: int(m.NumCols),
 			}
-			return rs.c.row, nil
+			return rs.row, nil
 		case 'I':
 			return nil, ErrEmptyQuery
 		case 'Z':
