@@ -45,7 +45,7 @@ func BenchmarkPGX(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		err := conn.QueryRow(context.Background(), "SELECT 1").Scan(nil)
+		err := conn.QueryRow(context.Background(), "SELECT $1", "1").Scan(nil)
 		if err != nil {
 			b.Fatal(err)
 		}
