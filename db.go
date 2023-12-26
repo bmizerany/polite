@@ -38,6 +38,9 @@ type Conn struct {
 	cache map[string]string // sql -> stmt name
 
 	args []mem.RO
+
+	// owned by Rows.next; used to avoid extra allocs per query
+	row *Row
 }
 
 // Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
@@ -327,7 +330,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 			return
 		}
 
-		if !yield(&row, nil) {
+		if !yield(row, nil) {
 			if row.Unprocessed() > 0 {
 				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
 			}
@@ -336,12 +339,12 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 	}
 }
 
-func (rs *Rows) next() (Row, error) {
+func (rs *Rows) next() (*Row, error) {
 	c := rs.c.fc
 	for {
 		h, err := c.ReadHeader(rs.ctx)
 		if err != nil {
-			return Row{}, err
+			return nil, err
 		}
 		switch h.Type() {
 		case '1', '2':
@@ -349,7 +352,7 @@ func (rs *Rows) next() (Row, error) {
 		case 'C':
 			m, err := c.ReadCommandComplete(rs.ctx)
 			if err != nil {
-				return Row{}, err
+				return nil, err
 			}
 			rs.rowsAffected = m.RowsAffected
 		case 'G':
@@ -363,31 +366,34 @@ func (rs *Rows) next() (Row, error) {
 			// query, which would already know the types. Save
 			// the energy.
 			if err := c.DiscardMessage(rs.ctx); err != nil {
-				return Row{}, err
+				return nil, err
 			}
 		case 'D':
 			m, err := c.ReadDataRow(rs.ctx)
 			if err != nil {
-				return Row{}, err
+				return nil, err
 			}
-			r := Row{
+			if rs.c.row == nil {
+				rs.c.row = &Row{}
+			}
+			*rs.c.row = Row{
 				ctx: rs.ctx,
 				c:   rs.c,
 				d:   m,
 				rem: int(m.NumCols),
 			}
-			return r, nil
+			return rs.c.row, nil
 		case 'I':
-			return Row{}, ErrEmptyQuery
+			return nil, ErrEmptyQuery
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx)
 			if err != nil {
-				return Row{}, err
+				return nil, err
 			}
 			// TODO(bmizerany): save the transaction status
-			return Row{}, ErrDone
+			return nil, ErrDone
 		default:
-			return Row{}, fmt.Errorf("%w: unexpected message type: %q", ErrProtocol, h.Type())
+			return nil, fmt.Errorf("%w: unexpected message type: %q", ErrProtocol, h.Type())
 		}
 	}
 }
