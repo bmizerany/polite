@@ -222,6 +222,25 @@ func TestParseCommandTag(t *testing.T) {
 			got := ParseCommandTag([]byte(tt.in))
 			diff.Test(t, t.Errorf, got, tt.want)
 		})
+
+		t.Run(tt.in+" (allocs)", func(t *testing.T) {
+			if testing.Short() {
+				t.Skip("skipping allocs check in short mode")
+			}
+			allocs := testing.AllocsPerRun(1000, func() {
+				ParseCommandTag([]byte(tt.in))
+			})
+			if allocs > 0 {
+				t.Fatalf("allocs = %v; want 0", allocs)
+			}
+		})
+	}
+}
+
+func BenchmarkParseCommandTag(b *testing.B) {
+	b.ReportAllocs()
+	for range b.N {
+		ParseCommandTag([]byte("INSERT 0 2"))
 	}
 }
 

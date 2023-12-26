@@ -395,18 +395,36 @@ type Tag struct {
 	RowsAffected int64
 }
 
+var commands = map[string]string{
+	"INSERT": "INSERT",
+	"UPDATE": "UPDATE",
+	"DELETE": "DELETE",
+	"SELECT": "SELECT",
+	"MOVE":   "MOVE",
+	"FETCH":  "FETCH",
+	"COPY":   "COPY",
+	"MERGE":  "MERGE",
+}
+
 func ParseCommandTag(tag []byte) Tag {
 	cmd, data, _ := bytes.Cut(tag, space)
 	if bytes.Equal(cmd, []byte("INSERT")) {
 		_, data, _ = bytes.Cut(data, space)
 	}
+
 	// TODO(bmizerany): check for UPDATE/DELETE/ETC and
 	// skip ParseInt if not of type that is returning
 	// rowsAffected. This _could_? return non-zero rows
 	// affected when it shouldn't?
+
+	intern := commands[string(cmd)]
+	if intern == "" {
+		intern = string(cmd)
+	}
+
 	rowsInt, _ := mem.ParseInt(mem.B(data), 10, 64)
 	return Tag{
-		Command:      string(cmd),
+		Command:      intern,
 		RowsAffected: rowsInt,
 	}
 }
