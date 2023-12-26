@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"slices"
+	"strconv"
 
 	"blake.io/postgres/febe"
 	"blake.io/postgres/iter"
@@ -35,6 +35,7 @@ type Conn struct {
 	cn       net.Conn
 	fc       *febe.Conn
 
+	nstmt int
 	cache map[string]string // sql -> stmt name
 
 	args []mem.RO
@@ -159,16 +160,10 @@ func (c *Conn) prepare(ctx context.Context, sql string, args ...mem.RO) (err err
 }
 
 func (c *Conn) newStmtName() (string, error) {
-	for range 10 {
-		stmt := fmt.Sprintf("stmt_%d", rand.Int63())
-		_, ok := c.cache[stmt]
-		if ok {
-			continue
-		}
-		c.cache[stmt] = stmt
-		return stmt, nil
-	}
-	return "", fmt.Errorf("pqlite: failed to generate a unique statement name")
+	stmt := strconv.Itoa(c.nstmt)
+	c.cache[stmt] = stmt
+	c.nstmt++
+	return stmt, nil
 }
 
 func (c *Conn) getStmt(ctx context.Context, sql string) (string, error) {
