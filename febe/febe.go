@@ -161,15 +161,6 @@ func (c *Conn) Messages(ctx context.Context) iter.Seq2[MessageHeader, error] {
 	}
 }
 
-// Extend extends the underlying buffer by one message. It does not advance the
-// read position so that the next call to ReadHeader will return the same
-// message it would have before calling Extend.
-//
-// Extend must be called to ReadHeader.
-func (c *Conn) Extend(ctx context.Context) error {
-	return c.c.Extend(ctx)
-}
-
 func (c *Conn) DiscardMessage(ctx context.Context) error {
 	return c.c.Discard(c.h.BodyLen())
 }

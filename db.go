@@ -40,9 +40,6 @@ type Conn struct {
 	args []mem.RO
 
 	rows *Rows
-
-	extend   chan context.Context
-	extended chan error
 }
 
 // Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
@@ -65,12 +62,7 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 		dsnOrURL: dsnOrURL,
 		cn:       cn,
 		fc:       febe.New(cn, cn),
-		// cache:    make(map[string]string),
-		extend:   make(chan context.Context),
-		extended: make(chan error),
 	}
-	go c.runExtendAheadLoop()
-
 	if err := c.fc.WriteStartupMessage(ctx, o.Extra...); err != nil {
 		return nil, err
 	}
@@ -116,7 +108,6 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 }
 
 func (c *Conn) Close() error {
-	close(c.extend)
 	return c.cn.Close()
 }
 
@@ -135,30 +126,6 @@ func (c *Conn) Exec(ctx context.Context, sql string, args ...string) (Result, er
 	// empty Result because the Close is called after rs.Result().
 	err := rs.Close()
 	return rs.Result(), err
-}
-
-func (c *Conn) awaitExtended(ctx context.Context) error {
-	select {
-	case err := <-c.extended:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (c *Conn) extendAhead(ctx context.Context) error {
-	select {
-	case c.extend <- ctx:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (c *Conn) runExtendAheadLoop() {
-	for ctx := range c.extend {
-		c.extended <- c.fc.Extend(ctx)
-	}
 }
 
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
@@ -311,10 +278,6 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		yield(nil, rs.err)
 		return
 	}
-	if err := rs.c.extendAhead(rs.ctx); err != nil {
-		yield(nil, err)
-		return
-	}
 	if err := rs.c.fc.WriteExecute(rs.ctx, "", 0); err != nil {
 		yield(nil, err)
 		return
@@ -327,13 +290,10 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		yield(nil, err)
 		return
 	}
-	if err := rs.c.awaitExtended(rs.ctx); err != nil {
-		yield(nil, err)
-		return
-	}
 	for {
 		row, err := rs.next()
 		if err != nil {
+			rs.err = err
 			if errors.Is(err, ErrDone) {
 				return
 			}
