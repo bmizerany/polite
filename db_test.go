@@ -366,9 +366,7 @@ var (
 
 	mc = func() *Conn {
 		ctx := febe.WithTrace(context.Background(), &febe.Trace{
-			ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
-				fmt.Printf("received %c\n", h.Type())
-			},
+			// Placeholder for debugging
 		})
 		c, err := Dial(ctx, mainDSN)
 		if err != nil {

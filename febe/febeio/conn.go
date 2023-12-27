@@ -51,6 +51,7 @@ func (c *Conn) peek(n int) ([]byte, error) {
 		}
 		w = c.r.window()
 	}
+	c.r.release(n)
 	return w[:n], nil
 }
 
@@ -60,7 +61,6 @@ func (c *Conn) ReadByte() (byte, error) {
 	if err != nil {
 		return 0, err
 	}
-	c.r.release(1)
 	return data[0], nil
 }
 
@@ -74,7 +74,6 @@ func (c *Conn) ReadInt16() (int16, error) {
 		return 0, err
 	}
 	n := int16(b[0])<<8 | int16(b[1])
-	c.r.release(2)
 	return n, nil
 }
 
@@ -90,7 +89,6 @@ func (c *Conn) ReadInt32() (int32, error) {
 		return 0, err
 	}
 	n := int32(b[0])<<24 | int32(b[1])<<16 | int32(b[2])<<8 | int32(b[3])
-	c.r.release(4)
 	return n, nil
 }
 
@@ -105,12 +103,7 @@ func (c *Conn) WriteInt32(n int32) error {
 // call to the underlying reader's Read results in io.EOF before n bytes have
 // been read, then io.ErrUnexpectedEOF is returned.
 func (c *Conn) ReadByteN(n int) ([]byte, error) {
-	data, err := c.peek(n)
-	if err != nil {
-		return nil, err
-	}
-	c.r.release(n)
-	return data, nil
+	return c.peek(n)
 }
 
 func (c *Conn) WriteBytesString(s string) error {
