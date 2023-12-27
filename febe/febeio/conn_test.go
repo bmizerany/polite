@@ -1,7 +1,6 @@
 package febeio
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"io"
@@ -82,10 +81,16 @@ func TestRead(t *testing.T) {
 		{"\x01\x00", "\x01", nil, false},
 		{"FEBE\x00", "FEBE", nil, false},
 
+		// TODO(bmizerany): decide on a new test once we have a
+		// buffer limit in place. Since switch to byteReader we
+		// do not have the built-in buffer limit that came with
+		// bufio.Reader.
+		//
+		//
 		// fill the buffer without null byte (this should keep testRead
 		// from thinking TRAIL\x00 is a valid string on the its
 		// follow-up read check)
-		{fullBuffer + "TRAIL\x00", fullBuffer, bufio.ErrBufferFull, true},
+		// {fullBuffer + "TRAIL\x00", fullBuffer, bufio.ErrBufferFull, true},
 	})
 }
 
@@ -268,11 +273,7 @@ func TestWriteBytes(t *testing.T) {
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	r, err := c.ReadBytes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := io.ReadAll(r)
+	got, err := c.ReadBytes()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,13 +284,13 @@ func TestWriteBytes(t *testing.T) {
 
 func TestReadByteN(t *testing.T) {
 	cases := []struct {
-		in  string
-		n   int
-		out string
-		err error
+		in   string
+		n    int
+		want string
+		err  error
 	}{
 		{"", 1, "", io.ErrUnexpectedEOF},
-		{"\x00", 2, "\x00", io.ErrUnexpectedEOF}, // ReadFull returns fragment and err
+		{"\x00", 2, "", io.ErrUnexpectedEOF}, // ReadFull returns fragment and err
 		{"", 0, "", nil},
 		{"\x00", 0, "", nil},
 		{"FEBE", 4, "FEBE", nil},
@@ -297,66 +298,14 @@ func TestReadByteN(t *testing.T) {
 	for _, tt := range cases {
 		t.Run("", func(t *testing.T) {
 			c := NewConn(strings.NewReader(tt.in), nil)
-			r := c.ReadByteN(tt.n)
-			got, err := io.ReadAll(r)
+			got, err := c.ReadByteN(tt.n)
 			if !errors.Is(err, tt.err) {
 				t.Errorf("err = %v, want %v", err, tt.err)
 			}
-			if string(got) != tt.out {
-				t.Errorf("got %q, want %q", got, tt.out)
+			if string(got) != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestReadByteNDiscardOnClose(t *testing.T) {
-	in := strings.NewReader("abc\x00\x09") // "abc" + int16(9)
-	c := NewConn(in, nil)
-
-	var b [1]byte
-	r := c.ReadByteN(3)
-	n, err := r.Read(b[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatalf("n = %v, want 1", n)
-	}
-	if b[0] != 'a' {
-		t.Fatalf("b[0] = %v, want 'a'", b[0])
-	}
-	if err := r.Close(); err != nil {
-		t.Fatal(err)
-	}
-	g, err := c.ReadInt16()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if g != 9 {
-		t.Errorf("got = %v, want 9", g)
-	}
-	if in.Len() != 0 {
-		t.Errorf("r.Len() = %v, want 0", in.Len())
-	}
-}
-
-func TestReadByteNMultipleCloses(t *testing.T) {
-	c := NewConn(strings.NewReader("abcXYZ\x00"), nil)
-	r := c.ReadByteN(3)
-
-	// Close the reader, multiple times, safely.
-	r.Close()
-	r.Close()
-	r.Close()
-
-	// Make sure the reader is still usable and we can read the rest of the
-	// data.
-	s, err := c.ReadString()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if g := string(s); g != "XYZ" {
-		t.Errorf("got = %q, want XYZ", g)
 	}
 }
 
@@ -365,12 +314,11 @@ func TestReadByteNAllocs(t *testing.T) {
 	c := NewConn(r, nil)
 	got := testing.AllocsPerRun(100, func() {
 		r.Reset("FEBE")
-		r := c.ReadByteN(4)
-		n, err := io.Copy(io.Discard, r)
+		data, err := c.ReadByteN(4)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n != 4 {
+		if n := len(data); n != 4 {
 			t.Fatalf("got %v, want 4", n)
 		}
 	})
@@ -394,5 +342,21 @@ func TestReadStringAllocs(t *testing.T) {
 	})
 	if got > 0 {
 		t.Errorf("got %v allocs, want 0", got)
+	}
+}
+
+func TestDiscard(t *testing.T) {
+	const size = 10 << 10
+	r := strings.NewReader(strings.Repeat("X", size))
+	c := NewConn(r, nil)
+	if err := c.Discard(size); err != nil {
+		t.Fatal(err)
+	}
+	rem, err := c.ReadByte()
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("err = %v, want %v", err, io.ErrUnexpectedEOF)
+	}
+	if rem != 0 {
+		t.Errorf("rem = %v, want 0", rem)
 	}
 }
