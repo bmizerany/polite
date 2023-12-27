@@ -133,20 +133,13 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 	for _, arg := range args {
 		c.args = append(c.args, mem.S(arg))
 	}
-	extended := len(args) > 0
-	if extended {
-		if err := c.prepare(ctx, sql, c.args...); err != nil {
-			return &Rows{err: err}
-		}
-	} else {
-		if err := c.fc.WriteQuery(ctx, sql); err != nil {
-			return &Rows{err: err}
-		}
+	if err := c.prepare(ctx, sql, c.args...); err != nil {
+		return &Rows{err: err}
 	}
 	if c.rows == nil {
 		c.rows = &Rows{}
 	}
-	*c.rows = Rows{ctx: ctx, c: c, extended: extended, row: c.rows.row}
+	*c.rows = Rows{ctx: ctx, c: c, row: c.rows.row}
 	return c.rows
 }
 
@@ -269,8 +262,6 @@ type Rows struct {
 	c   *Conn
 	err error
 
-	extended bool // TODO(bmizerany): replace this
-
 	rowsAffected int64
 
 	row *Row // owned by next()
@@ -287,15 +278,13 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		yield(nil, rs.err)
 		return
 	}
-	if rs.extended {
-		if err := rs.c.fc.WriteExecute(rs.ctx, "", 0); err != nil {
-			yield(nil, err)
-			return
-		}
-		if err := rs.c.fc.WriteSync(rs.ctx); err != nil {
-			yield(nil, err)
-			return
-		}
+	if err := rs.c.fc.WriteExecute(rs.ctx, "", 0); err != nil {
+		yield(nil, err)
+		return
+	}
+	if err := rs.c.fc.WriteSync(rs.ctx); err != nil {
+		yield(nil, err)
+		return
 	}
 	if err := rs.c.fc.Flush(); err != nil {
 		yield(nil, err)

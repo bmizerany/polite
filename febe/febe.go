@@ -270,17 +270,6 @@ func (c *Conn) ReadNotification(ctx context.Context) (NotificationResponse, erro
 	}, nil
 }
 
-func (c *Conn) WriteQuery(ctx context.Context, query string) error {
-	var s sizer
-	s.addInt32() // length
-	s.addString(query)
-
-	c.c.WriteByte('Q')
-	c.c.WriteInt32(s.size())
-	c.c.WriteString(query)
-	return c.Err()
-}
-
 func (c *Conn) WriteParse(ctx context.Context, stmt, sql string) error {
 	var s sizer
 	s.addInt32() // length
