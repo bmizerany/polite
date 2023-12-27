@@ -161,10 +161,6 @@ func (c *Conn) Messages(ctx context.Context) iter.Seq2[MessageHeader, error] {
 	}
 }
 
-func (c *Conn) DiscardMessage(ctx context.Context) error {
-	return c.c.ReadByteN(c.h.BodyLen()).Close()
-}
-
 // TODO(bmizerany): https://www.postgresql.org/docs/current/errcodes-appendix.html
 
 type sizer int32
@@ -436,7 +432,7 @@ type DataRowResponse struct {
 
 type DataRowValueResponse struct {
 	MessageHeader
-	io.ReadCloser
+	Data []byte
 }
 
 func (c *Conn) ReadDataRow(ctx context.Context) (DataRowResponse, error) {
@@ -457,11 +453,11 @@ func (c *Conn) ReadDataRowValue(ctx context.Context) (DataRowValueResponse, erro
 	if err := c.checkMessageHeader('D'); err != nil {
 		return DataRowValueResponse{}, err
 	}
-	rc, err := c.c.ReadBytes()
+	data, err := c.c.ReadBytes()
 	if err != nil {
 		return DataRowValueResponse{}, err
 	}
-	return DataRowValueResponse{ReadCloser: rc}, nil
+	return DataRowValueResponse{Data: data}, nil
 }
 
 // This comment exits to say; we don't need this method. Most others should

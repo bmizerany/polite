@@ -323,15 +323,11 @@ func TestReadDataRow(t *testing.T) {
 
 	gotValues := make([][]byte, got.NumCols)
 	for i := range got.NumCols {
-		r, err := c.ReadDataRowValue(ctx)
+		v, err := c.ReadDataRowValue(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, err := io.ReadAll(r)
-		if err != nil {
-			t.Fatal(err)
-		}
-		gotValues[i] = data
+		gotValues[i] = bytes.Clone(v.Data)
 	}
 	wantValues := [][]byte{
 		[]byte("hello"),

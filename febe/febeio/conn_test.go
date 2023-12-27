@@ -273,11 +273,7 @@ func TestWriteBytes(t *testing.T) {
 	if err := c.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	r, err := c.ReadBytes()
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := io.ReadAll(r)
+	got, err := c.ReadBytes()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,8 +298,7 @@ func TestReadByteN(t *testing.T) {
 	for _, tt := range cases {
 		t.Run("", func(t *testing.T) {
 			c := NewConn(strings.NewReader(tt.in), nil)
-			r := c.ReadByteN(tt.n)
-			got, err := io.ReadAll(r)
+			got, err := c.ReadByteN(tt.n)
 			if !errors.Is(err, tt.err) {
 				t.Errorf("err = %v, want %v", err, tt.err)
 			}
@@ -314,68 +309,16 @@ func TestReadByteN(t *testing.T) {
 	}
 }
 
-func TestReadByteNDiscardOnClose(t *testing.T) {
-	in := strings.NewReader("abc\x00\x09") // "abc" + int16(9)
-	c := NewConn(in, nil)
-
-	var b [1]byte
-	r := c.ReadByteN(3)
-	n, err := r.Read(b[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Fatalf("n = %v, want 1", n)
-	}
-	if b[0] != 'a' {
-		t.Fatalf("b[0] = %v, want 'a'", b[0])
-	}
-	if err := r.Close(); err != nil {
-		t.Fatal(err)
-	}
-	g, err := c.ReadInt16()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if g != 9 {
-		t.Errorf("got = %v, want 9", g)
-	}
-	if in.Len() != 0 {
-		t.Errorf("r.Len() = %v, want 0", in.Len())
-	}
-}
-
-func TestReadByteNMultipleCloses(t *testing.T) {
-	c := NewConn(strings.NewReader("abcXYZ\x00"), nil)
-	r := c.ReadByteN(3)
-
-	// Close the reader, multiple times, safely.
-	r.Close()
-	r.Close()
-	r.Close()
-
-	// Make sure the reader is still usable and we can read the rest of the
-	// data.
-	s, err := c.ReadString()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if g := string(s); g != "XYZ" {
-		t.Errorf("got = %q, want XYZ", g)
-	}
-}
-
 func TestReadByteNAllocs(t *testing.T) {
 	r := strings.NewReader("")
 	c := NewConn(r, nil)
 	got := testing.AllocsPerRun(100, func() {
 		r.Reset("FEBE")
-		r := c.ReadByteN(4)
-		n, err := io.Copy(io.Discard, r)
+		data, err := c.ReadByteN(4)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if n != 4 {
+		if n := len(data); n != 4 {
 			t.Fatalf("got %v, want 4", n)
 		}
 	})

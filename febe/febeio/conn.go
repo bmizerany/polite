@@ -132,15 +132,13 @@ func (e *errReader) Close() error {
 // ReadByteN returns a reader that reads upto n bytes from the stream. If a
 // call to the underlying reader's Read results in io.EOF before n bytes have
 // been read, then io.ErrUnexpectedEOF is returned.
-func (c *Conn) ReadByteN(n int) io.ReadCloser {
+func (c *Conn) ReadByteN(n int) ([]byte, error) {
 	data, err := c.peek(n)
 	if err != nil {
-		return &errReader{err}
+		return nil, err
 	}
-	c.fr.R = bytes.NewReader(bytes.Clone(data))
-	c.fr.N = n
 	c.r.release(n)
-	return connReadCloser{c}
+	return data, nil
 }
 
 func (c *Conn) WriteBytesString(s string) error {
@@ -173,7 +171,7 @@ func (c *Conn) ReadFrom(r io.Reader) (int64, error) {
 	return c.w.ReadFrom(r)
 }
 
-func (c *Conn) ReadBytes() (io.ReadCloser, error) {
+func (c *Conn) ReadBytes() ([]byte, error) {
 	n, err := c.ReadInt32()
 	if err != nil {
 		return nil, err
@@ -181,7 +179,7 @@ func (c *Conn) ReadBytes() (io.ReadCloser, error) {
 	if n < 0 {
 		return nil, errors.New("invalid message length")
 	}
-	return c.ReadByteN(int(n)), nil
+	return c.ReadByteN(int(n))
 }
 
 // ReadString reads a null terminated string from the stream. The byte slice is
@@ -196,11 +194,13 @@ func (c *Conn) ReadBytes() (io.ReadCloser, error) {
 func (c *Conn) ReadString() ([]byte, error) {
 	w := c.r.window()
 	for {
+		// TODO(bmizerany): track position in window to avoid
+		// re-scanning bytes when there is no terminating null byte
+		// in a previous pass.
 		i := bytes.IndexByte(w, 0)
 		if i >= 0 {
-			str := bytes.Clone(w[:i])
-			c.r.release(len(str) + 1)
-			return str, nil
+			c.r.release(i + 1)
+			return w[:i], nil
 		}
 		if c.r.extend() == 0 {
 			return nil, io.ErrUnexpectedEOF
