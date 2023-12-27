@@ -2,6 +2,7 @@ package febeio
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"io"
 )
@@ -16,7 +17,7 @@ const postgresBufferSize = 8 << 10
 // See: https://www.postgresql.org/docs/current/protocol-message-types.html for
 // more information about the postgres message data types.
 type Conn struct {
-	r *bufio.Reader
+	r *byteReader
 	w *bufio.Writer
 
 	fr fullReader
@@ -30,7 +31,7 @@ type Conn struct {
 // bufio.Reader and bufio.Writer.
 func NewConn(r io.Reader, w io.Writer) *Conn {
 	c := &Conn{
-		r: bufio.NewReaderSize(r, postgresBufferSize),
+		r: &byteReader{r: r},
 		w: bufio.NewWriterSize(w, postgresBufferSize),
 	}
 	return c
@@ -41,15 +42,29 @@ func (c *Conn) Err() error {
 	if err != nil {
 		return err
 	}
-	_, err = c.r.Read(nil)
-	return err
+	return c.r.err
+}
+
+func (c *Conn) peek(n int) ([]byte, error) {
+	w := c.r.window()
+	for len(w) < n {
+		if c.r.extend() == 0 {
+			return nil, io.ErrUnexpectedEOF
+		}
+		w = c.r.window()
+	}
+	return w[:n], nil
 }
 
 // ReadByte reads a single byte from the stream.
 func (c *Conn) ReadByte() (byte, error) {
-	b, err := c.r.ReadByte()
-	err = eofAsUnexpectedEOF(err)
-	return b, err
+	data, err := c.peek(1)
+	if err != nil {
+		return 0, err
+	}
+	b := data[0]
+	c.r.release(1)
+	return b, nil
 }
 
 func (c *Conn) WriteByte(b byte) error {
@@ -57,12 +72,12 @@ func (c *Conn) WriteByte(b byte) error {
 }
 
 func (c *Conn) ReadInt16() (int16, error) {
-	b, err := c.r.Peek(2)
+	b, err := c.peek(2)
 	if err != nil {
-		return 0, eofAsUnexpectedEOF(err)
+		return 0, err
 	}
 	n := int16(b[0])<<8 | int16(b[1])
-	c.r.Discard(len(b))
+	c.r.release(2)
 	return n, nil
 }
 
@@ -73,12 +88,12 @@ func (c *Conn) WriteInt16(n int16) error {
 
 func (c *Conn) ReadInt32() (int32, error) {
 	// TODO(bmizerany): use ctx to SetDeadline
-	b, err := c.r.Peek(4)
+	b, err := c.peek(4)
 	if err != nil {
 		return 0, eofAsUnexpectedEOF(err)
 	}
 	n := int32(b[0])<<24 | int32(b[1])<<16 | int32(b[2])<<8 | int32(b[3])
-	c.r.Discard(len(b))
+	c.r.release(4)
 	return n, nil
 }
 
@@ -99,15 +114,32 @@ func (c connReadCloser) Read(p []byte) (int, error) {
 }
 
 func (c connReadCloser) Close() error {
-	return c.discardRemainder()
+	return nil
+}
+
+type errReader struct {
+	err error
+}
+
+func (e *errReader) Read(p []byte) (int, error) {
+	return 0, e.err
+}
+
+func (e *errReader) Close() error {
+	return e.err
 }
 
 // ReadByteN returns a reader that reads upto n bytes from the stream. If a
 // call to the underlying reader's Read results in io.EOF before n bytes have
 // been read, then io.ErrUnexpectedEOF is returned.
 func (c *Conn) ReadByteN(n int) io.ReadCloser {
-	c.fr.R = c.r
+	data, err := c.peek(n)
+	if err != nil {
+		return &errReader{err}
+	}
+	c.fr.R = bytes.NewReader(bytes.Clone(data))
 	c.fr.N = n
+	c.r.release(n)
 	return connReadCloser{c}
 }
 
@@ -152,16 +184,6 @@ func (c *Conn) ReadBytes() (io.ReadCloser, error) {
 	return c.ReadByteN(int(n)), nil
 }
 
-func (c *Conn) discardRemainder() error {
-	// TODO(bmizerany): use ctx to SetDeadline
-	_, err := c.r.Discard(c.fr.N)
-
-	// make calling this method again a nop if called before another call
-	// to ReadByteN.
-	c.fr.N = 0
-	return err
-}
-
 // ReadString reads a null terminated string from the stream. The byte slice is
 // valid until the next call to any read method on the Conn.
 //
@@ -172,11 +194,19 @@ func (c *Conn) discardRemainder() error {
 // ReadString does not continue looking for a null byte after encountering an
 // error.
 func (c *Conn) ReadString() ([]byte, error) {
-	b, err := c.r.ReadSlice(0)
-	if err != nil {
-		return b, eofAsUnexpectedEOF(err)
+	w := c.r.window()
+	for {
+		i := bytes.IndexByte(w, 0)
+		if i >= 0 {
+			str := bytes.Clone(w[:i])
+			c.r.release(len(str) + 1)
+			return str, nil
+		}
+		if c.r.extend() == 0 {
+			return nil, io.ErrUnexpectedEOF
+		}
+		w = c.r.window()
 	}
-	return b[:len(b)-1], nil
 }
 
 // Flush calls the underlying bufio.Writer's Flush method.

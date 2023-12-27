@@ -1,7 +1,6 @@
 package febeio
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"io"
@@ -82,10 +81,16 @@ func TestRead(t *testing.T) {
 		{"\x01\x00", "\x01", nil, false},
 		{"FEBE\x00", "FEBE", nil, false},
 
+		// TODO(bmizerany): decide on a new test once we have a
+		// buffer limit in place. Since switch to byteReader we
+		// do not have the built-in buffer limit that came with
+		// bufio.Reader.
+		//
+		//
 		// fill the buffer without null byte (this should keep testRead
 		// from thinking TRAIL\x00 is a valid string on the its
 		// follow-up read check)
-		{fullBuffer + "TRAIL\x00", fullBuffer, bufio.ErrBufferFull, true},
+		// {fullBuffer + "TRAIL\x00", fullBuffer, bufio.ErrBufferFull, true},
 	})
 }
 
@@ -283,13 +288,13 @@ func TestWriteBytes(t *testing.T) {
 
 func TestReadByteN(t *testing.T) {
 	cases := []struct {
-		in  string
-		n   int
-		out string
-		err error
+		in   string
+		n    int
+		want string
+		err  error
 	}{
 		{"", 1, "", io.ErrUnexpectedEOF},
-		{"\x00", 2, "\x00", io.ErrUnexpectedEOF}, // ReadFull returns fragment and err
+		{"\x00", 2, "", io.ErrUnexpectedEOF}, // ReadFull returns fragment and err
 		{"", 0, "", nil},
 		{"\x00", 0, "", nil},
 		{"FEBE", 4, "FEBE", nil},
@@ -302,8 +307,8 @@ func TestReadByteN(t *testing.T) {
 			if !errors.Is(err, tt.err) {
 				t.Errorf("err = %v, want %v", err, tt.err)
 			}
-			if string(got) != tt.out {
-				t.Errorf("got %q, want %q", got, tt.out)
+			if string(got) != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
 	}
