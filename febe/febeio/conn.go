@@ -3,7 +3,6 @@ package febeio
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"errors"
 	"io"
 )
@@ -44,28 +43,7 @@ func (c *Conn) Err() error {
 	return c.r.err
 }
 
-// Extend adds the next message to the underlying buffer so subsequent calls
-// to ReadX methods for processing the message will not result in blocking
-// reads.
-//
-// It does not advance the offset of the underlying buffer.
-func (c *Conn) Extend(ctx context.Context) error {
-	// TODO(bmizerany): use ctx to SetDeadline
-	data, err := c.lookAhead(5)
-	if err != nil {
-		return err
-	}
-	msgLen := int32(data[1])<<24 | int32(data[2])<<16 | int32(data[3])<<8 | int32(data[4])
-	if msgLen < 4 {
-		return errors.New("invalid message length")
-	}
-	if _, err := c.lookAhead(int(msgLen) + 4); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *Conn) lookAhead(n int) ([]byte, error) {
+func (c *Conn) peek(n int) ([]byte, error) {
 	w := c.r.window()
 	for len(w) < n {
 		if c.r.extend() == 0 {
@@ -73,12 +51,13 @@ func (c *Conn) lookAhead(n int) ([]byte, error) {
 		}
 		w = c.r.window()
 	}
+	c.r.release(n)
 	return w[:n], nil
 }
 
 // ReadByte reads a single byte from the stream.
 func (c *Conn) ReadByte() (byte, error) {
-	data, err := c.ReadByteN(1)
+	data, err := c.peek(1)
 	if err != nil {
 		return 0, err
 	}
@@ -90,7 +69,7 @@ func (c *Conn) WriteByte(b byte) error {
 }
 
 func (c *Conn) ReadInt16() (int16, error) {
-	b, err := c.ReadByteN(2)
+	b, err := c.peek(2)
 	if err != nil {
 		return 0, err
 	}
@@ -105,7 +84,7 @@ func (c *Conn) WriteInt16(n int16) error {
 
 func (c *Conn) ReadInt32() (int32, error) {
 	// TODO(bmizerany): use ctx to SetDeadline
-	b, err := c.ReadByteN(4)
+	b, err := c.peek(4)
 	if err != nil {
 		return 0, err
 	}
@@ -124,12 +103,7 @@ func (c *Conn) WriteInt32(n int32) error {
 // call to the underlying reader's Read results in io.EOF before n bytes have
 // been read, then io.ErrUnexpectedEOF is returned.
 func (c *Conn) ReadByteN(n int) ([]byte, error) {
-	w, err := c.lookAhead(n)
-	if err != nil {
-		return nil, err
-	}
-	c.r.release(n)
-	return w[:n], nil
+	return c.peek(n)
 }
 
 func (c *Conn) WriteBytesString(s string) error {
