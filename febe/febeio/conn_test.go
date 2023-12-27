@@ -344,3 +344,19 @@ func TestReadStringAllocs(t *testing.T) {
 		t.Errorf("got %v allocs, want 0", got)
 	}
 }
+
+func TestDiscard(t *testing.T) {
+	const size = 10 << 10
+	r := strings.NewReader(strings.Repeat("X", size))
+	c := NewConn(r, nil)
+	if err := c.Discard(size); err != nil {
+		t.Fatal(err)
+	}
+	rem, err := c.ReadByte()
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("err = %v, want %v", err, io.ErrUnexpectedEOF)
+	}
+	if rem != 0 {
+		t.Errorf("rem = %v, want 0", rem)
+	}
+}

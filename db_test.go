@@ -365,7 +365,12 @@ var (
 	mainDSN = "dbname=postgres port=5433 sslmode=disable user=" + mustGetUsername()
 
 	mc = func() *Conn {
-		c, err := Dial(context.Background(), mainDSN)
+		ctx := febe.WithTrace(context.Background(), &febe.Trace{
+			ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
+				fmt.Printf("received %c\n", h.Type())
+			},
+		})
+		c, err := Dial(ctx, mainDSN)
 		if err != nil {
 			panic(err)
 		}

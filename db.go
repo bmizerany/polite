@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"slices"
 	"strconv"
@@ -234,29 +233,16 @@ func (r *Row) Unprocessed() int {
 	return r.rem
 }
 
-func (r *Row) Reader() (io.ReadCloser, error) {
+func (r *Row) Bytes() ([]byte, error) {
 	if r.rem == 0 {
 		return nil, ErrOutOfColumns
 	}
 	r.rem--
-	rc, err := r.c.fc.ReadDataRowValue(r.ctx)
+	v, err := r.c.fc.ReadDataRowValue(r.ctx)
 	if err != nil {
 		return nil, err
 	}
-	return rc, nil
-}
-
-func (r *Row) Bytes() ([]byte, error) {
-	rc, err := r.Reader()
-	if err != nil {
-		return nil, err
-	}
-	defer rc.Close()
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
+	return v.Data, nil
 }
 
 // Close discards any remaining columns in the row.
@@ -269,11 +255,8 @@ func (r *Row) Close() error {
 		return nil
 	}
 	for range r.rem {
-		rc, err := r.c.fc.ReadDataRowValue(r.ctx)
+		_, err := r.c.fc.ReadDataRowValue(r.ctx)
 		if err != nil {
-			return err
-		}
-		if err := rc.Close(); err != nil {
 			return err
 		}
 		r.rem--

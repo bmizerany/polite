@@ -19,8 +19,6 @@ const postgresBufferSize = 8 << 10
 type Conn struct {
 	r *byteReader
 	w *bufio.Writer
-
-	fr fullReader
 }
 
 // NewConn returns a Conn ready for use.
@@ -62,9 +60,8 @@ func (c *Conn) ReadByte() (byte, error) {
 	if err != nil {
 		return 0, err
 	}
-	b := data[0]
 	c.r.release(1)
-	return b, nil
+	return data[0], nil
 }
 
 func (c *Conn) WriteByte(b byte) error {
@@ -90,7 +87,7 @@ func (c *Conn) ReadInt32() (int32, error) {
 	// TODO(bmizerany): use ctx to SetDeadline
 	b, err := c.peek(4)
 	if err != nil {
-		return 0, eofAsUnexpectedEOF(err)
+		return 0, err
 	}
 	n := int32(b[0])<<24 | int32(b[1])<<16 | int32(b[2])<<8 | int32(b[3])
 	c.r.release(4)
@@ -102,31 +99,6 @@ func (c *Conn) WriteInt32(n int32) error {
 	c.w.WriteByte(byte(n >> 16))
 	c.w.WriteByte(byte(n >> 8))
 	return c.w.WriteByte(byte(n))
-}
-
-type connReadCloser struct {
-	*Conn
-}
-
-func (c connReadCloser) Read(p []byte) (int, error) {
-	r := &c.fr
-	return r.Read(p)
-}
-
-func (c connReadCloser) Close() error {
-	return nil
-}
-
-type errReader struct {
-	err error
-}
-
-func (e *errReader) Read(p []byte) (int, error) {
-	return 0, e.err
-}
-
-func (e *errReader) Close() error {
-	return e.err
 }
 
 // ReadByteN returns a reader that reads upto n bytes from the stream. If a
@@ -167,10 +139,6 @@ func (c *Conn) Write(b []byte) (int, error) {
 	return c.w.Write(b)
 }
 
-func (c *Conn) ReadFrom(r io.Reader) (int64, error) {
-	return c.w.ReadFrom(r)
-}
-
 func (c *Conn) ReadBytes() ([]byte, error) {
 	n, err := c.ReadInt32()
 	if err != nil {
@@ -209,34 +177,23 @@ func (c *Conn) ReadString() ([]byte, error) {
 	}
 }
 
+func (c *Conn) Discard(n int) error {
+	w := c.r.window()
+	for {
+		rel := min(n, len(w))
+		c.r.release(rel)
+		n -= rel
+		if n <= 0 {
+			return nil
+		}
+		if c.r.extend() == 0 {
+			return io.ErrUnexpectedEOF
+		}
+		w = c.r.window()
+	}
+}
+
 // Flush calls the underlying bufio.Writer's Flush method.
 func (c *Conn) Flush() error {
 	return c.w.Flush()
-}
-
-// fullReader is an io.Reader that reads upto N bytes from R. If the underlying
-// reader returns io.EOF before N bytes have been read, Read returns
-// io.ErrUnexpectedEOF.
-type fullReader struct {
-	R io.Reader
-	N int
-}
-
-func (r *fullReader) Read(p []byte) (int, error) {
-	if r.N <= 0 {
-		return 0, io.EOF
-	}
-	if len(p) > r.N {
-		p = p[:r.N]
-	}
-	n, err := r.R.Read(p)
-	r.N -= n
-	return n, eofAsUnexpectedEOF(err)
-}
-
-func eofAsUnexpectedEOF(err error) error {
-	if errors.Is(err, io.EOF) {
-		return io.ErrUnexpectedEOF
-	}
-	return err
 }

@@ -161,6 +161,10 @@ func (c *Conn) Messages(ctx context.Context) iter.Seq2[MessageHeader, error] {
 	}
 }
 
+func (c *Conn) DiscardMessage(ctx context.Context) error {
+	return c.c.Discard(c.h.Len())
+}
+
 // TODO(bmizerany): https://www.postgresql.org/docs/current/errcodes-appendix.html
 
 type sizer int32
