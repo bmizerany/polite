@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"slices"
 	"strconv"
@@ -31,7 +32,7 @@ var (
 
 type Conn struct {
 	dsnOrURL string
-	cn       net.Conn
+	cn       io.Closer
 	fc       *febe.Conn
 
 	nstmt int

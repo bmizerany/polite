@@ -49,6 +49,15 @@ func BenchmarkPGX(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+		for r.Next() {
+			var v string
+			if err := r.Scan(&v); err != nil {
+				b.Fatal(err)
+			}
+		}
+		if err := r.Err(); err != nil {
+			b.Fatal(err)
+		}
 		r.Close()
 	}
 }
