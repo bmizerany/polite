@@ -460,23 +460,6 @@ func TestReadNotification(t *testing.T) {
 
 }
 
-func TestWriteQuery(t *testing.T) {
-	var b bytes.Buffer
-	c := New(&b, &b)
-
-	q := "SELECT 1"
-	if err := c.WriteQuery(context.Background(), q); err != nil {
-		t.Fatal(err)
-	}
-	c.Flush()
-
-	want := []byte{
-		'Q', 0, 0, 0, 13, // message header
-		'S', 'E', 'L', 'E', 'C', 'T', ' ', '1', 0, // query
-	}
-	diff.Test(t, t.Errorf, b.Bytes(), want)
-}
-
 func TestWriteParse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)

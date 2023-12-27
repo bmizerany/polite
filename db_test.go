@@ -218,10 +218,7 @@ func TestExecLimit1(t *testing.T) {
 	var got []byte
 	ctx := febe.WithTrace(context.Background(), &febe.Trace{
 		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
-			const dataRow = 'T'
-			if h.Type() == dataRow {
-				got = append(got, h.Type())
-			}
+			got = append(got, h.Type())
 		},
 	})
 	_, err := c.Exec(ctx, "SELECT generate_series(1, 3)")
@@ -229,7 +226,7 @@ func TestExecLimit1(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []byte{'T'} // the first of the three data rows
+	want := []byte("12DDDCZ")
 	diff.Test(t, t.Errorf, got, want)
 }
 
