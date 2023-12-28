@@ -359,7 +359,7 @@ func mustGetUsername() string {
 }
 
 var (
-	mainDSN = "dbname=postgres host=localhost port=5433 sslmode=disable user=" + mustGetUsername()
+	mainDSN = "dbname=postgres host=/tmp/.s.PGSQL.5433 sslmode=disable user=" + mustGetUsername()
 	mc      = func() *Conn {
 		ctx := febe.WithTrace(context.Background(), &febe.Trace{
 			// Placeholder for debugging
