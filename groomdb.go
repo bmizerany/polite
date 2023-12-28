@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	const dsn = "dbname=postgres user=postgres"
+	const dsn = "dbname=postgres user=postgres port=5433 host=localhost sslmode=disable"
 	ctx := context.Background()
 
 	cn, err := postgres.Dial(ctx, dsn)
@@ -27,7 +27,7 @@ func main() {
 	const query = `
 		SELECT datname
 		FROM pg_database
-		WHERE datname LIKE 'test\_%'
+		WHERE datname LIKE 'test_%'
 	`
 
 	for row, err := range cn.QueryAll(ctx, query) {
