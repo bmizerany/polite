@@ -11,7 +11,11 @@ func BenchmarkQuery(b *testing.B) {
 	ctx := context.Background()
 
 	b.Run("Simple", func(b *testing.B) {
-		c := newConn(b)
+		c, err := Dial(ctx, mainDSN)
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer c.Close()
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
@@ -22,7 +26,10 @@ func BenchmarkQuery(b *testing.B) {
 	})
 
 	b.Run("Extended", func(b *testing.B) {
-		c := newConn(b)
+		c, err := Dial(ctx, mainDSN)
+		if err != nil {
+			b.Fatal(err)
+		}
 		b.ReportAllocs()
 		b.ResetTimer()
 		for range b.N {
@@ -34,9 +41,7 @@ func BenchmarkQuery(b *testing.B) {
 }
 
 func BenchmarkPGX(b *testing.B) {
-	dsn := createDB(b)
-
-	conn, err := pgx.Connect(context.Background(), dsn)
+	conn, err := pgx.Connect(context.Background(), mainDSN)
 	if err != nil {
 		b.Fatal(err)
 	}
