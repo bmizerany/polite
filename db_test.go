@@ -55,7 +55,7 @@ func TestQuery(t *testing.T) {
 		}
 		var coldata [][]byte
 		for {
-			data, err := row.Bytes()
+			data, err := row.View()
 			if err != nil {
 				if errors.Is(err, ErrOutOfColumns) {
 					break
@@ -89,7 +89,7 @@ func TestQueryExtended(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, err := row.Bytes()
+		data, err := row.View()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,7 +102,7 @@ func TestQueryExtended(t *testing.T) {
 func values(t testing.TB, row *Row) [][]byte {
 	var got [][]byte
 	for range row.Columns() {
-		data, err := row.Bytes()
+		data, err := row.View()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -339,7 +339,7 @@ func checkPing(t *testing.T, c *Conn) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, err := row.Bytes()
+		data, err := row.View()
 		if err != nil {
 			t.Fatal(err)
 		}
