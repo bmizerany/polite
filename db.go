@@ -236,7 +236,7 @@ func (r *Row) Unprocessed() int {
 	return r.rem
 }
 
-func (r *Row) Bytes() (mem.RO, error) {
+func (r *Row) View() (mem.RO, error) {
 	if r.rem == 0 {
 		return mem.RO{}, ErrOutOfColumns
 	}
@@ -246,6 +246,22 @@ func (r *Row) Bytes() (mem.RO, error) {
 		return mem.RO{}, err
 	}
 	return mem.B(v.Data), nil
+}
+
+func (r *Row) Atoi() (int, error) {
+	n, err := r.ParseInt(10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+func (r *Row) ParseInt(base int, bitSize int) (int64, error) {
+	v, err := r.View()
+	if err != nil {
+		return 0, err
+	}
+	return mem.ParseInt(v, base, bitSize)
 }
 
 // Close discards any remaining columns in the row.
