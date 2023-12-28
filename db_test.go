@@ -62,8 +62,8 @@ func TestQuery(t *testing.T) {
 				}
 				t.Fatal(err)
 			}
-			t.Logf("data: %q", string(data))
-			coldata = append(coldata, data)
+			t.Logf("data: %q", data.StringCopy())
+			coldata = append(coldata, []byte(data.StringCopy()))
 		}
 		got = append(got, coldata)
 	}
@@ -93,7 +93,7 @@ func TestQueryExtended(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, string(data))
+		got = append(got, data.StringCopy())
 	}
 	want := []string{"hello", "world"}
 	diff.Test(t, t.Errorf, got, want)
@@ -106,7 +106,7 @@ func values(t testing.TB, row *Row) [][]byte {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, data)
+		got = append(got, []byte(data.StringCopy()))
 	}
 	return got
 }
@@ -343,8 +343,8 @@ func checkPing(t *testing.T, c *Conn) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(data) != "1" {
-			t.Fatalf("got %q, want %q", data, "1")
+		if !data.EqualString("1") {
+			t.Fatalf("got %q, want %q", data.StringCopy(), "1")
 		}
 		ok = true
 	}

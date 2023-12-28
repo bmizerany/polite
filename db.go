@@ -227,16 +227,16 @@ func (r *Row) Unprocessed() int {
 	return r.rem
 }
 
-func (r *Row) Bytes() ([]byte, error) {
+func (r *Row) Bytes() (mem.RO, error) {
 	if r.rem == 0 {
-		return nil, ErrOutOfColumns
+		return mem.RO{}, ErrOutOfColumns
 	}
 	r.rem--
 	v, err := r.c.fc.ReadDataRowValue(r.ctx)
 	if err != nil {
-		return nil, err
+		return mem.RO{}, err
 	}
-	return v.Data, nil
+	return mem.B(v.Data), nil
 }
 
 // Close discards any remaining columns in the row.
