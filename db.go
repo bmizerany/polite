@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"slices"
 	"strconv"
 
@@ -53,8 +54,16 @@ func Dial(ctx context.Context, dsnOrURL string) (*Conn, error) {
 		return nil, err
 	}
 
+	network := "unix"
+	addr := o.Host
+	_, err = os.Stat(addr)
+	if err != nil {
+		network = "tcp"
+		addr = o.Host + ":" + o.Port
+	}
+
 	var d net.Dialer
-	cn, err := d.DialContext(ctx, "tcp", o.Host+":"+o.Port)
+	cn, err := d.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}
