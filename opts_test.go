@@ -12,30 +12,75 @@ func TestParseOptions(t *testing.T) {
 		dsn  string
 		want Options
 	}{
-		{"dbname=test", Options{Host: "localhost", Port: "5432", Extra: []string{"database=test"}}},
-		{"dbname=test user=foo", Options{Host: "localhost", Port: "5432", Extra: []string{"database=test", "user=foo"}}},
-		{"dbname=test user=foo password=bar", Options{Host: "localhost", Port: "5432", Extra: []string{"database=test", "password=bar", "user=foo"}}},
-		{"user=foo", Options{Host: "localhost", Port: "5432", Extra: []string{"user=foo"}}},
-		{"sslmode=foo", Options{Host: "localhost", Port: "5432", SSLMode: "foo"}},
-		{"postgres://foo:bar@localhost:5432/test", Options{Host: "localhost", Port: "5432"}},
-		{"postgres:///test", Options{Host: "localhost", Port: "5432"}},
+		{"dbname=test", Options{
+			Host:  "localhost",
+			Port:  "5432",
+			Extra: []string{"database=test"},
+		}},
+		{"dbname=test user=foo", Options{
+			Host:  "localhost",
+			Port:  "5432",
+			Extra: []string{"database=test", "user=foo"},
+		}},
+		{"dbname=test user=foo password=bar", Options{
+			Host:  "localhost",
+			Port:  "5432",
+			Extra: []string{"database=test", "password=bar", "user=foo"},
+		}},
+		{"user=foo", Options{
+			Host:  "localhost",
+			Port:  "5432",
+			Extra: []string{"user=foo"},
+		}},
+		{"sslmode=foo", Options{
+			Host:    "localhost",
+			Port:    "5432",
+			SSLMode: "foo",
+		}},
+		{"a=x b=y", Options{
+			Host:  "localhost",
+			Port:  "5432",
+			Extra: []string{"a=x", "b=y"},
+		}},
 
-		{"a=x b=y", Options{Host: "localhost", Port: "5432", Extra: []string{"a=x", "b=y"}}},
-		{"postgres://foo:bar@localhost:5432/test?a=x&b=y", Options{Host: "localhost", Port: "5432",
-			Extra: []string{"a=x", "b=y"}}},
+		// URL options
+		{"postgres://foo:bar@localhost:5432/test", Options{
+			Host:     "localhost",
+			Port:     "5432",
+			User:     "foo",
+			Password: "bar",
+			Database: "test",
+			Extra:    []string{"database=test", "user=foo"},
+		}},
+		{"postgres:///test", Options{
+			Host:     "localhost",
+			Port:     "5432",
+			Database: "test",
+			Extra:    []string{"user=", "database=test"},
+		}},
+		{"postgres://foo:bar@localhost:5432/test?a=x&b=y", Options{
+			Host:     "localhost",
+			Port:     "5432",
+			User:     "foo",
+			Password: "bar",
+			Database: "test",
+			Extra:    []string{"a=x", "b=y", "database=test", "user=foo"},
+		}},
 	}
 
-	for _, c := range cases {
-		t.Run(c.dsn, func(t *testing.T) {
-			got, err := ParseOptions(c.dsn)
+	for _, tt := range cases {
+		t.Run(tt.dsn, func(t *testing.T) {
+			got, err := ParseOptions(tt.dsn)
 			if err != nil {
 				t.Fatal(err)
 			}
-			slices.Sort(got.Extra)
-			if c.want.SSLMode == "" {
-				c.want.SSLMode = "verify"
+			if tt.want.SSLMode == "" {
+				tt.want.SSLMode = "verify"
 			}
-			diff.Test(t, t.Errorf, got, c.want)
+
+			slices.Sort(got.Extra)
+			slices.Sort(tt.want.Extra)
+			diff.Test(t, t.Errorf, got, tt.want)
 		})
 	}
 }

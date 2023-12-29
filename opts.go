@@ -11,6 +11,11 @@ type Options struct {
 	Host string
 	Port string
 
+	User     string // also included in Extra
+	Password string
+
+	Database string // also included in Extra
+
 	SSLMode string
 
 	// Extra holds extra options that are not parsed or interpreted by this
@@ -35,15 +40,34 @@ func ParseOptions(dsn string) (Options, error) {
 			return o, err
 		}
 
-		q := u.Query()
-		yank := func(s string) string {
-			v := q.Get(s)
-			q.Del(s)
-			return v
-		}
 		o.Host = cmp.Or(u.Hostname(), o.Host)
 		o.Port = cmp.Or(u.Port(), o.Port)
-		o.SSLMode = cmp.Or(yank("sslmode"), o.SSLMode)
+
+		// Username and password are parsed from the URL directly
+		o.User = u.User.Username()
+
+		// Password is parsed from the URL directly
+		o.Password, _ = u.User.Password()
+
+		// Database is the path of the URL
+		if database := u.Path; len(database) > 1 {
+			o.Database = database[1:]
+		}
+
+		q := u.Query()
+
+		// SSLMode is parsed from the query string.
+		o.SSLMode = cmp.Or(q.Get("sslmode"), o.SSLMode)
+
+		// Do not include sslmode in the extra options
+		q.Del("sslmode")
+
+		// Include username, and database in the extra options. We
+		// keep them on the struct for convenience, but the backend
+		// needs them too.
+		o.Extra = append(o.Extra, "user="+o.User)
+		o.Extra = append(o.Extra, "database="+o.Database)
+
 		for k := range q {
 			// TODO(bmizerany): escape k and v?
 			o.Extra = append(o.Extra, fmt.Sprintf("%s=%s", k, q.Get(k)))
