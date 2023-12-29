@@ -12,7 +12,7 @@ import (
 func BenchmarkQuery(b *testing.B) {
 	ctx := context.Background()
 
-	for n := range 10 {
+	query := func(driver string, n int) (string, string) {
 		var sb strings.Builder
 		sb.WriteString("SELECT")
 		for n := range n {
@@ -21,15 +21,18 @@ func BenchmarkQuery(b *testing.B) {
 			}
 			sb.WriteString(" 12345")
 		}
-		q := sb.String()
+		name := fmt.Sprintf("QueryParams_%s_%d", driver, n)
+		return name, sb.String()
+	}
 
-		c, err := Dial(ctx, mainDSN)
-		if err != nil {
-			b.Fatal(err)
-		}
-
-		name := fmt.Sprintf("QueryParams_PGL_%d", n)
+	for n := range 5 {
+		name, q := query("PQL", n)
 		b.Run(name, func(b *testing.B) {
+			c, err := Dial(ctx, mainDSN)
+			if err != nil {
+				b.Fatal(err)
+			}
+
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
@@ -47,31 +50,38 @@ func BenchmarkQuery(b *testing.B) {
 			}
 		})
 	}
-}
 
-func BenchmarkPGX(b *testing.B) {
-	conn, err := pgx.Connect(context.Background(), mainDSN+" host=/tmp")
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer conn.Close(context.Background())
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		r, err := conn.Query(context.Background(), "SELECT $1::integer, 2", "12345")
-		if err != nil {
-			b.Fatal(err)
-		}
-		for r.Next() {
-			var n int
-			if err := r.Scan(&n, &n); err != nil {
+	for n := range 5 {
+		name, q := query("PGX", n)
+		b.Run(name, func(b *testing.B) {
+			conn, err := pgx.Connect(context.Background(), mainDSN+" host=/tmp")
+			if err != nil {
 				b.Fatal(err)
 			}
-		}
-		if err := r.Err(); err != nil {
-			b.Fatal(err)
-		}
-		r.Close()
+			defer conn.Close(context.Background())
+
+			args := make([]any, n)
+			for i := range args {
+				args[i] = new(int)
+			}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				r, err := conn.Query(context.Background(), q)
+				if err != nil {
+					b.Fatal(err)
+				}
+				for r.Next() {
+					if err := r.Scan(args...); err != nil {
+						b.Fatal(err)
+					}
+				}
+				if err := r.Err(); err != nil {
+					b.Fatal(err)
+				}
+				r.Close()
+			}
+		})
 	}
 }
