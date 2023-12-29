@@ -1,22 +1,21 @@
 TODO: 
-[ ] Notification(ctx context.Context, h MessageHeader) (NotificationResponse, error) {
-[ ] ParameterStatus(ctx context.Context, name, value string) error {
-[ ] Query(ctx context.Context, query string) error {
-[ ] StartupMessage(ctx context.Context, params ...string) (err error) {
-
 [ ] BINARY col data
+[ ] COPY BOTH
 [ ] COPY IN
 [ ] COPY OUT
-[ ] COPY BOTH
-[ ] Describe
-[ ] Execute
-[ ] Flush
+[ ] Cancel Query
 [ ] FunctionCall
-[ ] Parse
 [ ] PasswordMessage
 [ ] SSLRequest (AWS first)
-[ ] Sync?
-[ ] Terminate
-[ ] Cancel Query
 [ ] Text col data
 [ ] TransactionStatus
+[x] Describe
+[x] Execute
+[x] Flush
+[x] Notification(ctx context.Context, h MessageHeader) (NotificationResponse, error) {
+[x] ParameterStatus(ctx context.Context, name, value string) error {
+[x] Parse
+[x] Query(ctx context.Context, query string) error {
+[x] StartupMessage(ctx context.Context, params ...string) (err error) {
+[x] Sync?
+[x] Terminate
