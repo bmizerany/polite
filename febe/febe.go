@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"unsafe"
 
@@ -21,6 +22,39 @@ var (
 	// connection.
 	ErrTerminated = fmt.Errorf("febe: terminated")
 )
+
+// RequestTLS sends the frontend message to request TLS to the server. If
+// the backend supports TLS then it returns true without error. If the
+// backend does not support TLS then it returns false with no error.
+// Otherwise it returns an error.
+//
+// If ok is true then cn is ready to be upgraded to TLS.
+func RequestTLS(cn net.Conn) (ok bool, err error) {
+	var b [8]byte
+
+	// length including self
+	b[0] = byte(len(b) >> 24)
+	b[1] = byte(len(b) >> 16)
+	b[2] = byte(len(b) >> 8)
+	b[3] = byte(len(b))
+
+	var sslRequest = int32(80877103)
+	b[4] = byte(sslRequest >> 24)
+	b[5] = byte(sslRequest >> 16)
+	b[6] = byte(sslRequest >> 8)
+	b[7] = byte(sslRequest)
+
+	if _, err := cn.Write(b[:]); err != nil {
+		return false, err
+	}
+
+	clear(b[:])
+	_, err = cn.Read(b[:1])
+	if err != nil {
+		return false, err
+	}
+	return b[0] == 'S', nil
+}
 
 type ReadyStatus byte
 

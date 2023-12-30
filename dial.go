@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -10,17 +11,23 @@ import (
 	"blake.io/postgres/febe"
 )
 
+type Config struct {
+	TLSConfig *tls.Config
+}
+
 // Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
 // or URL. The host, port, and sslmode parameters are defaulted to localhost,
 // 5432, and verify, respectively. No other parameter has a default, including
 // user, which must be specified by users of Dial.
 //
 // If sslmode is "disable", then no TLS is used. Otherwise, TLS is used.
-func Dial(ctx context.Context, dsnOrURL string, tcfg *tls.Config) (*Conn, error) {
+func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	o, err := ParseOptions(dsnOrURL)
 	if err != nil {
 		return nil, err
 	}
+
+	cfg = cmp.Or(cfg, &Config{})
 
 	network := "unix"
 	addr := o.Host
@@ -31,21 +38,15 @@ func Dial(ctx context.Context, dsnOrURL string, tcfg *tls.Config) (*Conn, error)
 	}
 	// TODO(bmizerany): check info is a valid file and socket
 
-	var cn net.Conn
-	if o.SSLMode == "disable" {
-		var d net.Dialer
-		var err error
-		cn, err = d.DialContext(ctx, network, addr)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		d := &tls.Dialer{Config: tcfg}
-		var err error
-		cn, err = d.DialContext(ctx, network, addr)
-		if err != nil {
-			return nil, err
-		}
+	var d net.Dialer
+	cn, err := d.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	cn, err = maybeUpgradeToTLS(ctx, cn, o, cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	c := &Conn{
@@ -53,6 +54,7 @@ func Dial(ctx context.Context, dsnOrURL string, tcfg *tls.Config) (*Conn, error)
 		cn:       cn,
 		fc:       febe.New(cn, cn),
 	}
+
 	if err := c.fc.WriteStartupMessage(ctx, o.Extra...); err != nil {
 		return nil, err
 	}
@@ -95,4 +97,30 @@ func Dial(ctx context.Context, dsnOrURL string, tcfg *tls.Config) (*Conn, error)
 			return nil, fmt.Errorf("%w: unexpected message %q", ErrProtocol, h.Type())
 		}
 	}
+}
+
+func maybeUpgradeToTLS(ctx context.Context, cn net.Conn, o *Options, cfg *Config) (net.Conn, error) {
+	if o.SSLMode == "disable" {
+		return cn, nil
+	}
+
+	// Ask the backend if we can TLS with it.
+	ok, err := febe.RequestTLS(cn)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("%w: backend does not support TLS", ErrProtocol)
+	}
+
+	tcfg := cmp.Or(cfg.TLSConfig.Clone(), &tls.Config{})
+	switch o.SSLMode {
+	case "", "require":
+		tcfg.InsecureSkipVerify = true
+	case "verify-full":
+		tcfg.ServerName = o.Host
+	default:
+		return nil, fmt.Errorf("postgres: unsupported sslmode %q", o.SSLMode)
+	}
+	return tls.Client(cn, tcfg), nil
 }

@@ -10,41 +10,41 @@ import (
 func TestParseOptions(t *testing.T) {
 	cases := []struct {
 		dsn  string
-		want Options
+		want *Options
 	}{
-		{"dbname=test", Options{
+		{"dbname=test", &Options{
 			Host:  "localhost",
 			Port:  "5432",
 			Extra: []string{"database=test"},
 		}},
-		{"dbname=test user=foo", Options{
+		{"dbname=test user=foo", &Options{
 			Host:  "localhost",
 			Port:  "5432",
 			Extra: []string{"database=test", "user=foo"},
 		}},
-		{"dbname=test user=foo password=bar", Options{
+		{"dbname=test user=foo password=bar", &Options{
 			Host:  "localhost",
 			Port:  "5432",
 			Extra: []string{"database=test", "password=bar", "user=foo"},
 		}},
-		{"user=foo", Options{
+		{"user=foo", &Options{
 			Host:  "localhost",
 			Port:  "5432",
 			Extra: []string{"user=foo"},
 		}},
-		{"sslmode=foo", Options{
+		{"sslmode=foo", &Options{
 			Host:    "localhost",
 			Port:    "5432",
 			SSLMode: "foo",
 		}},
-		{"a=x b=y", Options{
+		{"a=x b=y", &Options{
 			Host:  "localhost",
 			Port:  "5432",
 			Extra: []string{"a=x", "b=y"},
 		}},
 
 		// URL options
-		{"postgres://foo:bar@localhost:5432/test", Options{
+		{"postgres://foo:bar@localhost:5432/test", &Options{
 			Host:     "localhost",
 			Port:     "5432",
 			User:     "foo",
@@ -52,13 +52,13 @@ func TestParseOptions(t *testing.T) {
 			Database: "test",
 			Extra:    []string{"database=test", "user=foo"},
 		}},
-		{"postgres:///test", Options{
+		{"postgres:///test", &Options{
 			Host:     "localhost",
 			Port:     "5432",
 			Database: "test",
 			Extra:    []string{"user=", "database=test"},
 		}},
-		{"postgres://foo:bar@localhost:5432/test?a=x&b=y", Options{
+		{"postgres://foo:bar@localhost:5432/test?a=x&b=y", &Options{
 			Host:     "localhost",
 			Port:     "5432",
 			User:     "foo",
@@ -75,7 +75,7 @@ func TestParseOptions(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tt.want.SSLMode == "" {
-				tt.want.SSLMode = "verify"
+				tt.want.SSLMode = "verify-full"
 			}
 
 			slices.Sort(got.Extra)

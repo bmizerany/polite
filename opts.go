@@ -27,9 +27,9 @@ type Options struct {
 // ParseOptions parses a DSN or URL string into an Options struct. The defaults are:
 //
 //	dbname=postgres user=postgres host=localhost port=5432 sslmode=verify
-func ParseOptions(dsn string) (Options, error) {
-	o := Options{
-		SSLMode: "verify",
+func ParseOptions(dsn string) (*Options, error) {
+	o := &Options{
+		SSLMode: "require", // match lib/pq default
 		Host:    "localhost",
 		Port:    "5432",
 	}
