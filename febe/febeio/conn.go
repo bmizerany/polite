@@ -99,9 +99,8 @@ func (c *Conn) WriteInt32(n int32) error {
 	return c.w.WriteByte(byte(n))
 }
 
-// ReadByteN returns a reader that reads upto n bytes from the stream. If a
-// call to the underlying reader's Read results in io.EOF before n bytes have
-// been read, then io.ErrUnexpectedEOF is returned.
+// ReadByteN returns upto n bytes from the stream, or an error if fewer than
+// n bytes are available.
 func (c *Conn) ReadByteN(n int) ([]byte, error) {
 	return c.peek(n)
 }
@@ -119,7 +118,7 @@ func (c *Conn) WriteString(s string) error {
 	return c.w.WriteByte(0)
 }
 
-func (c *Conn) WriteBytes(b []byte) error {
+func (c *Conn) WriteSizedBytes(b []byte) error {
 	if err := c.WriteInt32(int32(len(b))); err != nil {
 		return err
 	}

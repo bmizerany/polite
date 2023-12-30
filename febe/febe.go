@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"unsafe"
 
@@ -21,6 +22,39 @@ var (
 	// connection.
 	ErrTerminated = fmt.Errorf("febe: terminated")
 )
+
+// RequestTLS sends the frontend message to request TLS to the server. If
+// the backend supports TLS then it returns true without error. If the
+// backend does not support TLS then it returns false with no error.
+// Otherwise it returns an error.
+//
+// If ok is true then cn is ready to be upgraded to TLS.
+func RequestTLS(cn net.Conn) (ok bool, err error) {
+	var b [8]byte
+
+	// length including self
+	b[0] = byte(len(b) >> 24)
+	b[1] = byte(len(b) >> 16)
+	b[2] = byte(len(b) >> 8)
+	b[3] = byte(len(b))
+
+	var sslRequest = int32(80877103)
+	b[4] = byte(sslRequest >> 24)
+	b[5] = byte(sslRequest >> 16)
+	b[6] = byte(sslRequest >> 8)
+	b[7] = byte(sslRequest)
+
+	if _, err := cn.Write(b[:]); err != nil {
+		return false, err
+	}
+
+	clear(b[:])
+	_, err = cn.Read(b[:1])
+	if err != nil {
+		return false, err
+	}
+	return b[0] == 'S', nil
+}
 
 type ReadyStatus byte
 
@@ -169,12 +203,13 @@ func (c *Conn) DiscardMessage(ctx context.Context) error {
 
 type sizer int32
 
-func (s *sizer) addByte()           { *s += 1 }
-func (s *sizer) addInt32()          { *s += 4 }
-func (s *sizer) addInt16()          { *s += 2 }
-func (s *sizer) addBytesN(n int64)  { *s += 4 + sizer(n) }
-func (s *sizer) addString(v string) { *s += sizer(len(v) + 1) }
-func (s *sizer) size() int32        { return int32(*s) }
+func (s *sizer) addByte()            { *s += 1 }
+func (s *sizer) addInt32()           { *s += 4 }
+func (s *sizer) addInt16()           { *s += 2 }
+func (s *sizer) addSizedBytes(n int) { *s += 4 + sizer(n) }
+func (s *sizer) addBytes(n int)      { *s += sizer(n) }
+func (s *sizer) addString(v string)  { *s += sizer(len(v) + 1) }
+func (s *sizer) size() int32         { return int32(*s) }
 
 func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err error) {
 	var s sizer
@@ -201,13 +236,19 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 type AuthenticationType int32
 
 const (
-	AuthenticationTypeOK        AuthenticationType = 0
-	AuthenticationTypeCleartext AuthenticationType = 3
+	AuthenticationTypeOK           AuthenticationType = 0
+	AuthenticationTypeCleartext    AuthenticationType = 3
+	AuthenticationTypeSASL         AuthenticationType = 10
+	AuthenticationTypeSASLContinue AuthenticationType = 11
+	AuthenticationTypeSASLFinal    AuthenticationType = 12
 )
 
 type AuthenticationResponse struct {
 	MessageHeader
 	Type AuthenticationType
+
+	SASLData      []byte
+	SASLMechanism string
 }
 
 func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, error) {
@@ -215,14 +256,70 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 	if err := c.checkMessageHeader('R'); err != nil {
 		return zero, err
 	}
+
+	// Get the type of authentication
 	t, err := c.c.ReadInt32()
 	if err != nil {
 		return zero, err
 	}
-	return AuthenticationResponse{
+
+	r := AuthenticationResponse{
 		MessageHeader: c.h,
 		Type:          AuthenticationType(t),
-	}, nil
+	}
+
+	switch r.Type {
+	case AuthenticationTypeSASL:
+		mech, err := c.c.ReadString()
+		if err != nil {
+			return zero, err
+		}
+		r.SASLMechanism = string(mech)
+	case AuthenticationTypeSASLContinue, AuthenticationTypeSASLFinal:
+		// read the remaining bytes: message body length - size of
+		// type (int32)
+		rem := c.h.BodyLen() - 4
+		data, err := c.c.ReadByteN(rem)
+		if err != nil {
+			return zero, err
+		}
+		r.SASLData = data
+	}
+
+	return r, nil
+}
+
+func (c *Conn) WritePasswordMessage(ctx context.Context, password string) error {
+	var s sizer
+	s.addByte()  // message type
+	s.addInt32() // length
+	s.addString(password)
+	c.c.WriteByte('p')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(password)
+	return c.Err()
+}
+
+func (c *Conn) WriteSASLInitialResponse(ctx context.Context, mechanism string, data []byte) error {
+	var s sizer
+	s.addInt32() // length
+	s.addString(mechanism)
+	s.addSizedBytes(len(data))
+	c.c.WriteByte('p')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(mechanism)
+	c.c.WriteSizedBytes(data)
+	return c.Err()
+}
+
+func (c *Conn) WriteSASLResponse(ctx context.Context, data []byte) error {
+	var s sizer
+	s.addInt32() // length
+	s.addBytes(len(data))
+	c.c.WriteByte('p')
+	c.c.WriteInt32(s.size())
+	c.c.Write(data)
+	return c.Err()
 }
 
 func (c *Conn) ReadReadyForQuery(ctx context.Context) (ReadyForQueryResponse, error) {
@@ -294,7 +391,7 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []m
 	s.addInt16() // 0 format codes
 	s.addInt16() // number of parameters
 	for _, arg := range args {
-		s.addBytesN(int64(arg.Len()))
+		s.addSizedBytes(arg.Len())
 	}
 	s.addInt16() // 0 result format codes
 
