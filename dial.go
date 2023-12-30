@@ -3,12 +3,14 @@ package postgres
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"os"
 
 	"blake.io/postgres/febe"
+	"github.com/lib/pq/scram"
 )
 
 type Config struct {
@@ -71,12 +73,8 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 
 		switch h.Type() {
 		case 'R':
-			cr, err := c.fc.ReadAuthentication(ctx)
-			if err != nil {
+			if err := c.handleAuth(ctx, o); err != nil {
 				return nil, err
-			}
-			if cr.Type != 0 {
-				panic("TODO") // support password
 			}
 		case 'S':
 			if err := c.fc.DiscardMessage(ctx); err != nil {
@@ -96,6 +94,78 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 		default:
 			return nil, fmt.Errorf("%w: unexpected message %q", ErrProtocol, h.Type())
 		}
+	}
+}
+
+func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
+	checkAuthResp := func(wantType febe.AuthenticationType) (febe.AuthenticationResponse, error) {
+		var zero febe.AuthenticationResponse
+		if err := c.fc.Flush(); err != nil {
+			return zero, err
+		}
+		h, err := c.fc.ReadHeader(ctx)
+		if err != nil {
+			return zero, err
+		}
+		if h.Type() != 'R' {
+			return zero, fmt.Errorf("%w: unexpected message waiting for AuthenticationOk: %q", ErrProtocol, h.Type())
+		}
+		cr, err := c.fc.ReadAuthentication(ctx)
+		if err != nil {
+			return zero, err
+		}
+		if cr.Type != wantType {
+			return zero, fmt.Errorf("%w: unexpected authentication type %d; want %d", ErrProtocol, cr.Type, wantType)
+		}
+		return zero, nil
+	}
+
+	cr, err := c.fc.ReadAuthentication(ctx)
+	if err != nil {
+		return err
+	}
+	switch cr.Type {
+	case febe.AuthenticationOk:
+		// ok
+		return nil
+	case febe.AuthenticationSASL:
+		sc := scram.NewClient(sha256.New, o.User, o.Password)
+		sc.Step(nil)
+		if sc.Err() != nil {
+			return fmt.Errorf("SCRAM-SHA-256 error: %s", sc.Err().Error())
+		}
+
+		if err := c.fc.WriteSASLInitialResponse(ctx, "SCRAM-SHA-256", sc.Out()); err != nil {
+			return err
+		}
+
+		cr, err := checkAuthResp(febe.AuthenticationSASLContinue)
+		if err != nil {
+			return err
+		}
+
+		sc.Step(cr.SASLData)
+		if sc.Err() != nil {
+			return fmt.Errorf("SCRAM-SHA-256 error: %s", sc.Err().Error())
+		}
+
+		if err := c.fc.WriteSASLResponse(ctx, sc.Out()); err != nil {
+			return err
+		}
+
+		cr, err = checkAuthResp(febe.AuthenticationSASLFinal)
+		if err != nil {
+			return err
+		}
+
+		sc.Step(cr.SASLData)
+		if sc.Err() != nil {
+			return fmt.Errorf("SCRAM-SHA-256 error: %s", sc.Err().Error())
+		}
+
+		return nil
+	default:
+		return fmt.Errorf("%w: unexpected authentication type %d", ErrProtocol, cr.Type)
 	}
 }
 

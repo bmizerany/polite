@@ -23,6 +23,12 @@ var (
 	ErrTerminated = fmt.Errorf("febe: terminated")
 )
 
+// Authentication Types
+const (
+	AuthenticationOk   = 0
+	AuthenticationSASL = 10
+)
+
 // RequestTLS sends the frontend message to request TLS to the server. If
 // the backend supports TLS then it returns true without error. If the
 // backend does not support TLS then it returns false with no error.
@@ -257,6 +263,17 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 		MessageHeader: c.h,
 		Type:          AuthenticationType(t),
 	}, nil
+}
+
+func (c *Conn) WritePasswordMessage(ctx context.Context, password string) error {
+	var s sizer
+	s.addByte()  // message type
+	s.addInt32() // length
+	s.addString(password)
+	c.c.WriteByte('p')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(password)
+	return c.Err()
 }
 
 func (c *Conn) ReadReadyForQuery(ctx context.Context) (ReadyForQueryResponse, error) {
