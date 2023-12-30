@@ -23,12 +23,6 @@ var (
 	ErrTerminated = fmt.Errorf("febe: terminated")
 )
 
-// Authentication Types
-const (
-	AuthenticationOk   = 0
-	AuthenticationSASL = 10
-)
-
 // RequestTLS sends the frontend message to request TLS to the server. If
 // the backend supports TLS then it returns true without error. If the
 // backend does not support TLS then it returns false with no error.
@@ -209,12 +203,13 @@ func (c *Conn) DiscardMessage(ctx context.Context) error {
 
 type sizer int32
 
-func (s *sizer) addByte()           { *s += 1 }
-func (s *sizer) addInt32()          { *s += 4 }
-func (s *sizer) addInt16()          { *s += 2 }
-func (s *sizer) addBytesN(n int64)  { *s += 4 + sizer(n) }
-func (s *sizer) addString(v string) { *s += sizer(len(v) + 1) }
-func (s *sizer) size() int32        { return int32(*s) }
+func (s *sizer) addByte()              { *s += 1 }
+func (s *sizer) addInt32()             { *s += 4 }
+func (s *sizer) addInt16()             { *s += 2 }
+func (s *sizer) addSizedBytes(n int64) { *s += 4 + sizer(n) }
+func (s *sizer) addBytes(n int64)      { *s += sizer(n) }
+func (s *sizer) addString(v string)    { *s += sizer(len(v) + 1) }
+func (s *sizer) size() int32           { return int32(*s) }
 
 func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err error) {
 	var s sizer
@@ -241,13 +236,19 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 type AuthenticationType int32
 
 const (
-	AuthenticationTypeOK        AuthenticationType = 0
-	AuthenticationTypeCleartext AuthenticationType = 3
+	AuthenticationTypeOK           AuthenticationType = 0
+	AuthenticationTypeCleartext    AuthenticationType = 3
+	AuthenticationTypeSASL         AuthenticationType = 10
+	AuthenticationTypeSASLContinue AuthenticationType = 11
+	AuthenticationTypeSASLFinal    AuthenticationType = 12
 )
 
 type AuthenticationResponse struct {
 	MessageHeader
 	Type AuthenticationType
+
+	SASLData      []byte
+	SASLMechanism string
 }
 
 func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, error) {
@@ -255,14 +256,40 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 	if err := c.checkMessageHeader('R'); err != nil {
 		return zero, err
 	}
+
+	// The size of the below type on the wire is 4 bytes, so we need to
+	// subtract that from the body length to get the size of the rest of
+	// the message.
+	const sizeOfType = 4
+
+	// Get the type of authentication
 	t, err := c.c.ReadInt32()
 	if err != nil {
 		return zero, err
 	}
-	return AuthenticationResponse{
+
+	r := AuthenticationResponse{
 		MessageHeader: c.h,
 		Type:          AuthenticationType(t),
-	}, nil
+	}
+
+	switch AuthenticationType(t) {
+	case AuthenticationTypeSASL:
+		mech, err := c.c.ReadString()
+		if err != nil {
+			return zero, err
+		}
+		r.SASLMechanism = string(mech)
+	case AuthenticationTypeSASLContinue, AuthenticationTypeSASLFinal:
+		rem := c.h.BodyLen() - 4
+		data, err := c.c.ReadByteN(rem)
+		if err != nil {
+			return zero, err
+		}
+		r.SASLData = data
+	}
+
+	return r, nil
 }
 
 func (c *Conn) WritePasswordMessage(ctx context.Context, password string) error {
@@ -273,6 +300,28 @@ func (c *Conn) WritePasswordMessage(ctx context.Context, password string) error 
 	c.c.WriteByte('p')
 	c.c.WriteInt32(s.size())
 	c.c.WriteString(password)
+	return c.Err()
+}
+
+func (c *Conn) WriteSASLInitialResponse(ctx context.Context, mechanism string, data []byte) error {
+	var s sizer
+	s.addInt32() // length
+	s.addString(mechanism)
+	s.addSizedBytes(int64(len(data)))
+	c.c.WriteByte('p')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(mechanism)
+	c.c.WriteSizedBytes(data)
+	return c.Err()
+}
+
+func (c *Conn) WriteSASLResponse(ctx context.Context, data []byte) error {
+	var s sizer
+	s.addInt32() // length
+	s.addBytes(int64(len(data)))
+	c.c.WriteByte('p')
+	c.c.WriteInt32(s.size())
+	c.c.WriteSizedBytes(data)
 	return c.Err()
 }
 
@@ -345,7 +394,7 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []m
 	s.addInt16() // 0 format codes
 	s.addInt16() // number of parameters
 	for _, arg := range args {
-		s.addBytesN(int64(arg.Len()))
+		s.addSizedBytes(int64(arg.Len()))
 	}
 	s.addInt16() // 0 result format codes
 

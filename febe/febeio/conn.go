@@ -119,7 +119,7 @@ func (c *Conn) WriteString(s string) error {
 	return c.w.WriteByte(0)
 }
 
-func (c *Conn) WriteBytes(b []byte) error {
+func (c *Conn) WriteSizedBytes(b []byte) error {
 	if err := c.WriteInt32(int32(len(b))); err != nil {
 		return err
 	}

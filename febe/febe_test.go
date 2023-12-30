@@ -299,8 +299,8 @@ func TestReadDataRow(t *testing.T) {
 	c.c.WriteByte('D')
 	c.c.WriteInt32(24)
 	c.c.WriteInt16(2) // number of cols
-	c.c.WriteBytes([]byte("hello"))
-	c.c.WriteBytes([]byte("world"))
+	c.c.WriteSizedBytes([]byte("hello"))
+	c.c.WriteSizedBytes([]byte("world"))
 	c.c.Flush()
 
 	_, err := c.ReadHeader(ctx)

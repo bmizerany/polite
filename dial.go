@@ -125,10 +125,10 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		return err
 	}
 	switch cr.Type {
-	case febe.AuthenticationOk:
+	case febe.AuthenticationTypeOK:
 		// ok
 		return nil
-	case febe.AuthenticationSASL:
+	case febe.AuthenticationTypeSASL:
 		sc := scram.NewClient(sha256.New, o.User, o.Password)
 		sc.Step(nil)
 		if sc.Err() != nil {
@@ -139,7 +139,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 			return err
 		}
 
-		cr, err := checkAuthResp(febe.AuthenticationSASLContinue)
+		cr, err := checkAuthResp(febe.AuthenticationTypeSASLContinue)
 		if err != nil {
 			return err
 		}
@@ -153,7 +153,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 			return err
 		}
 
-		cr, err = checkAuthResp(febe.AuthenticationSASLFinal)
+		cr, err = checkAuthResp(febe.AuthenticationTypeSASLFinal)
 		if err != nil {
 			return err
 		}
