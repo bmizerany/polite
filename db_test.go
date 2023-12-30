@@ -29,7 +29,7 @@ func createDB(t testing.TB) string {
 func newConn(t testing.TB) *Conn {
 	ctx := context.Background()
 	dsn := createDB(t)
-	c, err := Dial(ctx, dsn)
+	c, err := Dial(ctx, dsn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +364,7 @@ var (
 		ctx := febe.WithTrace(context.Background(), &febe.Trace{
 			// Placeholder for debugging
 		})
-		c, err := Dial(ctx, mainDSN)
+		c, err := Dial(ctx, mainDSN, nil)
 		if err != nil {
 			panic(err)
 		}

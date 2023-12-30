@@ -12,7 +12,7 @@ import (
 func ExampleListener() {
 	ctx := context.Background()
 
-	l, err := DialListener(ctx, "host=localhost port=5433 dbname=postgres")
+	l, err := DialListener(ctx, "host=localhost port=5433 dbname=postgres", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -34,12 +34,12 @@ func TestListenNotify(t *testing.T) {
 	dsn := createDB(t)
 	ctx := context.Background()
 
-	c, err := Dial(ctx, dsn)
+	c, err := Dial(ctx, dsn, nil)
 	if err != nil {
 		t.Error(err)
 	}
 
-	l, err := DialListener(ctx, dsn)
+	l, err := DialListener(ctx, dsn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

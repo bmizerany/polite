@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 
 	"blake.io/postgres/iter"
@@ -22,8 +23,8 @@ type Listener struct {
 	c *Conn
 }
 
-func DialListener(ctx context.Context, dsnOrURL string) (*Listener, error) {
-	c, err := Dial(ctx, dsnOrURL)
+func DialListener(ctx context.Context, dsnOrURL string, tcfg *tls.Config) (*Listener, error) {
+	c, err := Dial(ctx, dsnOrURL, tcfg)
 	if err != nil {
 		return nil, err
 	}
