@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 
@@ -18,6 +19,8 @@ func main() {
 	}
 	defer cn.Close()
 
+	fmt.Println("PING")
+	defer fmt.Println("PONG")
 	if err := cn.Ping(ctx); err != nil {
 		log.Fatal(err)
 	}

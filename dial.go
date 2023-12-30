@@ -98,7 +98,9 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 }
 
 func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
-	checkAuthResp := func(wantType febe.AuthenticationType) (febe.AuthenticationResponse, error) {
+	// TODO(bmizerany): add tracing
+
+	nextResponse := func(wantType febe.AuthenticationType) (febe.AuthenticationResponse, error) {
 		var zero febe.AuthenticationResponse
 		if err := c.fc.Flush(); err != nil {
 			return zero, err
@@ -132,35 +134,36 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		sc := scram.NewClient(sha256.New, o.User, o.Password)
 		sc.Step(nil)
 		if sc.Err() != nil {
-			return fmt.Errorf("SCRAM-SHA-256 error: %s", sc.Err().Error())
+			return fmt.Errorf("SCRAM-SHA-256 error: %w", sc.Err())
 		}
 
+		// Initial response
 		if err := c.fc.WriteSASLInitialResponse(ctx, "SCRAM-SHA-256", sc.Out()); err != nil {
 			return err
 		}
-		cr, err := checkAuthResp(febe.AuthenticationTypeSASLContinue)
+		cr, err := nextResponse(febe.AuthenticationTypeSASLContinue)
 		if err != nil {
 			return err
 		}
-
 		sc.Step(cr.SASLData)
 		if sc.Err() != nil {
-			return fmt.Errorf("SCRAM-SHA-256 error: %s", sc.Err().Error())
+			return fmt.Errorf("SCRAM-SHA-256 error: %w", sc.Err())
 		}
 
+		// Final response
 		if err := c.fc.WriteSASLResponse(ctx, sc.Out()); err != nil {
 			return err
 		}
-		cr, err = checkAuthResp(febe.AuthenticationTypeSASLFinal)
+		cr, err = nextResponse(febe.AuthenticationTypeSASLFinal)
 		if err != nil {
 			return err
 		}
-
 		sc.Step(cr.SASLData)
 		if sc.Err() != nil {
-			return fmt.Errorf("SCRAM-SHA-256 error: %s", sc.Err().Error())
+			return fmt.Errorf("SCRAM-SHA-256 error: %w", sc.Err())
 		}
 
+		// Success
 		return nil
 	default:
 		return fmt.Errorf("%w: unexpected authentication type %d", ErrProtocol, cr.Type)

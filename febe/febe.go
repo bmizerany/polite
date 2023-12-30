@@ -203,13 +203,13 @@ func (c *Conn) DiscardMessage(ctx context.Context) error {
 
 type sizer int32
 
-func (s *sizer) addByte()              { *s += 1 }
-func (s *sizer) addInt32()             { *s += 4 }
-func (s *sizer) addInt16()             { *s += 2 }
-func (s *sizer) addSizedBytes(n int64) { *s += 4 + sizer(n) }
-func (s *sizer) addBytes(n int64)      { *s += sizer(n) }
-func (s *sizer) addString(v string)    { *s += sizer(len(v) + 1) }
-func (s *sizer) size() int32           { return int32(*s) }
+func (s *sizer) addByte()            { *s += 1 }
+func (s *sizer) addInt32()           { *s += 4 }
+func (s *sizer) addInt16()           { *s += 2 }
+func (s *sizer) addSizedBytes(n int) { *s += 4 + sizer(n) }
+func (s *sizer) addBytes(n int)      { *s += sizer(n) }
+func (s *sizer) addString(v string)  { *s += sizer(len(v) + 1) }
+func (s *sizer) size() int32         { return int32(*s) }
 
 func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err error) {
 	var s sizer
@@ -304,7 +304,7 @@ func (c *Conn) WriteSASLInitialResponse(ctx context.Context, mechanism string, d
 	var s sizer
 	s.addInt32() // length
 	s.addString(mechanism)
-	s.addSizedBytes(int64(len(data)))
+	s.addSizedBytes(len(data))
 	c.c.WriteByte('p')
 	c.c.WriteInt32(s.size())
 	c.c.WriteString(mechanism)
@@ -315,10 +315,10 @@ func (c *Conn) WriteSASLInitialResponse(ctx context.Context, mechanism string, d
 func (c *Conn) WriteSASLResponse(ctx context.Context, data []byte) error {
 	var s sizer
 	s.addInt32() // length
-	s.addBytes(int64(len(data)))
+	s.addBytes(len(data))
 	c.c.WriteByte('p')
 	c.c.WriteInt32(s.size())
-	c.c.WriteSizedBytes(data)
+	c.c.Write(data)
 	return c.Err()
 }
 
@@ -391,7 +391,7 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []m
 	s.addInt16() // 0 format codes
 	s.addInt16() // number of parameters
 	for _, arg := range args {
-		s.addSizedBytes(int64(arg.Len()))
+		s.addSizedBytes(arg.Len())
 	}
 	s.addInt16() // 0 result format codes
 

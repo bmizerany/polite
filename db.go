@@ -75,6 +75,8 @@ func (c *Conn) Exec(ctx context.Context, sql string, args ...string) (Result, er
 }
 
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
+	// TODO(bmizerany): stop using mem.RO here and see if that helps
+	// benchmark performance. Probably not, but worth a shot.
 	c.args = slices.Grow(c.args[:0], min(len(args), 100))
 	for _, arg := range args {
 		c.args = append(c.args, mem.S(arg))
