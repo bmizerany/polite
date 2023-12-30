@@ -117,7 +117,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		if cr.Type != wantType {
 			return zero, fmt.Errorf("%w: unexpected authentication type %d; want %d", ErrProtocol, cr.Type, wantType)
 		}
-		return zero, nil
+		return cr, nil
 	}
 
 	cr, err := c.fc.ReadAuthentication(ctx)
@@ -138,7 +138,6 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		if err := c.fc.WriteSASLInitialResponse(ctx, "SCRAM-SHA-256", sc.Out()); err != nil {
 			return err
 		}
-
 		cr, err := checkAuthResp(febe.AuthenticationTypeSASLContinue)
 		if err != nil {
 			return err
@@ -152,7 +151,6 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		if err := c.fc.WriteSASLResponse(ctx, sc.Out()); err != nil {
 			return err
 		}
-
 		cr, err = checkAuthResp(febe.AuthenticationTypeSASLFinal)
 		if err != nil {
 			return err

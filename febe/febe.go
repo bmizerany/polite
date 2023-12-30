@@ -257,11 +257,6 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 		return zero, err
 	}
 
-	// The size of the below type on the wire is 4 bytes, so we need to
-	// subtract that from the body length to get the size of the rest of
-	// the message.
-	const sizeOfType = 4
-
 	// Get the type of authentication
 	t, err := c.c.ReadInt32()
 	if err != nil {
@@ -273,7 +268,7 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 		Type:          AuthenticationType(t),
 	}
 
-	switch AuthenticationType(t) {
+	switch r.Type {
 	case AuthenticationTypeSASL:
 		mech, err := c.c.ReadString()
 		if err != nil {
@@ -281,6 +276,8 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 		}
 		r.SASLMechanism = string(mech)
 	case AuthenticationTypeSASLContinue, AuthenticationTypeSASLFinal:
+		// read the remaining bytes: message body length - size of
+		// type (int32)
 		rem := c.h.BodyLen() - 4
 		data, err := c.c.ReadByteN(rem)
 		if err != nil {
