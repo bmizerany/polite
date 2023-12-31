@@ -31,7 +31,10 @@ func TestDialAuthNone(t *testing.T) {
 }
 
 func TestDialTLS(t *testing.T) {
-	// create certs in temp dir then pass to postgres and then to Dial
+	// TODO: test TLS, for real
+
+	t.Fatal("TODO: test TLS")
+
 	dsn := startPG(t)
 
 	cn, err := Dial(context.Background(), dsn, nil)
