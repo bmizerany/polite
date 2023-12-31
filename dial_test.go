@@ -1,5 +1,7 @@
 package postgres
 
+//go:generate go run $GOROOT/src/crypto/tls/generate_cert.go --host=localhost --rsa-bits=1024 --ca
+
 import (
 	"bufio"
 	"context"
