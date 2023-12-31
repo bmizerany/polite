@@ -57,8 +57,9 @@ func TestDialTLS(t *testing.T) {
 func startPG(t *testing.T, settings ...string) string {
 	t.Helper()
 
+	port := "9999"
 	dir := t.TempDir()
-	socketPath := filepath.Join(dir, ".s.PGSQL.9999")
+	socketPath := filepath.Join(dir, ".s.PGSQL."+port)
 
 	_, err := os.Stat(socketPath)
 	if err == nil {
@@ -186,7 +187,7 @@ func startPG(t *testing.T, settings ...string) string {
 		"host=" + socketPath,
 		"user=" + user.Username,
 		"dbname=postgres",
-		"port=9999",
+		"port=" + port,
 		"sslmode=disable",
 	}, " ")
 }
