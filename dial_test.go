@@ -123,8 +123,8 @@ func startPG(t *testing.T, settings ...string) string {
 	})
 
 	for {
-		// Avoid boostrapping problems and use pg_isready to wait for
-		// postgres to be ready, instad of our driver. Using our
+		// Avoid bootstrapping problems and use pg_isready to wait for
+		// postgres to be ready, instead of our driver. Using our
 		// driver can lead to confusing and hard to debug errors
 		// where postgres is fine, but the driver is not, but the
 		// is failing in a way to is hard to distinguish from a
