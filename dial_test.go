@@ -81,13 +81,13 @@ func startPG(t *testing.T, settings ...string) string {
 	ctx, cancel = withTestDeadline(context.Background(), t)
 	t.Cleanup(cancel)
 
-	args := append(settings, []string{
+	args := append([]string{
 		"-D", dir,
 		"-d", "1",
 		"-p", "9999",
 		"-c", "listen_addresses=",
 		"-c", "unix_socket_directories=" + dir,
-	}...)
+	}, settings...)
 
 	t.Logf("postgres %s", strings.Join(args, " "))
 
