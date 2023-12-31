@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -135,7 +136,7 @@ func startPG(t *testing.T, settings ...string) string {
 			"-h", dir,
 			"-p", "9999",
 			"-t", "3",
-			"-U", "bmizerany",
+			"-U", "postgres",
 		)
 		cmd.Dir = dir
 		err := cmd.Run()
@@ -152,8 +153,19 @@ func startPG(t *testing.T, settings ...string) string {
 		}
 	}
 
+	user, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	host := filepath.Join(dir, ".s.PGSQL.9999")
-	return "host=" + host + " port=9999 user=bmizerany dbname=postgres sslmode=disable"
+	return strings.Join([]string{
+		"host=" + host,
+		"user=" + user.Username,
+		"dbname=postgres",
+		"port=9999",
+		"sslmode=disable",
+	}, " ")
 }
 
 func withTestDeadline(ctx context.Context, t *testing.T) (context.Context, context.CancelFunc) {
