@@ -117,7 +117,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 			return zero, err
 		}
 		if cr.Type != wantType {
-			return zero, fmt.Errorf("%w: unexpected authentication type %d; want %d", ErrProtocol, cr.Type, wantType)
+			return zero, fmt.Errorf("%w: unexpected authentication type %s; want %d", ErrProtocol, cr.Type, wantType)
 		}
 		return cr, nil
 	}
@@ -166,7 +166,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		// Success
 		return nil
 	default:
-		return fmt.Errorf("%w: unexpected authentication type %d", ErrProtocol, cr.Type)
+		return fmt.Errorf("%w: unexpected authentication type %s", ErrProtocol, cr.Type)
 	}
 }
 

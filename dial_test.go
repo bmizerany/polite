@@ -28,6 +28,21 @@ func TestDialAuthNone(t *testing.T) {
 	}
 }
 
+func TestDialTLS(t *testing.T) {
+	// create certs in temp dir then pass to postgres and then to Dial
+	dsn := startPG(t)
+
+	cn, err := Dial(context.Background(), dsn, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cn.Close()
+
+	if err := cn.Ping(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // startPG starts a postgres instance and returns a DSN to connect to it.
 // Any settings passed in will be appended to the DSN (e.g. "sslmode=disable").
 //

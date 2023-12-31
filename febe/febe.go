@@ -235,12 +235,19 @@ func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err e
 
 type AuthenticationType int32
 
+//go:generate go run golang.org/x/tools/cmd/stringer@latest -type=AuthenticationType
+
 const (
-	AuthenticationTypeOK           AuthenticationType = 0
-	AuthenticationTypeCleartext    AuthenticationType = 3
-	AuthenticationTypeSASL         AuthenticationType = 10
-	AuthenticationTypeSASLContinue AuthenticationType = 11
-	AuthenticationTypeSASLFinal    AuthenticationType = 12
+	AuthenticationTypeOK            AuthenticationType = 0
+	AuthenticationTypeCleartext     AuthenticationType = 3
+	AuthenticationTypeMD5           AuthenticationType = 5
+	AuthenticationTypeSCMCredential AuthenticationType = 6
+	AuthenticationTypeGSS           AuthenticationType = 7
+	AuthenticationTypeGSSContinue   AuthenticationType = 8
+	AuthenticationTypeSSPI          AuthenticationType = 9
+	AuthenticationTypeSASL          AuthenticationType = 10
+	AuthenticationTypeSASLContinue  AuthenticationType = 11
+	AuthenticationTypeSASLFinal     AuthenticationType = 12
 )
 
 type AuthenticationResponse struct {
