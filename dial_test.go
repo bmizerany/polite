@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
@@ -16,7 +17,6 @@ import (
 func TestDialAuthNone(t *testing.T) {
 	dsn := startPG(t)
 
-	time.Sleep(1 * time.Second)
 	cn, err := Dial(context.Background(), dsn, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +41,12 @@ func startPG(t *testing.T, settings ...string) string {
 	t.Helper()
 
 	dir := t.TempDir()
+	socketPath := filepath.Join(dir, ".s.PGSQL.9999")
+
+	_, err := os.Stat(socketPath)
+	if err == nil {
+		t.Fatal("host socket already exists: ", socketPath)
+	}
 
 	ctx, cancel := withTestDeadline(context.Background(), t)
 	ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
@@ -62,6 +68,7 @@ func startPG(t *testing.T, settings ...string) string {
 		"-D", dir,
 		"-d", "1",
 		"-p", "9999",
+		"-c", "listen_addresses=",
 		"-c", "unix_socket_directories=" + dir,
 	}...)
 
@@ -158,9 +165,8 @@ func startPG(t *testing.T, settings ...string) string {
 		t.Fatal(err)
 	}
 
-	host := filepath.Join(dir, ".s.PGSQL.9999")
 	return strings.Join([]string{
-		"host=" + host,
+		"host=" + socketPath,
 		"user=" + user.Username,
 		"dbname=postgres",
 		"port=9999",
