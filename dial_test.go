@@ -27,9 +27,8 @@ func TestDialAuthNone(t *testing.T) {
 }
 
 func TestDialTLS(t *testing.T) {
-	t.Skip("TODO: test TLS")
-
-	dsn := startPG(t, "-c", "ssl=on")
+	dsn := startPG(t, configureTLSOnly(t.TempDir())...)
+	dsn += " sslmode=require host=localhost"
 
 	cn, err := Dial(context.Background(), dsn, nil)
 	if err != nil {
@@ -81,7 +80,7 @@ func startPG(t *testing.T, settings ...string) string {
 
 	args := append([]string{
 		"-D", dir,
-		"-d", "1",
+		"-d", "2",
 		"-p", "9999",
 		"-c", "listen_addresses=",
 		"-c", "unix_socket_directories=" + dir,
@@ -254,20 +253,29 @@ vfq2RQojf0vZ3MOLqQsPVXrVf7affiWDPcnUxpN7xHEz8w2ZglG+BmXiWJWDjcdX
 `,
 }
 
-// sslOnly writes certs and postgres config to a temporary directory and
-// returns the absolute path to the directory.
-func sslOnly(t *testing.T) string {
-	dir := t.TempDir()
+// configureTLSOnly writes certs and postgres config to a temporary
+// directory and returns the absolute path to the directory.
+func configureTLSOnly(dir string) (args []string) {
 	for name, contents := range certs {
 		certpath := filepath.Join(dir, name)
 		if err := os.WriteFile(certpath, []byte(contents), 0600); err != nil {
-			t.Fatal(err)
+			panic(err)
 		}
 	}
-	confpath := filepath.Join(dir, "postgresql.conf")
-	err := os.WriteFile(confpath, []byte(`hostssl all all 127.0.0.1/32 trust`), 0600)
+	hbapath := filepath.Join(dir, "pg_hba.conf")
+	hbaconf := `
+hostssl  all  all  127.0.0.1/32  trust
+local    all  all                trust
+`
+	err := os.WriteFile(hbapath, []byte(hbaconf), 0600)
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
-	return dir
+	return []string{
+		"-c", "ssl=on",
+		"-c", "ssl_cert_file=" + filepath.Join(dir, "server.crt"),
+		"-c", "ssl_key_file=" + filepath.Join(dir, "server.key"),
+		"-c", "hba_file=" + hbapath,
+		"-c", "listen_addresses=127.0.0.1",
+	}
 }
