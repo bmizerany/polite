@@ -1,7 +1,5 @@
 package postgres
 
-//go:generate go run $GOROOT/src/crypto/tls/generate_cert.go --host=localhost --rsa-bits=1024 --ca
-
 import (
 	"bufio"
 	"context"
@@ -18,24 +16,20 @@ import (
 
 func TestDialAuthNone(t *testing.T) {
 	dsn := startPG(t)
-
 	cn, err := Dial(context.Background(), dsn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer cn.Close()
-
 	if err := cn.Ping(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestDialTLS(t *testing.T) {
-	// TODO: test TLS, for real
+	t.Skip("TODO: test TLS")
 
-	t.Fatal("TODO: test TLS")
-
-	dsn := startPG(t)
+	dsn := startPG(t, "-c", "ssl=on")
 
 	cn, err := Dial(context.Background(), dsn, nil)
 	if err != nil {
@@ -204,4 +198,76 @@ func withTestDeadline(ctx context.Context, t *testing.T) (context.Context, conte
 	// subtract 200ms to give the test time to cleanup before the actual
 	// deadline
 	return context.WithDeadline(ctx, deadline.Add(-200*time.Millisecond))
+}
+
+// generated with `go run $GOPATH/src/crypto/tls/generate_cert.go --host localhost`
+var certs = map[string]string{
+	"server.crt": `-----BEGIN CERTIFICATE-----
+MIIC+jCCAeKgAwIBAgIRAIQtkgklMXSxHaISLIzkNDkwDQYJKoZIhvcNAQELBQAw
+EjEQMA4GA1UEChMHQWNtZSBDbzAeFw0yMzEyMzEyMzE1NTdaFw0yNDEyMzAyMzE1
+NTdaMBIxEDAOBgNVBAoTB0FjbWUgQ28wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAw
+ggEKAoIBAQDHmslDdh33tdBgPe+F+BKFlkHdVBf4U/CuqjccYz99EuXzSpFKBtpx
+cNk28/yYTVbghYtkTS2iiiFy/rXi8sIMZq7Vwqhjv8LTrVomXzZxtWcaKlkNVA53
+ZeDw89XbcvSI87XBJuqDwD4cCyZR7CAfZ95U+5wzc+dE90jeofo4acDULviY+eya
+8ik/xy9rkkcLe5r49d5LYBeVU/Zlk/8fbJaqpdmlrWo2Z2y4+hGqKAI5jbmoHmwY
+gabdbuxTZ9mjCpxwv2ENgDz68k8jECK5mJXhUBHjIvdENx8ubnJZ5df0UBhIuIva
+r/kqFUTs18LGfFoqyyzlIUPInMEEu7PPAgMBAAGjSzBJMA4GA1UdDwEB/wQEAwIF
+oDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMBQGA1UdEQQNMAuC
+CWxvY2FsaG9zdDANBgkqhkiG9w0BAQsFAAOCAQEAkUiuoZNUjieBa2Hsw9MsBG0D
+qfNwJHJ2THvQFe73EFEoHHXPWFxKoXRpgnoPQ0QCHTKm4IiLJOPowSeuBc/kARjt
+gK280zh0M37Rmu4EmY8D7LrXoZBKWHQBp8ebfg4KbZlXfOqJ57xdrrTCu8JB+GIt
+Kc0FxY0CebSCQd+C6Coc+lZlIOcctuGZQepW7fmsxPmOnZbns/danErcmA6pZ0/M
+oHcD8gYc2Xh6nqO9h4P9LS2/BamBAtZXOCKcw/iWkB21thR1B22sCdPxGbUOeeUA
+KfKpma7xCvcJlf3dYT2NIkUu7B9MPXTaPVKQElKJ5sOpZ5jcTBD1OBdJ2mazsg==
+-----END CERTIFICATE-----
+`,
+
+	"server.key": `
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDHmslDdh33tdBg
+Pe+F+BKFlkHdVBf4U/CuqjccYz99EuXzSpFKBtpxcNk28/yYTVbghYtkTS2iiiFy
+/rXi8sIMZq7Vwqhjv8LTrVomXzZxtWcaKlkNVA53ZeDw89XbcvSI87XBJuqDwD4c
+CyZR7CAfZ95U+5wzc+dE90jeofo4acDULviY+eya8ik/xy9rkkcLe5r49d5LYBeV
+U/Zlk/8fbJaqpdmlrWo2Z2y4+hGqKAI5jbmoHmwYgabdbuxTZ9mjCpxwv2ENgDz6
+8k8jECK5mJXhUBHjIvdENx8ubnJZ5df0UBhIuIvar/kqFUTs18LGfFoqyyzlIUPI
+nMEEu7PPAgMBAAECggEAYuur+Nntyhh512h6bxtdGoU3yRdm9bOr4PQMce4hxbt6
+6JK45EX3NicmDxzlvxj9CDJGvYOeLSJlp1biD0IdtwWgeeGJkD21sTAFMGUZV0r+
+eLIqBff1X2jHDMLa5nHXDJQzLDE8IeVBIqbH6+uok8fnIJi9daZoI/6lR2hg2Fl4
+JffKqxWkwxo/cF3WJk7skuATtLrGuVOi1vvf6Ru4OE+b9kyZMPSadcpzc9g/9ihA
+gCxVZZuMXFTlfs/iRjYKVyQ3rItS4wbFcqwDT037UrtzOdCHLWtvLLH6PdIMymhN
+3oJD2UX8PEDYbC5NwDsO/OmPaNqTpH+VFCBCvJVcmQKBgQDxPyfr+4s/L2uDBj2T
+/cUzjXxE3W6Zc2gF+/wyPVa2lEDu+OBe4v7KqYxcLh6/JsD0Gy0FM+aZbJBwefrD
+sUdvqCdL2UZQMczr9WNv3VcBuC9l3P8MY9okzCcnckObX8VOY5bBeBNnHfjoS6+3
+vGLnJyIh4W1LoJy9cZmkQfK+FQKBgQDTz7OlB845dDQ5Cck+ErtPniahqoMimnR2
+HxBA5+7Uwa8T4DU0B+FFEcdbj6S5oWhfx+fMVD28FS5OrN8qDyfz5erZ+iPXk6te
+IEI8RxOaBTY5CCQmMznfh0oK/Ah0HgFamxJvQsMhbMJhD2a+A6AEogEcc7F5AvoY
+o+oQe1+HUwKBgHUVgMugHrnAyv4hRjuQG2hkz54gle/1udPFs2WyrWYZV9ZjhYmn
+w58aYJvQam29YkJW+iefQ9jMfuGH4fOeE5yWUNQYFG8RbHJMe0EsfHDCMobOlh4u
+TA414v7bDwLWnUzpOp6VJ12Rh18+dH7I+HtVW9RzsvbUcZ3kB3xX4XbtAoGAYszd
+tTtA3NfxjDGeZ5ABQ5A34O1Sog9+B6NRx5ToeOGnsxPAfXa3g6pZXcJRSi2aLCNp
+YoxhB5yxrw1AQ7QyJLi4pdjiYyqEozFU9B0LbarEsjGz+wWmFzhaN2l83/0nEIaJ
+QNDZiHvc571xZWz3dXHEJutoe1QCKQA8rFeAJfUCgYEA09rVXmqWt7ObIokm9zMS
+rMh94ly9qR67gFrWUKrHHhBFU4glPP4ZtG/UXfsT+9wY6i7WugDpFR1JHJ9OstDZ
+vfq2RQojf0vZ3MOLqQsPVXrVf7affiWDPcnUxpN7xHEz8w2ZglG+BmXiWJWDjcdX
+2jlR0qPURc/JYNHXlCfWvQI=
+-----END PRIVATE KEY-----
+`,
+}
+
+// sslOnly writes certs and postgres config to a temporary directory and
+// returns the absolute path to the directory.
+func sslOnly(t *testing.T) string {
+	dir := t.TempDir()
+	for name, contents := range certs {
+		certpath := filepath.Join(dir, name)
+		if err := os.WriteFile(certpath, []byte(contents), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	confpath := filepath.Join(dir, "postgresql.conf")
+	err := os.WriteFile(confpath, []byte(`hostssl all all 127.0.0.1/32 trust`), 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
