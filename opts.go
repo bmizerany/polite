@@ -16,7 +16,8 @@ type Options struct {
 
 	Database string // also included in Extra
 
-	SSLMode string
+	SSLMode     string
+	SSLRootCert string
 
 	// Extra holds extra options that are not parsed or interpreted by this
 	// package. They are passed to postgres as-is and so should be in
@@ -58,9 +59,9 @@ func ParseOptions(dsn string) (*Options, error) {
 
 		// SSLMode is parsed from the query string.
 		o.SSLMode = cmp.Or(q.Get("sslmode"), o.SSLMode)
-
-		// Do not include sslmode in the extra options
-		q.Del("sslmode")
+		q.Del("sslmode") // remove from extra options
+		o.SSLRootCert = q.Get("sslrootcert")
+		q.Del("sslrootcert") // remove from extra options
 
 		// Include username, and database in the extra options. We
 		// keep them on the struct for convenience, but the backend
@@ -84,6 +85,8 @@ func ParseOptions(dsn string) (*Options, error) {
 			o.Port = v
 		case "sslmode":
 			o.SSLMode = v
+		case "sslrootcert":
+			o.SSLRootCert = v
 		case "dbname":
 			// for backwards compat when switching from drivers
 			// that support dbname
