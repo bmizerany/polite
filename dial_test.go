@@ -16,6 +16,7 @@ import (
 
 func TestDialAuthNone(t *testing.T) {
 	dsn := startPG(t)
+	panic("TODO")
 	cn, err := Dial(context.Background(), dsn, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +52,8 @@ func TestDialTLS(t *testing.T) {
 //
 // The postgres instance will be stopped when the test is done.
 func startPG(t *testing.T, settings ...string) string {
+	maybeBecomeSupervisor()
+
 	t.Helper()
 
 	port := "9999"
@@ -101,6 +104,8 @@ func startPG(t *testing.T, settings ...string) string {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+
+	shutThisDownAfterMyDeath(cmd.Process)
 
 	done := make(chan struct{})
 	go func() {
