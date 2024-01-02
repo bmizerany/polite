@@ -27,17 +27,56 @@ func TestDialAuthNone(t *testing.T) {
 }
 
 func TestDialTLS(t *testing.T) {
-	dsn := startPG(t, configureTLSOnly(t.TempDir())...)
-	dsn += " sslmode=require host=localhost"
+	dir := t.TempDir()
+	dsn := startPG(t, configureTLSOnly(dir)...)
 
-	cn, err := Dial(context.Background(), dsn, nil)
-	if err != nil {
-		t.Fatal(err)
+	sslrootcert := filepath.Join(dir, "server.crt")
+
+	cases := []struct {
+		sslmode string
+		sslroot string
+		host    string // attempts to connect to unix socket if empty
+		wantErr bool
+	}{
+		{"disable", "", "", false}, //  no  TLS  required  for  local  unix  socket
+		{"disable", "", "localhost", true},
+		{"require", "", "", true},
+		{"require", "", "localhost", false},
+
+		{"verify-ca", "", "", true},
+		{"verify-ca", "", "localhost", true},
+		{"verify-ca", sslrootcert, "", true},
+		{"verify-ca", sslrootcert, "localhost", true},
+
+		{"verify-full", "", "", false},
+		{"verify-full", "", "localhost", false},
+		{"verify-full", sslrootcert, "", true},
+		{"verify-full", sslrootcert, "localhost", true},
 	}
-	defer cn.Close()
 
-	if err := cn.Ping(context.Background()); err != nil {
-		t.Fatal(err)
+	for _, tc := range cases {
+		t.Run(tc.sslmode+"-"+tc.host, func(t *testing.T) {
+			dsn += " sslmode=" + tc.sslmode
+			if tc.host != "" {
+				dsn += " host=" + tc.host
+			}
+			if tc.sslroot != "" {
+				dsn += " sslrootcert=" + tc.sslroot
+			}
+
+			cn, err := Dial(context.Background(), dsn, nil)
+			if err != nil {
+				if !tc.wantErr {
+					t.Fatal(err)
+				}
+				return
+			}
+			defer cn.Close()
+
+			if err := cn.Ping(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -164,6 +203,9 @@ func startPG(t *testing.T, settings ...string) string {
 	}, " ")
 }
 
+// withTestDeadline returns a context that will be canceled when the test
+// deadline is reached. The returned cancel func should be called when the test
+// is done.
 func withTestDeadline(ctx context.Context, t *testing.T) (context.Context, context.CancelFunc) {
 	deadline, hasDeadline := t.Deadline()
 	if !hasDeadline {

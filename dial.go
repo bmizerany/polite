@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"os"
@@ -185,11 +186,48 @@ func maybeUpgradeToTLS(ctx context.Context, cn net.Conn, o *Options, cfg *Config
 	}
 
 	tcfg := cmp.Or(cfg.TLSConfig.Clone(), &tls.Config{})
+
+	if o.SSLRootCert != "" {
+		data, err := os.ReadFile(o.SSLRootCert)
+		if err != nil {
+			return nil, fmt.Errorf("postgres: failed to read root certificate: %w", err)
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(data) {
+			return nil, fmt.Errorf("postgres: failed to parse root certificate")
+		}
+		tcfg.RootCAs = roots
+		tcfg.ClientCAs = roots
+	}
+
 	switch o.SSLMode {
 	case "", "require":
 		tcfg.InsecureSkipVerify = true
 	case "verify-ca":
-		panic("TODO: Important")
+		tcfg.InsecureSkipVerify = true
+		tcfg.VerifyPeerCertificate = func(certificates [][]byte, _ [][]*x509.Certificate) error {
+			certs := make([]*x509.Certificate, len(certificates))
+			for i, asn1Data := range certificates {
+				cert, err := x509.ParseCertificate(asn1Data)
+				if err != nil {
+					return fmt.Errorf("postgres: failed to parse server certificate: %w", err)
+				}
+				certs[i] = cert
+			}
+
+			// Leave DNSName empty to skip hostname verification.
+			opts := x509.VerifyOptions{
+				Roots:         tcfg.RootCAs,
+				Intermediates: x509.NewCertPool(),
+			}
+			// Skip the first cert because it's the leaf. All others
+			// are intermediates.
+			for _, cert := range certs[1:] {
+				opts.Intermediates.AddCert(cert)
+			}
+			_, err := certs[0].Verify(opts)
+			return err
+		}
 	case "verify-full":
 		tcfg.ServerName = o.Host
 	default:
