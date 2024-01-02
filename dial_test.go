@@ -16,7 +16,6 @@ import (
 
 func TestDialAuthNone(t *testing.T) {
 	dsn := startPG(t)
-	panic("TODO")
 	cn, err := Dial(context.Background(), dsn, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -149,35 +148,7 @@ func startPG(t *testing.T, settings ...string) string {
 		}
 	})
 
-	for {
-		// Avoid bootstrapping problems and use pg_isready to wait for
-		// postgres to be ready, instead of our driver. Using our
-		// driver can lead to confusing and hard to debug errors
-		// where postgres is fine, but the driver is not, but the
-		// is failing in a way to is hard to distinguish from a
-		// postgres failure.
-
-		cmd := exec.CommandContext(ctx, "pg_isready",
-			"-d", "postgres",
-			"-h", dir,
-			"-p", "9999",
-			"-t", "3",
-			"-U", "postgres",
-		)
-		cmd.Dir = dir
-		err := cmd.Run()
-		if err == nil {
-			break
-		}
-		t.Logf("pg_isready failed: %v", err)
-		tt := time.NewTimer(100 * time.Millisecond)
-		select {
-		case <-tt.C:
-		case <-ctx.Done():
-			tt.Stop()
-			t.Fatal(ctx.Err())
-		}
-	}
+	waitForPGReady(ctx, dir)
 
 	user, err := user.Current()
 	if err != nil {
@@ -202,6 +173,38 @@ func withTestDeadline(ctx context.Context, t *testing.T) (context.Context, conte
 	// subtract 200ms to give the test time to cleanup before the actual
 	// deadline
 	return context.WithDeadline(ctx, deadline.Add(-200*time.Millisecond))
+}
+
+func waitForPGReady(ctx context.Context, host string) error {
+	for {
+		// Avoid bootstrapping problems and use pg_isready to wait for
+		// postgres to be ready, instead of our driver. Using our
+		// driver can lead to confusing and hard to debug errors
+		// where postgres is fine, but the driver is not, but the
+		// is failing in a way to is hard to distinguish from a
+		// postgres failure.
+
+		cmd := exec.CommandContext(ctx, "pg_isready",
+			"-d", "postgres",
+			"-h", host,
+			"-p", "9999",
+			"-t", "3",
+			"-U", "postgres",
+		)
+
+		cmd.Dir = host
+		err := cmd.Run()
+		if err == nil {
+			return nil
+		}
+		tt := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-tt.C:
+		case <-ctx.Done():
+			tt.Stop()
+			return err
+		}
+	}
 }
 
 // generated with `go run $GOPATH/src/crypto/tls/generate_cert.go --host localhost`
