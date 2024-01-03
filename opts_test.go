@@ -89,3 +89,41 @@ func TestParseOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestScanDSN(t *testing.T) {
+	const dsn = `
+		dbname=test
+		user=foo
+		password=bar
+		sslmode=disable
+		host=localhost
+		port=5432
+		somequote='foo bar'
+		escapequote='foo\'bar'
+		x=y
+	`
+
+	var got []string
+	for tok, err := range ScanDSN(dsn) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("tok: %q", tok)
+		got = append(got, tok)
+	}
+	want := []string{
+		"dbname", "=", "test",
+		"user", "=", "foo",
+		"password", "=", "bar",
+		"sslmode", "=", "disable",
+		"host", "=", "localhost",
+		"port", "=", "5432",
+		"somequote", "=", "'foo bar'",
+		"escapequote", "=", "'foo\\'bar'",
+		"x", "=", "y",
+	}
+
+	t.Logf("got: %q", got)
+
+	diff.Test(t, t.Errorf, got, want)
+}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"blake.io/postgres/iter"
 )
 
 type Options struct {
@@ -96,4 +98,99 @@ func ParseOptions(dsn string) (*Options, error) {
 		}
 	}
 	return o, nil
+}
+
+var isWhitespace = [256]bool{
+	' ':  true,
+	'\t': true,
+	'\n': true,
+	'\r': true,
+}
+
+// ScanDSN scans a DSN string and yields tokens. It is used to implement
+// ParseOptions.
+//
+// A valid DSN looks like this:
+//
+//	host=localhost port=5432 sslmode=verify somestring='some \'quoted\' string' k = v
+//
+// The following tokens are yielded:
+//
+//	"localhost"
+//	"="
+//	"5432"
+//	"="
+//	"verify"
+//	"some quoted string"
+//	"k"
+//	"="
+//	"v"
+func ScanDSN(dsn string) iter.Seq2[string, error] {
+	return func(yield func(tok string, err error) bool) {
+		if len(dsn) == 0 {
+			return
+		}
+		for len(dsn) > 0 {
+			c := dsn[0]
+			if isWhitespace[c] {
+				dsn = dsn[1:]
+				continue
+			}
+			switch c {
+			case '=':
+				if !yield("=", nil) {
+					return
+				}
+				dsn = dsn[1:]
+			default:
+				tok, rest, ok := parseString(dsn)
+				if !ok {
+					yield("", fmt.Errorf("unclosed quoted string"))
+					return
+				}
+				if !yield(tok, nil) {
+					return
+				}
+				dsn = rest
+			}
+		}
+	}
+}
+
+func parseString(dsn string) (tok, rest string, ok bool) {
+	if len(dsn) == 0 {
+		return "", "", true
+	}
+	var quoted bool
+	var escaped bool
+	var offset int
+
+	dsn0 := dsn
+	if dsn[0] == '\'' {
+		quoted = true
+		dsn = dsn[1:]
+		offset++
+	}
+	for _, c := range dsn {
+		offset++
+		switch {
+		case escaped:
+			escaped = false
+		case c == '\\':
+			escaped = true
+		case quoted && c == '\'':
+			return dsn0[:offset], dsn[offset:], true
+		case !quoted && (isWhitespace[c] || c == '='):
+			return dsn0[:offset-1], dsn0[offset-1:], true
+		case !quoted && c == '=':
+			return dsn0[:offset-1], dsn0[offset-1:], true
+		}
+	}
+	if quoted {
+		// Unclosed quoted string
+		return "", "", false
+	}
+
+	// The string is unquoted, with no whitespace. Return the whole thing.
+	return dsn, "", true
 }
