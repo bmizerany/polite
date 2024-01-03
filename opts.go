@@ -78,23 +78,46 @@ func ParseOptions(dsn string) (*Options, error) {
 		return o, nil
 	}
 
-	for _, kv := range strings.Fields(dsn) {
-		k, v, _ := strings.Cut(kv, "=")
-		switch k {
-		case "host":
-			o.Host = v
-		case "port":
-			o.Port = v
-		case "sslmode":
-			o.SSLMode = v
-		case "sslrootcert":
-			o.SSLRootCert = v
-		case "dbname":
-			// for backwards compat when switching from drivers
-			// that support dbname
-			o.Extra = append(o.Extra, "database="+v)
+	var state int
+	var key string
+	var val string
+	for tok, err := range ScanDSN(dsn) {
+		if err != nil {
+			return o, err
+		}
+		switch state {
+		case 0:
+			key = tok
+			state = 1
+		case 1:
+			if tok != "=" {
+				return o, fmt.Errorf("expected =, got %q", tok)
+			}
+			state = 2
+		case 2:
+			val = tok
+			switch key {
+			case "host":
+				o.Host = val
+			case "port":
+				o.Port = val
+			case "sslmode":
+				o.SSLMode = val
+			case "sslrootcert":
+				o.SSLRootCert = val
+			case "dbname", "database":
+				// for backwards compat when switching from drivers
+				// that support dbname
+				o.Extra = append(o.Extra, "database="+val)
+			default:
+				o.Extra = append(o.Extra, key+"="+val)
+			}
+
+			key = ""
+			val = ""
+			state = 0
 		default:
-			o.Extra = append(o.Extra, kv)
+			panic(fmt.Sprintf("invalid state %d; please file a bug", state))
 		}
 	}
 	return o, nil
