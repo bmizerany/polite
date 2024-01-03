@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/user"
 	"strings"
+	"sync"
 	"testing"
 
 	"blake.io/postgres/febe"
@@ -17,7 +18,7 @@ func createDB(t testing.TB) string {
 	tname := strings.Replace(t.Name(), "/", "_", -1)
 	dbname := fmt.Sprintf("test_%s_%s", tname, randomString())
 	dbname = strings.ToLower(dbname)
-	_, err := mc.Exec(context.Background(), "CREATE DATABASE "+dbname)
+	_, err := mc().Exec(context.Background(), "CREATE DATABASE "+dbname)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +361,7 @@ func mustGetUsername() string {
 
 var (
 	mainDSN = "dbname=postgres port=5433 host=/tmp/.s.PGSQL.5433 sslmode=disable user=" + mustGetUsername()
-	mc      = func() *Conn {
+	mc      = sync.OnceValue(func() *Conn {
 		ctx := febe.WithTrace(context.Background(), &febe.Trace{
 			// Placeholder for debugging
 		})
@@ -369,7 +370,7 @@ var (
 			panic(err)
 		}
 		return c
-	}()
+	})
 )
 
 // randomString uses math/rand to generate a random string of 8 printable
