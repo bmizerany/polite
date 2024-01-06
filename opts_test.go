@@ -71,6 +71,11 @@ func TestParseOptions(t *testing.T) {
 			Port:        "5432",
 			SSLRootCert: "foo",
 		}},
+		{"quote='foo bar'", &Options{
+			Host:  "localhost",
+			Port:  "5432",
+			Extra: []string{"quote='foo bar'"},
+		}},
 	}
 
 	for _, tt := range cases {

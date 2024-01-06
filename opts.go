@@ -202,7 +202,7 @@ func parseString(dsn string) (tok, rest string, ok bool) {
 		case c == '\\':
 			escaped = true
 		case quoted && c == '\'':
-			return dsn0[:offset], dsn[offset:], true
+			return dsn0[:offset], dsn0[offset:], true
 		case !quoted && (isWhitespace[c] || c == '='):
 			return dsn0[:offset-1], dsn0[offset-1:], true
 		case !quoted && c == '=':
