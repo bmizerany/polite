@@ -3,10 +3,13 @@ package postgres
 import (
 	"cmp"
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"os"
 
@@ -106,12 +109,9 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		if err := c.fc.Flush(); err != nil {
 			return zero, err
 		}
-		h, err := c.fc.ReadHeader(ctx)
+		_, err := c.fc.ReadHeader(ctx)
 		if err != nil {
 			return zero, err
-		}
-		if h.Type() != 'R' {
-			return zero, fmt.Errorf("%w: unexpected message waiting for AuthenticationOk: %q", ErrProtocol, h.Type())
 		}
 		cr, err := c.fc.ReadAuthentication(ctx)
 		if err != nil {
@@ -165,6 +165,54 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		}
 
 		// Success
+		return nil
+
+	case febe.AuthenticationTypeMD5:
+		// See: https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-START-UP
+		//
+		// The frontend must now send a PasswordMessage containing the
+		// password (with user name) encrypted via MD5, then encrypted
+		// again using the 4-byte random salt specified in the
+		// AuthenticationMD5Password message. If this is the correct
+		// password, the server responds with an AuthenticationOk,
+		// otherwise it responds with an ErrorResponse. The actual
+		// PasswordMessage can be computed in SQL as
+		//
+		// concat(
+		//      'md5',
+		// 	md5(
+		// 		concat(
+		// 			md5(
+		// 				concat(password, username)
+		// 			),
+		// 			random-salt,
+		// 		)
+		// 	),
+		// )
+		//
+		// (Keep in mind the md5() function returns its result as a hex
+		// string.)
+
+		md5 := func(s ...string) string {
+			h := md5.New()
+			for _, s := range s {
+				io.WriteString(h, s)
+			}
+			return hex.EncodeToString(h.Sum(nil))
+		}
+
+		msg := "md5" + md5(md5(o.Password, o.User), string(cr.MD5Salt))
+
+		if err := c.fc.WritePasswordMessage(ctx, msg); err != nil {
+			return err
+		}
+		cr, err := nextResponse(febe.AuthenticationTypeOK)
+		if err != nil {
+			return err
+		}
+		if cr.Type != febe.AuthenticationTypeOK {
+			return fmt.Errorf("%w: unexpected authentication type %s", ErrProtocol, cr.Type)
+		}
 		return nil
 	default:
 		return fmt.Errorf("%w: unexpected authentication type %s", ErrProtocol, cr.Type)

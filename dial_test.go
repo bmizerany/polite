@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
@@ -23,6 +24,51 @@ func TestDialAuthNone(t *testing.T) {
 	defer cn.Close()
 	if err := cn.Ping(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDialAuthMD5(t *testing.T) {
+	dsn := startPG(t,
+		"-c", "password_encryption=md5",
+	)
+
+	cn, err := Dial(context.Background(), dsn, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cn.Close()
+	const q = `
+		CREATE USER test WITH PASSWORD 'pass';
+	`
+
+	if _, err := cn.Exec(context.Background(), q); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		user, pass string
+		wantErr    bool
+	}{
+		{"test", "pass", false},
+		{"test", "wrong", true},
+		{"wrong", "pass", true},
+	}
+
+	for _, tt := range cases {
+		// connect with password
+		dsn += fmt.Sprintf(" user=%s password=%s", tt.user, tt.pass)
+		cn, err = Dial(context.Background(), dsn, nil)
+		if err != nil {
+			if !tt.wantErr {
+				t.Fatal(err)
+			}
+			continue
+		}
+		defer cn.Close()
+
+		if err := cn.Ping(context.Background()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -158,6 +204,7 @@ func startPG(t *testing.T, settings ...string) string {
 	}()
 
 	t.Cleanup(func() {
+		t.Helper()
 		defer func() {
 			// Be paranoid and prevent illegal calls to
 			// t.{Log,Error,...} funcs from being called after this test

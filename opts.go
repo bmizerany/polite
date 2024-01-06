@@ -109,6 +109,11 @@ func ParseOptions(dsn string) (*Options, error) {
 				// for backwards compat when switching from drivers
 				// that support dbname
 				o.Extra = append(o.Extra, "database="+val)
+			case "user":
+				o.User = val
+				o.Extra = append(o.Extra, "user="+val)
+			case "password":
+				o.Password = val
 			default:
 				o.Extra = append(o.Extra, key+"="+val)
 			}

@@ -256,6 +256,8 @@ type AuthenticationResponse struct {
 
 	SASLData      []byte
 	SASLMechanism string
+
+	MD5Salt []byte
 }
 
 func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, error) {
@@ -291,6 +293,12 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 			return zero, err
 		}
 		r.SASLData = data
+	case AuthenticationTypeMD5:
+		salt, err := c.c.ReadByteN(4)
+		if err != nil {
+			return zero, err
+		}
+		r.MD5Salt = salt
 	}
 
 	return r, nil
