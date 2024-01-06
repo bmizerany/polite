@@ -14,12 +14,12 @@ func main() {
 	const dsn = "dbname=postgres user=postgres port=5433 host=localhost sslmode=disable"
 	ctx := context.Background()
 
-	cn, err := postgres.Dial(ctx, dsn)
+	cn, err := postgres.Dial(ctx, dsn, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	dropCN, err := postgres.Dial(ctx, dsn)
+	dropCN, err := postgres.Dial(ctx, dsn, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,12 +34,12 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		name, err := row.Bytes()
+		name, err := row.View()
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		dropQ := fmt.Sprintf("DROP DATABASE %s", name)
+		dropQ := fmt.Sprintf("DROP DATABASE %s", name.StringCopy())
 		log.Print(dropQ)
 
 		_, err = dropCN.Exec(ctx, dropQ)
