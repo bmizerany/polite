@@ -37,10 +37,8 @@ func TestDialAuthMD5(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cn.Close()
-	const q = `
-		CREATE USER test WITH PASSWORD 'pass';
-	`
 
+	const q = `CREATE USER test WITH PASSWORD 'pass'`
 	if _, err := cn.Exec(context.Background(), q); err != nil {
 		t.Fatal(err)
 	}
