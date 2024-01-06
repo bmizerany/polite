@@ -20,16 +20,22 @@ func TestParseOptions(t *testing.T) {
 		{"dbname=test user=foo", &Options{
 			Host:  "localhost",
 			Port:  "5432",
+			User:  "foo",
 			Extra: []string{"database=test", "user=foo"},
 		}},
 		{"dbname=test user=foo password=bar", &Options{
-			Host:  "localhost",
-			Port:  "5432",
-			Extra: []string{"database=test", "password=bar", "user=foo"},
+			Host:     "localhost",
+			Port:     "5432",
+			User:     "foo",
+			Password: "bar",
+
+			// password is NOT to be included in the Extra field
+			Extra: []string{"database=test", "user=foo"},
 		}},
 		{"user=foo", &Options{
 			Host:  "localhost",
 			Port:  "5432",
+			User:  "foo",
 			Extra: []string{"user=foo"},
 		}},
 		{"sslmode=foo", &Options{
