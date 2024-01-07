@@ -202,7 +202,6 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		}
 
 		msg := "md5" + md5(md5(o.Password, o.User), string(cr.MD5Salt))
-
 		if err := c.fc.WritePasswordMessage(ctx, msg); err != nil {
 			return err
 		}
