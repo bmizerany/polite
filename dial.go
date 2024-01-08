@@ -169,30 +169,6 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 
 	case febe.AuthenticationTypeMD5:
 		// See: https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-START-UP
-		//
-		// The frontend must now send a PasswordMessage containing the
-		// password (with user name) encrypted via MD5, then encrypted
-		// again using the 4-byte random salt specified in the
-		// AuthenticationMD5Password message. If this is the correct
-		// password, the server responds with an AuthenticationOk,
-		// otherwise it responds with an ErrorResponse. The actual
-		// PasswordMessage can be computed in SQL as
-		//
-		// concat(
-		//      'md5',
-		// 	md5(
-		// 		concat(
-		// 			md5(
-		// 				concat(password, username)
-		// 			),
-		// 			random-salt,
-		// 		)
-		// 	),
-		// )
-		//
-		// (Keep in mind the md5() function returns its result as a hex
-		// string.)
-
 		md5 := func(s ...string) string {
 			h := md5.New()
 			for _, s := range s {
@@ -205,14 +181,8 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 		if err := c.fc.WritePasswordMessage(ctx, msg); err != nil {
 			return err
 		}
-		cr, err := nextResponse(febe.AuthenticationTypeOK)
-		if err != nil {
-			return err
-		}
-		if cr.Type != febe.AuthenticationTypeOK {
-			return fmt.Errorf("%w: unexpected authentication type %s", ErrProtocol, cr.Type)
-		}
-		return nil
+		_, err := nextResponse(febe.AuthenticationTypeOK)
+		return err
 	default:
 		return fmt.Errorf("%w: unexpected authentication type %s", ErrProtocol, cr.Type)
 	}
