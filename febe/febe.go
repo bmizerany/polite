@@ -311,7 +311,6 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 
 func (c *Conn) WritePasswordMessage(ctx context.Context, password string) error {
 	var s sizer
-	s.addByte()  // message type
 	s.addInt32() // length
 	s.addString(password)
 	c.c.WriteByte('p')
