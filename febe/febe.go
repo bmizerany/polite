@@ -267,14 +267,14 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 	}
 
 	// Get the type of authentication
-	t, err := c.c.ReadInt32()
+	typ, err := c.c.ReadInt32()
 	if err != nil {
 		return zero, err
 	}
 
 	r := AuthenticationResponse{
 		MessageHeader: c.h,
-		Type:          AuthenticationType(t),
+		Type:          AuthenticationType(typ),
 	}
 
 	switch r.Type {
@@ -299,6 +299,11 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 			return zero, err
 		}
 		r.MD5Salt = salt
+	}
+
+	t := traceFromContext(ctx)
+	if t.ReceivedAuthenticationResponse != nil {
+		t.ReceivedAuthenticationResponse(ctx, r)
 	}
 
 	return r, nil

@@ -16,6 +16,8 @@ type Trace struct {
 	ReceivedError           func(context.Context, *Error)
 	ReceivedParameterStatus func(context.Context, Parameter)
 
+	ReceivedAuthenticationResponse func(context.Context, AuthenticationResponse)
+
 	WroteExecute func(ctx context.Context, portal, statement string, args []string)
 }
 
