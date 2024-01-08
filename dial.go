@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"time"
 
 	"blake.io/postgres/febe"
 	"github.com/lib/pq/scram"
@@ -55,50 +56,65 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 		return nil, err
 	}
 
+	stopc := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		cn.SetReadDeadline(time.Now())
+		close(stopc)
+	})
+
 	c := &Conn{
 		dsnOrURL: dsnOrURL,
 		cn:       cn,
 		fc:       febe.New(cn, cn),
 	}
 
-	if err := c.fc.WriteStartupMessage(ctx, o.Extra...); err != nil {
-		return nil, err
-	}
-
-	if err := c.fc.Flush(); err != nil {
-		return nil, err
-	}
-
-	for {
-		h, err := c.fc.ReadHeader(ctx)
-		if err != nil {
-			return nil, err
+	err = func() error {
+		if err := c.fc.WriteStartupMessage(ctx, o.Extra...); err != nil {
+			return err
 		}
-
-		switch h.Type() {
-		case 'R':
-			if err := c.handleAuth(ctx, o); err != nil {
-				return nil, err
-			}
-		case 'S':
-			if err := c.fc.DiscardMessage(ctx); err != nil {
-				return nil, err
-			}
-		case 'K':
-			// TODO(bmizerany): save the key for cancellations later
-			if err := c.fc.DiscardMessage(ctx); err != nil {
-				return nil, err
-			}
-		case 'Z':
-			_, err := c.fc.ReadReadyForQuery(ctx)
+		if err := c.fc.Flush(); err != nil {
+			return err
+		}
+		for {
+			h, err := c.fc.ReadHeader(ctx)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			return c, nil
-		default:
-			return nil, fmt.Errorf("%w: unexpected message %q", ErrProtocol, h.Type())
+
+			switch h.Type() {
+			case 'R':
+				if err := c.handleAuth(ctx, o); err != nil {
+					return err
+				}
+			case 'S':
+				if err := c.fc.DiscardMessage(ctx); err != nil {
+					return err
+				}
+			case 'K':
+				// TODO(bmizerany): save the key for cancellations later
+				if err := c.fc.DiscardMessage(ctx); err != nil {
+					return err
+				}
+			case 'Z':
+				_, err := c.fc.ReadReadyForQuery(ctx)
+				if err != nil {
+					return err
+				}
+				return nil
+			default:
+				return fmt.Errorf("%w: unexpected message %q", ErrProtocol, h.Type())
+			}
 		}
+	}()
+	if !stop() {
+		<-stopc
+		cn.SetReadDeadline(time.Time{})
+		return nil, ctx.Err()
 	}
+	if err != nil {
+		return nil, err
+	}
+	return c, err
 }
 
 func (c *Conn) handleAuth(ctx context.Context, o *Options) error {

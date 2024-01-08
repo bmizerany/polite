@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"os"
@@ -32,7 +33,20 @@ func main() {
 		// WroteExecute func(ctx context.Context, portal, statement string, args []string)
 	})
 
-	cn, err := postgres.Dial(ctx, os.Getenv("DATABASE_URL"), nil)
+	f, err := os.OpenFile("trace.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	// TLS keylog recroding
+	cfg := &postgres.Config{
+		TLSConfig: &tls.Config{
+			KeyLogWriter: f,
+		},
+	}
+
+	cn, err := postgres.Dial(ctx, os.Getenv("DATABASE_URL"), cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
