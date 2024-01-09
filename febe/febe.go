@@ -569,6 +569,27 @@ func (c *Conn) ReadDataRowValue(ctx context.Context) (DataRowValueResponse, erro
 	return DataRowValueResponse{Data: data}, nil
 }
 
+type CopyDataResponse struct {
+	MessageHeader
+	Data mem.RO
+}
+
+func (c *Conn) ReadCopyData(ctx context.Context) (CopyDataResponse, error) {
+	var zero CopyDataResponse
+	if err := c.checkMessageHeader('d'); err != nil {
+		return zero, err
+	}
+	rem := c.h.BodyLen()
+	data, err := c.c.ReadByteN(rem)
+	if err != nil {
+		return zero, err
+	}
+	return CopyDataResponse{
+		MessageHeader: c.h,
+		Data:          mem.B(data),
+	}, nil
+}
+
 // This comment exits to say; we don't need this method. Most others should
 // have parity, but this one is not needed because it is handled best in
 // WriteDataRow.
