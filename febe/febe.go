@@ -589,8 +589,3 @@ func (c *Conn) ReadCopyData(ctx context.Context) (CopyDataResponse, error) {
 		Data:          mem.B(data),
 	}, nil
 }
-
-// This comment exits to say; we don't need this method. Most others should
-// have parity, but this one is not needed because it is handled best in
-// WriteDataRow.
-// func (c *Conn) WriteDataRowValue(ctx context.Context, r *io.LimitedReader) error {}
