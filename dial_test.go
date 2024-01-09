@@ -28,20 +28,29 @@ func TestDialAuthNone(t *testing.T) {
 }
 
 func TestDialAuthMD5(t *testing.T) {
-	dsn := startPG(t,
+	// hba postgres that will accept md5 passwords for md5only db, and
+	// trust non-md5only database names using regexp
+	mainDSN := startPG(t, withHBA(t, []string{
 		"-c", "password_encryption=md5",
-	)
+	}, `
+		# order is paramount; first match takes precedence
+		local  all  test  md5
+		local  all  all   trust
+	`)...)
 
-	cn, err := Dial(context.Background(), dsn, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cn.Close()
+	func() {
+		// Create test user with pass
+		cn, err := Dial(context.Background(), mainDSN, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cn.Close()
 
-	const q = `CREATE USER test WITH PASSWORD 'pass'`
-	if _, err := cn.Exec(context.Background(), q); err != nil {
-		t.Fatal(err)
-	}
+		const q = `CREATE USER test WITH PASSWORD 'pass'`
+		if _, err := cn.Exec(context.Background(), q); err != nil {
+			t.Fatal(err)
+		}
+	}()
 
 	cases := []struct {
 		user, pass string
@@ -53,28 +62,30 @@ func TestDialAuthMD5(t *testing.T) {
 	}
 
 	for _, tt := range cases {
-		// connect with password
-		dsn += fmt.Sprintf(" user=%s password=%s", tt.user, tt.pass)
-		cn, err = Dial(context.Background(), dsn, nil)
-		if err != nil {
-			if !tt.wantErr {
+		t.Run(tt.user+"/"+tt.pass, func(t *testing.T) {
+			// connect with password
+			dsn := fmt.Sprintf("%s user=%s password=%s", mainDSN, tt.user, tt.pass)
+			cn, err := Dial(context.Background(), dsn, nil)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error")
+			} else if !tt.wantErr && err != nil {
 				t.Fatal(err)
 			}
-			continue
-		}
-		defer cn.Close()
+			if err != nil {
+				return
+			}
+			defer cn.Close()
 
-		if err := cn.Ping(context.Background()); err != nil {
-			t.Fatal(err)
-		}
+			if err := cn.Ping(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
 func TestDialTLS(t *testing.T) {
-	dir := t.TempDir()
-	dsn := startPG(t, configureTLSOnly(dir)...)
-
-	sslrootcert := filepath.Join(dir, "server.crt")
+	sslrootcert, tlsargs := configureTLSOnly(t)
+	dsn := startPG(t, tlsargs...)
 
 	cases := []struct {
 		sslmode string
@@ -350,27 +361,33 @@ vfq2RQojf0vZ3MOLqQsPVXrVf7affiWDPcnUxpN7xHEz8w2ZglG+BmXiWJWDjcdX
 
 // configureTLSOnly writes certs and postgres config to a temporary
 // directory and returns the absolute path to the directory.
-func configureTLSOnly(dir string) (args []string) {
+func configureTLSOnly(t *testing.T) (sslrootcert string, args []string) {
+	dir := t.TempDir()
 	for name, contents := range certs {
 		certpath := filepath.Join(dir, name)
 		if err := os.WriteFile(certpath, []byte(contents), 0600); err != nil {
 			panic(err)
 		}
 	}
-	hbapath := filepath.Join(dir, "pg_hba.conf")
-	hbaconf := `
-hostssl  all  all  127.0.0.1/32  trust
-local    all  all                trust
-`
-	err := os.WriteFile(hbapath, []byte(hbaconf), 0600)
-	if err != nil {
-		panic(err)
-	}
-	return []string{
+	sslrootcert = filepath.Join(dir, "server.crt")
+	args = []string{
 		"-c", "ssl=on",
-		"-c", "ssl_cert_file=" + filepath.Join(dir, "server.crt"),
+		"-c", "ssl_cert_file=" + sslrootcert,
 		"-c", "ssl_key_file=" + filepath.Join(dir, "server.key"),
-		"-c", "hba_file=" + hbapath,
 		"-c", "listen_addresses=127.0.0.1",
 	}
+	return sslrootcert, withHBA(t, args, `
+		hostssl  all  all  127.0.0.1/32  trust
+		local    all  all                trust
+	`)
+}
+
+func withHBA(t *testing.T, args []string, content string) []string {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "pg_hba.conf")
+	err := os.WriteFile(file, []byte(content), 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(args, "-c", "hba_file="+file)
 }
