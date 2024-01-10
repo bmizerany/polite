@@ -148,6 +148,15 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 				t.ReceivedError(ctx, e)
 			}
 			return zero, e
+		case 'f': // CopyFail
+			e, err := c.readCopyFailResponse(ctx)
+			if err != nil {
+				return zero, err
+			}
+			if t.ReceivedError != nil {
+				t.ReceivedError(ctx, e)
+			}
+			return zero, e
 		case 'S':
 			s, err := c.ReadParameterStatus(ctx)
 			if err != nil {
@@ -587,5 +596,41 @@ func (c *Conn) ReadCopyData(ctx context.Context) (CopyDataResponse, error) {
 	return CopyDataResponse{
 		MessageHeader: c.h,
 		Data:          mem.B(data),
+	}, nil
+}
+
+// CopyResponse represnets the response to the COPY IN, COPY OUT commands.
+type CopyResponse struct {
+	MessageHeader
+	Format  byte
+	NumCols int16
+
+	// NOTE: Format codes are for future proofing the protocol, so clients can
+	// ignore them for now.
+}
+
+func (c *Conn) ReadCopyHeader(ctx context.Context) (CopyResponse, error) {
+	var zero CopyResponse
+	if err := c.checkMessageHeader('H', 'G'); err != nil {
+		return zero, err
+	}
+	format, err := c.c.ReadByte()
+	if err != nil {
+		return zero, err
+	}
+	numCols, err := c.c.ReadInt16()
+	if err != nil {
+		return zero, err
+	}
+
+	// Discard format codes
+	if err := c.c.Discard(c.h.BodyLen() - 3); err != nil {
+		return zero, err
+	}
+
+	return CopyResponse{
+		MessageHeader: c.h,
+		Format:        format,
+		NumCols:       numCols,
 	}, nil
 }

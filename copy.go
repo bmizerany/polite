@@ -24,22 +24,31 @@ func (c *Conn) Stream(ctx context.Context, sql string, args ...mem.RO) *Stream {
 	return &Stream{c: c, ctx: ctx}
 }
 
-func (st *Stream) Out(yield func(mem.RO, error) bool) {
-	var zero mem.RO
+type CopyRow struct {
+	ctx context.Context
+	v   mem.RO
+	rem int
+}
+
+func (r *CopyRow) Unprocessed() int {
+	return r.rem
+}
+
+func (st *Stream) Out(yield func(*CopyRow, error) bool) {
 	if st.err != nil {
-		yield(zero, st.err)
+		yield(nil, st.err)
 		return
 	}
 	if err := st.c.fc.WriteExecute(st.ctx, "", 0); err != nil {
-		yield(zero, err)
+		yield(nil, err)
 		return
 	}
 	if err := st.c.fc.WriteSync(st.ctx); err != nil {
-		yield(zero, err)
+		yield(nil, err)
 		return
 	}
 	if err := st.c.fc.Flush(); err != nil {
-		yield(zero, err)
+		yield(nil, err)
 		return
 	}
 
