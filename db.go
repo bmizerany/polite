@@ -157,15 +157,23 @@ func (c *Conn) QueryAll(ctx context.Context, sql string, args ...string) iter.Se
 }
 
 type Row struct {
-	ctx context.Context
-	c   *Conn
-	d   febe.DataRowResponse
-	rem int
+	ctx     context.Context
+	c       *Conn
+	numCols int
+	rem     int
+
+	inCopy   bool
+	copyData mem.RO
+}
+
+func (r *Row) resetCopyData(v mem.RO) {
+	r.rem = r.numCols
+	r.copyData = v
 }
 
 // Columns returns the number of columns in a row.
 func (r *Row) Columns() int {
-	return int(r.d.NumCols)
+	return int(r.numCols)
 }
 
 // Unprocessed returns the number of columns that have not been
@@ -179,6 +187,9 @@ func (r *Row) View() (mem.RO, error) {
 		return mem.RO{}, ErrOutOfColumns
 	}
 	r.rem--
+	if r.inCopy {
+		return r.copyData, nil
+	}
 	v, err := r.c.fc.ReadDataRowValue(r.ctx)
 	if err != nil {
 		return mem.RO{}, err
@@ -209,6 +220,9 @@ func (r *Row) ParseInt(base int, bitSize int) (int64, error) {
 func (r *Row) Close() error {
 	if r.rem == 0 {
 		// nothing to discard; carry on
+		return nil
+	}
+	if r.inCopy {
 		return nil
 	}
 	for range r.rem {
@@ -308,20 +322,35 @@ func (rs *Rows) next() (*Row, error) {
 				rs.row = &Row{}
 			}
 			*rs.row = Row{
-				ctx: rs.ctx,
-				c:   rs.c,
-				d:   m,
-				rem: int(m.NumCols),
+				ctx:     rs.ctx,
+				c:       rs.c,
+				numCols: int(m.NumCols),
+				rem:     int(m.NumCols),
 			}
 			return rs.row, nil
 		case 'I':
 			return nil, ErrEmptyQuery
 		case 'G':
-			panic("TODO: CopyInResponse")
-		case 'H':
-			panic("TODO: CopyOutResponse")
+			ch, err := c.ReadCopyHeader(rs.ctx)
+			if err != nil {
+				return nil, err
+			}
+			if rs.row == nil {
+				rs.row = &Row{}
+			}
+			*rs.row = Row{
+				ctx:     rs.ctx,
+				c:       rs.c,
+				numCols: int(ch.NumCols),
+				rem:     int(ch.NumCols),
+			}
 		case 'd':
-			panic("TODO: CopyData")
+			cd, err := c.ReadCopyData(rs.ctx)
+			if err != nil {
+				return nil, err
+			}
+			rs.row.resetCopyData(cd.Data)
+			return rs.row, nil
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx)
 			if err != nil {

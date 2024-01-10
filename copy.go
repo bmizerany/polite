@@ -22,7 +22,7 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter
 		}
 		b.WriteString(")")
 	}
-	b.WriteString(" FROM STDIN")
+	b.WriteString(" TO STDIN")
 	return c.QueryAll(ctx, b.String())
 }
 
