@@ -23,6 +23,7 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter
 		b.WriteString(")")
 	}
 	b.WriteString(" TO STDIN")
+	b.WriteString(" WITH (FORMAT binary)")
 	return c.QueryAll(ctx, b.String())
 }
 

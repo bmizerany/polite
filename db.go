@@ -167,6 +167,7 @@ type Row struct {
 }
 
 func (r *Row) resetCopyData(v mem.RO) {
+	r.inCopy = true
 	r.rem = r.numCols
 	r.copyData = v
 }
@@ -330,7 +331,7 @@ func (rs *Rows) next() (*Row, error) {
 			return rs.row, nil
 		case 'I':
 			return nil, ErrEmptyQuery
-		case 'G':
+		case 'H':
 			ch, err := c.ReadCopyHeader(rs.ctx)
 			if err != nil {
 				return nil, err
