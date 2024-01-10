@@ -158,7 +158,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 			}
 			return zero, e
 		case 'S':
-			s, err := c.ReadParameterStatus(ctx)
+			s, err := c.readParameterStatus(ctx)
 			if err != nil {
 				return zero, err
 			}

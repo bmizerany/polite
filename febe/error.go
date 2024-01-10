@@ -146,7 +146,7 @@ type ParameterStatusResponse struct {
 	Value string
 }
 
-func (c *Conn) ReadParameterStatus(ctx context.Context) (ParameterStatusResponse, error) {
+func (c *Conn) readParameterStatus(ctx context.Context) (ParameterStatusResponse, error) {
 	var zero ParameterStatusResponse
 	if err := c.checkMessageHeader('S'); err != nil {
 		return zero, err
@@ -163,4 +163,15 @@ func (c *Conn) ReadParameterStatus(ctx context.Context) (ParameterStatusResponse
 		Name:  string(name),
 		Value: string(value),
 	}, nil
+}
+
+func (c *Conn) readCopyFailResponse(ctx context.Context) (*Error, error) {
+	if err := c.checkMessageHeader('f'); err != nil {
+		return nil, err
+	}
+	msg, err := c.c.ReadString()
+	if err != nil {
+		return nil, err
+	}
+	return (&Notice{Message: string(msg)}).AsError(), nil
 }

@@ -26,18 +26,31 @@ func TestStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var got []string
-	for row, err := range c.Stream(ctx, "COPY foo TO STDOUT").Out {
+	type G struct {
+		ID   int64
+		Name string
+	}
+
+	var got []G
+	for row, err := range c.CopyTo(ctx, "foo") {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, row.StringCopy())
+		id, err := row.ParseInt(10, 64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, err := row.View()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, G{ID: id, Name: name.StringCopy()})
 	}
 
 	want := []string{
-		"1\tfoo\n",
-		"2\tbar\n",
-		"3\tbaz\n",
+		"1", "foo",
+		"2", "bar",
+		"3", "baz",
 	}
 
 	diff.Test(t, t.Errorf, got, want)

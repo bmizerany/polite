@@ -290,10 +290,6 @@ func (rs *Rows) next() (*Row, error) {
 				return nil, err
 			}
 			rs.rowsAffected = m.RowsAffected
-		case 'G':
-			panic("TODO: CopyInResponse")
-		case 'H':
-			panic("TODO: CopyOutResponse")
 		case 'T':
 			// Ignore row descriptions for now; they're pretty
 			// useless if you know the query you're running,
@@ -320,6 +316,12 @@ func (rs *Rows) next() (*Row, error) {
 			return rs.row, nil
 		case 'I':
 			return nil, ErrEmptyQuery
+		case 'G':
+			panic("TODO: CopyInResponse")
+		case 'H':
+			panic("TODO: CopyOutResponse")
+		case 'd':
+			panic("TODO: CopyData")
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx)
 			if err != nil {
