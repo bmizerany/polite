@@ -18,11 +18,10 @@ func TestCopyData(t *testing.T) {
 	b.WriteString("\x00\x03") // three columns
 
 	b.WriteString("\x00\x00\x00\x04")
-	b.WriteString("\x00\x00\x00\x01")
+	b.WriteString("\x00\x00\x00\x01") // 1
 	b.WriteString("\x00\x00\x00\x04")
-	b.WriteString("\x00\x00\x00\x02")
-	b.WriteString("\x00\x00\x00\x04")
-	b.WriteString("\x00\x00\x00\x03")
+	b.WriteString("\x00\x00\x00\x02") // 2
+	b.WriteString("\xff\xff\xff\xff") // NULL
 
 	// -1 indicates no more rows
 	b.WriteString("\xff\xff\xff\xff")
@@ -57,7 +56,7 @@ func TestCopyData(t *testing.T) {
 		t.Fatalf("NumCols = %d, want 3", cc.NumCols)
 	}
 
-	for i := range 3 {
+	for i := range 2 {
 		cv, err := cn.ReadCopyDataBinaryValue(ctx)
 		if err != nil {
 			t.Fatalf("[%d] %v", i, err)
@@ -68,6 +67,25 @@ func TestCopyData(t *testing.T) {
 		if !bytes.Equal(got, want) {
 			t.Fatalf("ReadInt32 = %d, want %d", got, want)
 		}
+	}
+
+	cv, err := cn.ReadCopyDataBinaryValue(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cv.Data != nil {
+		t.Errorf("Data = %v, want nil", cv.Data)
+	}
+	if t.Failed() {
+		t.FailNow()
+	}
+
+	cc, err = cn.ReadCopyDataBinaryColumns(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cc.NumCols != -1 {
+		t.Fatalf("NumCols = %d, want -1", cc.NumCols)
 	}
 }
 

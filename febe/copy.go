@@ -92,7 +92,6 @@ func (c *Conn) ReadCopyDataBinaryColumns(ctx context.Context) (CopyDataBinaryCol
 
 type CopyDataBinaryValueResponse struct {
 	MessageHeader
-	Null bool
 	Data []byte // NULL if nil
 }
 
@@ -108,7 +107,7 @@ func (c *Conn) ReadCopyDataBinaryValue(ctx context.Context) (CopyDataBinaryValue
 	if n == -1 {
 		return CopyDataBinaryValueResponse{
 			MessageHeader: c.h,
-			Null:          true,
+			Data:          nil,
 		}, nil
 	}
 	data, err := c.c.ReadByteN(int(n))
