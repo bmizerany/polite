@@ -252,14 +252,8 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		yield(nil, rs.err)
 		return
 	}
-	if err := rs.c.fc.WriteExecute(rs.ctx, "", 0); err != nil {
-		yield(nil, err)
-		return
-	}
-	if err := rs.c.fc.WriteSync(rs.ctx); err != nil {
-		yield(nil, err)
-		return
-	}
+	rs.c.fc.WriteExecute(rs.ctx, "", 0)
+	rs.c.fc.WriteSync(rs.ctx)
 	if err := rs.c.fc.Flush(); err != nil {
 		yield(nil, err)
 		return
