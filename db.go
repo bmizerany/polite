@@ -220,23 +220,15 @@ func (r *Row) Close() error {
 		// nothing to discard; carry on
 		return nil
 	}
-	if r.useCopy {
-		for range r.rem {
-			_, err := r.c.fc.ReadCopyDataBinaryValue(r.ctx)
-			if err != nil {
-				return err
-			}
-			r.rem--
-		}
-	}
-	for range r.rem {
-		_, err := r.c.fc.ReadDataRowValue(r.ctx)
+	for {
+		_, err := r.View()
 		if err != nil {
+			if errors.Is(err, ErrOutOfColumns) {
+				return nil
+			}
 			return err
 		}
-		r.rem--
 	}
-	return nil
 }
 
 type Rows struct {
@@ -283,10 +275,11 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 			return
 		}
 
-		if !yield(row, nil) {
-			if row.Unprocessed() > 0 {
-				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
-			}
+		ok := yield(row, nil)
+		if row.Unprocessed() > 0 {
+			panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
+		}
+		if !ok {
 			return
 		}
 	}
@@ -340,6 +333,9 @@ func (rs *Rows) next() (*Row, error) {
 				return nil, err
 			}
 		case 'd':
+			// TODO(bmizerany): check if already closed? We may
+			// have gotten something wrong like a 'd' after a
+			// CopyClose?
 			if rs.row == nil {
 				_, err := c.ReadCopyDataBinaryHeader(rs.ctx)
 				if err != nil {
@@ -351,7 +347,8 @@ func (rs *Rows) next() (*Row, error) {
 			if err != nil {
 				return nil, err
 			}
-			if cr.NumCols == -1 {
+			fmt.Printf("cr: %+v\n", cr.NumCols)
+			if cr.NumCols < 0 {
 				// end of copy
 				rs.row = nil
 				continue
@@ -363,6 +360,7 @@ func (rs *Rows) next() (*Row, error) {
 				rem:     int(cr.NumCols),
 				useCopy: true,
 			}
+			return rs.row, nil
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx)
 			if err != nil {

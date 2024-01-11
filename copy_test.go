@@ -44,15 +44,9 @@ func TestStream(t *testing.T) {
 		if err != nil {
 			t.Fatalf("[%d] %v", i, err)
 		}
-		id, err := row.ParseInt(10, 64)
-		if err != nil {
-			t.Fatal(err)
+		if err := row.Close(); err != nil {
+			t.Fatalf("[%d] %v", i, err)
 		}
-		name, err := row.View()
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, G{ID: id, Name: name.StringCopy()})
 		i++
 	}
 

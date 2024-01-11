@@ -90,13 +90,8 @@ func (c *Conn) ReadCopyDataBinaryNumCols(ctx context.Context) (CopyDataBinaryCol
 	}, nil
 }
 
-type CopyDataBinaryValueResponse struct {
-	MessageHeader
-	Data []byte // NULL if nil
-}
-
-func (c *Conn) ReadCopyDataBinaryValue(ctx context.Context) (CopyDataBinaryValueResponse, error) {
-	var zero CopyDataBinaryValueResponse
+func (c *Conn) ReadCopyDataBinaryValue(ctx context.Context) (DataRowValueResponse, error) {
+	var zero DataRowValueResponse
 	if err := c.checkMessageHeader('d'); err != nil {
 		return zero, err
 	}
@@ -105,7 +100,7 @@ func (c *Conn) ReadCopyDataBinaryValue(ctx context.Context) (CopyDataBinaryValue
 		return zero, err
 	}
 	if n == -1 {
-		return CopyDataBinaryValueResponse{
+		return DataRowValueResponse{
 			MessageHeader: c.h,
 			Data:          nil,
 		}, nil
@@ -114,7 +109,7 @@ func (c *Conn) ReadCopyDataBinaryValue(ctx context.Context) (CopyDataBinaryValue
 	if err != nil {
 		return zero, err
 	}
-	return CopyDataBinaryValueResponse{
+	return DataRowValueResponse{
 		Data: data,
 	}, nil
 }

@@ -17,10 +17,17 @@ func maybeBecomeSupervisor() {
 	awaitParentDeath()
 	p, err := os.FindProcess(pid)
 	if err != nil {
-		log.Fatalf("find process: %v", err)
+		// If the parent has already died, this will fail with "no
+		// such process".
+		//
+		// This is fine, we'll just exit.
 	}
 	if err := p.Signal(syscall.Signal(syscall.SIGQUIT)); err != nil {
-		log.Fatalf("error signaling process: %v", err)
+		// If the parent has already died, this will fail with "no
+		// such process" or "process already finished", both of
+		// which is fine.
+		//
+		// Do nothing.
 	}
 	os.Exit(0)
 }
