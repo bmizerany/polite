@@ -34,7 +34,7 @@ func writeQuotedIdentifier(b *strings.Builder, name string) {
 	}
 	for _, c := range name {
 		if c == '"' {
-			b.WriteRune('"')
+			b.WriteString("\"\"")
 		}
 		b.WriteRune(c)
 	}

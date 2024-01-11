@@ -8,10 +8,7 @@ import (
 )
 
 func TestStream(t *testing.T) {
-	dsn := startPG(t, "-c", "listen_addresses=127.0.0.1")
-	dsn += " host=localhost"
-
-	t.Logf("dsn: %s", dsn)
+	dsn := createDB(t)
 
 	ctx := context.Background()
 	c, err := Dial(ctx, dsn, nil)

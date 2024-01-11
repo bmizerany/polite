@@ -162,14 +162,7 @@ type Row struct {
 	numCols int
 	rem     int
 
-	inCopy   bool
-	copyData mem.RO
-}
-
-func (r *Row) resetCopyData(v mem.RO) {
-	r.inCopy = true
-	r.rem = r.numCols
-	r.copyData = v
+	useCopy bool
 }
 
 // Columns returns the number of columns in a row.
@@ -188,8 +181,12 @@ func (r *Row) View() (mem.RO, error) {
 		return mem.RO{}, ErrOutOfColumns
 	}
 	r.rem--
-	if r.inCopy {
-		return r.copyData, nil
+	if r.useCopy {
+		v, err := r.c.fc.ReadCopyDataBinaryValue(r.ctx)
+		if err != nil {
+			return mem.RO{}, err
+		}
+		return mem.B(v.Data), nil
 	}
 	v, err := r.c.fc.ReadDataRowValue(r.ctx)
 	if err != nil {
@@ -223,8 +220,14 @@ func (r *Row) Close() error {
 		// nothing to discard; carry on
 		return nil
 	}
-	if r.inCopy {
-		return nil
+	if r.useCopy {
+		for range r.rem {
+			_, err := r.c.fc.ReadCopyDataBinaryValue(r.ctx)
+			if err != nil {
+				return err
+			}
+			r.rem--
+		}
 	}
 	for range r.rem {
 		_, err := r.c.fc.ReadDataRowValue(r.ctx)
@@ -332,26 +335,32 @@ func (rs *Rows) next() (*Row, error) {
 		case 'I':
 			return nil, ErrEmptyQuery
 		case 'H':
-			ch, err := c.ReadCopyHeader(rs.ctx)
+			_, err := c.ReadCopyOut(rs.ctx)
 			if err != nil {
 				return nil, err
 			}
 			if rs.row == nil {
 				rs.row = &Row{}
 			}
-			*rs.row = Row{
-				ctx:     rs.ctx,
-				c:       rs.c,
-				numCols: int(ch.NumCols),
-				rem:     int(ch.NumCols),
-			}
 		case 'd':
-			cd, err := c.ReadCopyData(rs.ctx)
+			if rs.row == nil {
+				_, err := c.ReadCopyDataBinaryHeader(rs.ctx)
+				if err != nil {
+					return nil, err
+				}
+				rs.row = &Row{}
+			}
+			cr, err := c.ReadCopyDataBinaryColumns(rs.ctx)
 			if err != nil {
 				return nil, err
 			}
-			rs.row.resetCopyData(cd.Data)
-			return rs.row, nil
+			*rs.row = Row{
+				ctx:     rs.ctx,
+				c:       rs.c,
+				numCols: int(cr.NumCols),
+				rem:     int(cr.NumCols),
+				useCopy: true,
+			}
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx)
 			if err != nil {
