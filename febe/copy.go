@@ -60,8 +60,8 @@ func (c *Conn) ReadCopyDataBinaryHeader(ctx context.Context) (CopyDataHeaderResp
 		return zero, err
 	}
 
-	// discard 15 byte PGCOPY preamble
-	if err := c.c.Discard(15); err != nil {
+	// Discard the 19 byte PGCOPY preamble
+	if err := c.c.Discard(19); err != nil {
 		return zero, err
 	}
 
@@ -75,7 +75,7 @@ type CopyDataBinaryColumnsResponse struct {
 	NumCols int16
 }
 
-func (c *Conn) ReadCopyDataBinaryColumns(ctx context.Context) (CopyDataBinaryColumnsResponse, error) {
+func (c *Conn) ReadCopyDataBinaryNumCols(ctx context.Context) (CopyDataBinaryColumnsResponse, error) {
 	var zero CopyDataBinaryColumnsResponse
 	if err := c.checkMessageHeader('d'); err != nil {
 		return zero, err

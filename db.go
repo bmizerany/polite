@@ -339,9 +339,6 @@ func (rs *Rows) next() (*Row, error) {
 			if err != nil {
 				return nil, err
 			}
-			if rs.row == nil {
-				rs.row = &Row{}
-			}
 		case 'd':
 			if rs.row == nil {
 				_, err := c.ReadCopyDataBinaryHeader(rs.ctx)
@@ -350,9 +347,14 @@ func (rs *Rows) next() (*Row, error) {
 				}
 				rs.row = &Row{}
 			}
-			cr, err := c.ReadCopyDataBinaryColumns(rs.ctx)
+			cr, err := c.ReadCopyDataBinaryNumCols(rs.ctx)
 			if err != nil {
 				return nil, err
+			}
+			if cr.NumCols == -1 {
+				// end of copy
+				rs.row = nil
+				continue
 			}
 			*rs.row = Row{
 				ctx:     rs.ctx,
@@ -369,7 +371,7 @@ func (rs *Rows) next() (*Row, error) {
 			// TODO(bmizerany): save the transaction status
 			return nil, ErrDone
 		default:
-			return nil, fmt.Errorf("%w: unexpected message type: %q", ErrProtocol, h.Type())
+			return nil, fmt.Errorf("%w: Rows.next: unexpected message type: %q", ErrProtocol, h.Type())
 		}
 	}
 }

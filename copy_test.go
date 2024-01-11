@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"blake.io/postgres/febe"
 	"kr.dev/diff"
 )
 
@@ -11,6 +12,12 @@ func TestStream(t *testing.T) {
 	dsn := createDB(t)
 
 	ctx := context.Background()
+	ctx = febe.WithTrace(ctx, &febe.Trace{
+		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
+			t.Logf("received header: %v", h)
+		},
+	})
+
 	c, err := Dial(ctx, dsn, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -32,9 +39,10 @@ func TestStream(t *testing.T) {
 	}
 
 	var got []G
+	var i int
 	for row, err := range c.CopyTo(ctx, "foo") {
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("[%d] %v", i, err)
 		}
 		id, err := row.ParseInt(10, 64)
 		if err != nil {
@@ -45,6 +53,7 @@ func TestStream(t *testing.T) {
 			t.Fatal(err)
 		}
 		got = append(got, G{ID: id, Name: name.StringCopy()})
+		i++
 	}
 
 	want := []string{

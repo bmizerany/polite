@@ -9,91 +9,94 @@ import (
 func TestCopyData(t *testing.T) {
 	var b bytes.Buffer
 
-	// PGCOPY binary preamble
-	b.WriteString("PGCOPY\n")
-	b.WriteString("\377\r\n\x00")
-	b.WriteString("\x00\x00")
-	b.WriteString("\x00\x00")
+	// CopyOut response
+	b.WriteString("H\x00\x00\x00\x0b\x01\x00\x02\x00\x01\x00\x01")
 
-	b.WriteString("\x00\x03") // three columns
-
-	b.WriteString("\x00\x00\x00\x04")
-	b.WriteString("\x00\x00\x00\x01") // 1
-	b.WriteString("\x00\x00\x00\x04")
-	b.WriteString("\x00\x00\x00\x02") // 2
-	b.WriteString("\xff\xff\xff\xff") // NULL
-
-	// -1 indicates no more rows
-	b.WriteString("\xff\xff\xff\xff")
-
-	var m bytes.Buffer
-	m.WriteRune('d')
-	m.Write(encodeInt32(4 + b.Len()))
-	m.Write(b.Bytes())
+	// CopyData response
+	b.WriteString("d\x00\x00\x00(PGCOPY\x0a\xff\x0d\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x03foo")
+	b.WriteString("d\x00\x00\x00\x15\x00\x02\x00\x00\x00\x04\x00\x00\x00\x02\x00\x00\x00\x03bar")
+	b.WriteString("d\x00\x00\x00\x15\x00\x02\x00\x00\x00\x04\x00\x00\x00\x03\x00\x00\x00\x03baz")
+	b.WriteString("d\x00\x00\x00\x15\x00\x02\x00\x00\x00\x04\x00\x00\x00\x04\xff\xff\xff\xff")
+	b.WriteString("d\x00\x00\x00\x06\xff\xff")
+	b.WriteString("c\x00\x00\x00\x04")
 
 	ctx := context.Background()
 
-	cn := New(&m, nil)
+	cn := New(&b, nil)
 
+	_, err := cn.ReadHeader(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	co, err := cn.ReadCopyOut(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if co.NumCols != 2 {
+		t.Fatalf("NumCols = %d; want %d", co.NumCols, 2)
+	}
+
+	for i, want := range [][]byte{
+		[]byte("foo"),
+		[]byte("bar"),
+		[]byte("baz"),
+		nil,
+	} {
+		h, err := cn.ReadHeader(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h.Type() != 'd' {
+			t.Fatalf("Type = %c; want %c", h.Type(), 'd')
+		}
+		if i == 0 {
+			_, err = cn.ReadCopyDataBinaryHeader(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		cc, err := cn.ReadCopyDataBinaryNumCols(ctx)
+		if cc.NumCols != 2 {
+			t.Fatalf("NumCols = %d; want %d", cc.NumCols, 2)
+		}
+		cv, err := cn.ReadCopyDataBinaryValue(ctx)
+		if err != nil {
+			t.Fatalf("[%d] %v", i, err)
+		}
+		if w := []byte{0, 0, 0, byte(i + 1)}; !bytes.Equal(cv.Data, w) {
+			t.Fatalf("[%d] Data = %q; want %q", i, cv.Data, w)
+		}
+		cv, err = cn.ReadCopyDataBinaryValue(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(cv.Data, want) {
+			t.Fatalf("[%d] Data = %q; want %q", i, cv.Data, want)
+		}
+	}
+
+	// No More Data
 	h, err := cn.ReadHeader(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if h.Type() != 'd' {
-		t.Fatalf("Type() = %q, want 'd'", h.Type())
+		t.Fatalf("Type = %c; want %c", h.Type(), 'd')
 	}
-
-	_, err = cn.ReadCopyDataBinaryHeader(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cc, err := cn.ReadCopyDataBinaryColumns(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cc.NumCols != 3 {
-		t.Fatalf("NumCols = %d, want 3", cc.NumCols)
-	}
-
-	for i := range 2 {
-		cv, err := cn.ReadCopyDataBinaryValue(ctx)
-		if err != nil {
-			t.Fatalf("[%d] %v", i, err)
-		}
-
-		got := cv.Data
-		want := encodeInt32(i + 1)
-		if !bytes.Equal(got, want) {
-			t.Fatalf("ReadInt32 = %d, want %d", got, want)
-		}
-	}
-
-	cv, err := cn.ReadCopyDataBinaryValue(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cv.Data != nil {
-		t.Errorf("Data = %v, want nil", cv.Data)
-	}
-	if t.Failed() {
-		t.FailNow()
-	}
-
-	cc, err = cn.ReadCopyDataBinaryColumns(ctx)
+	cc, err := cn.ReadCopyDataBinaryNumCols(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cc.NumCols != -1 {
-		t.Fatalf("NumCols = %d, want -1", cc.NumCols)
+		t.Fatalf("NumCols = %d; want %d", cc.NumCols, -1)
 	}
-}
 
-func encodeInt32(i int) []byte {
-	return []byte{
-		byte(i >> 24),
-		byte(i >> 16),
-		byte(i >> 8),
-		byte(i),
+	// CopyDone
+	h, err = cn.ReadHeader(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Type() != 'c' {
+		t.Fatalf("Type = %c; want %c", h.Type(), 'c')
 	}
 }
