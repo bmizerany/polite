@@ -26,9 +26,10 @@ func BenchmarkQuery(b *testing.B) {
 	}
 
 	for n := range 5 {
+		dsn := mainDSN + " host=/tmp/.s.PGSQL.5433"
 		name, q := query("PQL", n)
 		b.Run(name, func(b *testing.B) {
-			c, err := Dial(ctx, mainDSN, nil)
+			c, err := Dial(ctx, dsn, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -52,9 +53,10 @@ func BenchmarkQuery(b *testing.B) {
 	}
 
 	for n := range 5 {
+		dsn := mainDSN + " host=/tmp"
 		name, q := query("PGX", n)
 		b.Run(name, func(b *testing.B) {
-			conn, err := pgx.Connect(context.Background(), mainDSN+" host=/tmp")
+			conn, err := pgx.Connect(context.Background(), dsn)
 			if err != nil {
 				b.Fatal(err)
 			}
