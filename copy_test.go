@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -71,15 +70,14 @@ func must[T any](v T, err error) T {
 }
 
 func memUint(v mem.RO) uint {
-	data := []byte(v.StringCopy())
 	if v.Len() == 2 {
-		return uint(binary.BigEndian.Uint16(data))
+		return uint(uint16(v.At(1)) | uint16(v.At(0))<<8)
 	}
 	if v.Len() == 4 {
-		return uint(binary.BigEndian.Uint32(data))
+		return uint(uint32(v.At(3)) | uint32(v.At(2))<<8 | uint32(v.At(1))<<16 | uint32(v.At(0))<<24)
 	}
 	if v.Len() == 8 {
-		return uint(binary.BigEndian.Uint64(data))
+		return uint(uint64(v.At(7)) | uint64(v.At(6))<<8 | uint64(v.At(5))<<16 | uint64(v.At(4))<<24 | uint64(v.At(3))<<32 | uint64(v.At(2))<<40 | uint64(v.At(1))<<48 | uint64(v.At(0))<<56)
 	}
 	panic(fmt.Errorf("invalid length: %d", v.Len()))
 }
