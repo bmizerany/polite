@@ -289,6 +289,7 @@ func (rs *Rows) next() (*Row, error) {
 		switch h.Type() {
 		case '1', '2':
 			// Headers only; No discard needed
+			continue
 		case 'C':
 			m, err := c.ReadCommandComplete(rs.ctx)
 			if err != nil {
@@ -355,6 +356,9 @@ func (rs *Rows) next() (*Row, error) {
 				useCopy: true,
 			}
 			return rs.row, nil
+		case 'c':
+			// header only; no further action needed
+			continue
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx)
 			if err != nil {

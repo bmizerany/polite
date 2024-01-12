@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"blake.io/postgres/febe"
+	"go4.org/mem"
 	"kr.dev/diff"
 )
 
@@ -14,7 +16,7 @@ func TestStream(t *testing.T) {
 	ctx := context.Background()
 	ctx = febe.WithTrace(ctx, &febe.Trace{
 		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
-			t.Logf("received header: %v", h)
+			// t.Logf("received header: %v", h)
 		},
 	})
 
@@ -34,27 +36,55 @@ func TestStream(t *testing.T) {
 	}
 
 	type G struct {
-		ID   int64
+		ID   int
 		Name string
 	}
 
 	var got []G
-	var i int
 	for row, err := range c.CopyTo(ctx, "foo") {
 		if err != nil {
-			t.Fatalf("[%d] %v", i, err)
+			t.Fatal(err)
 		}
-		if err := row.Close(); err != nil {
-			t.Fatalf("[%d] %v", i, err)
-		}
-		i++
+		got = append(got, G{
+			// TODO(bmizerany): clean up, this has a lot of
+			// punctuation.
+			ID:   int(memUint64(must(row.View()))),
+			Name: must(row.View()).StringCopy(),
+		})
 	}
 
-	want := []string{
-		"1", "foo",
-		"2", "bar",
-		"3", "baz",
+	want := []G{
+		{ID: 1, Name: "foo"},
+		{ID: 2, Name: "bar"},
+		{ID: 3, Name: "baz"},
 	}
 
 	diff.Test(t, t.Errorf, got, want)
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+func memUint64(v mem.RO) uint64 {
+	if v.Len() == 4 {
+		return uint64(v.At(0))<<24 |
+			uint64(v.At(1))<<16 |
+			uint64(v.At(2))<<8 |
+			uint64(v.At(3))
+	}
+	if v.Len() == 8 {
+		return uint64(v.At(0))<<56 |
+			uint64(v.At(1))<<48 |
+			uint64(v.At(2))<<40 |
+			uint64(v.At(3))<<32 |
+			uint64(v.At(4))<<24 |
+			uint64(v.At(5))<<16 |
+			uint64(v.At(6))<<8 |
+			uint64(v.At(7))
+	}
+	panic(fmt.Errorf("invalid length: %d", v.Len()))
 }
