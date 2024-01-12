@@ -50,66 +50,35 @@ func (c *Conn) ReadCopyOut(ctx context.Context) (CopyResponse, error) {
 	}, nil
 }
 
-type CopyDataHeaderResponse struct {
+type CopyDataResponse struct {
 	MessageHeader
+	Data []byte
 }
 
-func (c *Conn) ReadCopyDataBinaryHeader(ctx context.Context) (CopyDataHeaderResponse, error) {
-	var zero CopyDataHeaderResponse
+func (c *Conn) ReadCopyData(ctx context.Context) (CopyDataResponse, error) {
+	var zero CopyDataResponse
 	if err := c.checkMessageHeader('d'); err != nil {
 		return zero, err
 	}
-
-	// Discard the 19 byte PGCOPY preamble
-	if err := c.c.Discard(19); err != nil {
-		return zero, err
-	}
-
-	return CopyDataHeaderResponse{
-		MessageHeader: c.h,
-	}, nil
-}
-
-type CopyDataBinaryColumnsResponse struct {
-	MessageHeader
-	NumCols int16
-}
-
-func (c *Conn) ReadCopyDataBinaryNumCols(ctx context.Context) (CopyDataBinaryColumnsResponse, error) {
-	var zero CopyDataBinaryColumnsResponse
-	if err := c.checkMessageHeader('d'); err != nil {
-		return zero, err
-	}
-	numCols, err := c.c.ReadInt16()
-	if err != nil {
-		return zero, err
-	}
-	return CopyDataBinaryColumnsResponse{
-		MessageHeader: c.h,
-		NumCols:       numCols,
-	}, nil
-}
-
-func (c *Conn) ReadCopyDataBinaryValue(ctx context.Context) (DataRowValueResponse, error) {
-	var zero DataRowValueResponse
-	if err := c.checkMessageHeader('d'); err != nil {
-		return zero, err
-	}
-	n, err := c.c.ReadInt32()
-	if err != nil {
-		return zero, err
-	}
-	if n == -1 {
-		return DataRowValueResponse{
-			MessageHeader: c.h,
-			Data:          nil,
-		}, nil
-	}
+	n := c.h.BodyLen()
 	data, err := c.c.ReadByteN(int(n))
 	if err != nil {
 		return zero, err
 	}
-	return DataRowValueResponse{
-		Data: data,
+	return CopyDataResponse{
+		MessageHeader: c.h,
+		Data:          data,
 	}, nil
+}
+
+type CopyDoneResponse struct {
+	MessageHeader
+}
+
+func (c *Conn) ReadCopyDone(ctx context.Context) (CopyDoneResponse, error) {
+	var zero CopyDoneResponse
+	if err := c.checkMessageHeader('c'); err != nil {
+		return zero, err
+	}
+	return CopyDoneResponse{MessageHeader: c.h}, nil
 }

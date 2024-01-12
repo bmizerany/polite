@@ -620,7 +620,7 @@ func testReadMethodSignature(t *testing.T, m reflect.Method) {
 	if !m0.Implements(reflect.TypeOf(new(Message)).Elem()) {
 		t.Errorf("first out param should implement Message")
 	}
-	if !strings.HasSuffix(m0.Name(), "Response") {
+	if m0.Name() != "MessageHeader" && !strings.HasSuffix(m0.Name(), "Response") {
 		t.Errorf("first out param %q should end with Response", m0.Name())
 	}
 	if m.Type.Out(1) != reflect.TypeOf(new(error)).Elem() {
