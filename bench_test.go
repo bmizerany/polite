@@ -42,7 +42,7 @@ func BenchmarkQuery(b *testing.B) {
 						b.Fatal(err)
 					}
 					for range n {
-						_, err := row.Atoi()
+						_, err := row.View()
 						if err != nil {
 							b.Fatal(err)
 						}
@@ -64,7 +64,7 @@ func BenchmarkQuery(b *testing.B) {
 
 			args := make([]any, n)
 			for i := range args {
-				args[i] = new(int)
+				args[i] = new([]byte)
 			}
 
 			b.ReportAllocs()

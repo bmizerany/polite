@@ -2,14 +2,17 @@ package postgres
 
 import (
 	"context"
-	"encoding/binary"
-	"slices"
+	"fmt"
 	"strings"
 
 	"blake.io/postgres/iter"
 )
 
-func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter.Seq2[*Row, error] {
+type CopyRow struct {
+	err error
+}
+
+func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter.Seq2[*CopyRow, error] {
 	var b strings.Builder
 	b.WriteString("COPY ")
 	writeQuotedIdentifier(&b, table)
@@ -26,62 +29,41 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter
 	}
 	b.WriteString(" TO STDOUT")
 	b.WriteString(" WITH (FORMAT binary)")
-	return c.QueryAll(ctx, b.String())
-}
 
-type Stream struct {
-	ctx     context.Context
-	c       *Conn
-	numCols int
-	scatch  []byte
-}
-
-func (s *Stream) WriteBytes(b []byte) error {
-	return s.c.fc.WriteCopyDataBinaryValue(s.ctx, b)
-}
-
-func (s *Stream) WriteInt64(n int64) error {
-	s.scatch = slices.Grow(s.scatch, 8)
-	s.scatch = binary.BigEndian.AppendUint64(s.scatch, uint64(n))
-	return s.WriteBytes(s.scatch[:8])
-}
-
-func (s *Stream) Reset() error {
-	_, err := s.c.fc.WriteCopyDataBinaryNumColumns(s.ctx, s.numCols)
-	return err
-}
-
-func (s *Stream) Close() error {
-	return s.CloseWithError(nil)
-}
-
-func (s *Stream) CloseWithError(err error) error {
-	if err == nil {
-		_, err := s.c.fc.WriteCopyDone()
-		return err
-	}
-	_, err = s.c.fc.WriteCopyFail(err.Error())
-	return err
-}
-
-func (c *Conn) CopyFrom(ctx context.Context, table string, columns ...string) iter.Seq2[*Row, error] {
-	var b strings.Builder
-	b.WriteString("COPY ")
-	writeQuotedIdentifier(&b, table)
-	b.WriteString(" ")
-	if len(columns) > 0 {
-		b.WriteString("(")
-		for i, col := range columns {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			writeQuotedIdentifier(&b, col)
+	return func(yield func(*CopyRow, error) bool) {
+		if err := c.prepare(ctx, b.String()); err != nil {
+			yield(nil, err)
+			return
 		}
-		b.WriteString(")")
+		if err := c.execAndSync(ctx, ""); err != nil {
+			yield(nil, err)
+			return
+		}
+		for {
+			h, err := c.fc.ReadHeader(ctx)
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			if h.Type() == 'd' {
+				cd, err := c.fc.ReadCopyData(ctx)
+				if err != nil {
+					yield(nil, err)
+					return
+				}
+				_ = cd // TODO(bmizerany): use this
+				if !yield(&CopyRow{}, nil) {
+					return
+				}
+				continue
+			} else if h.Type() == 'c' {
+				return
+			} else {
+				yield(nil, fmt.Errorf("unexpected message type %q", h.Type()))
+				return
+			}
+		}
 	}
-	b.WriteString(" FROM STDIN")
-	b.WriteString(" WITH (FORMAT binary)")
-	return c.QueryAll(ctx, b.String())
 }
 
 func writeQuotedIdentifier(b *strings.Builder, name string) {

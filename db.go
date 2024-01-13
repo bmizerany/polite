@@ -156,13 +156,20 @@ func (c *Conn) QueryAll(ctx context.Context, sql string, args ...string) iter.Se
 	}
 }
 
+func (c *Conn) execAndSync(ctx context.Context, portal string) error {
+	c.fc.WriteExecute(ctx, "", 0)
+	c.fc.WriteSync(ctx)
+	if err := c.fc.Flush(); err != nil {
+		return err
+	}
+	return nil
+}
+
 type Row struct {
 	ctx     context.Context
 	c       *Conn
 	numCols int
 	rem     int
-
-	useCopy bool
 }
 
 // Columns returns the number of columns in a row.
@@ -181,13 +188,6 @@ func (r *Row) View() (mem.RO, error) {
 		return mem.RO{}, ErrOutOfColumns
 	}
 	r.rem--
-	if r.useCopy {
-		v, err := r.c.fc.ReadCopyDataBinaryValue(r.ctx)
-		if err != nil {
-			return mem.RO{}, err
-		}
-		return mem.B(v.Data), nil
-	}
 	v, err := r.c.fc.ReadDataRowValue(r.ctx)
 	if err != nil {
 		return mem.RO{}, err
@@ -252,9 +252,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		yield(nil, rs.err)
 		return
 	}
-	rs.c.fc.WriteExecute(rs.ctx, "", 0)
-	rs.c.fc.WriteSync(rs.ctx)
-	if err := rs.c.fc.Flush(); err != nil {
+	if err := rs.c.execAndSync(rs.ctx, ""); err != nil {
 		yield(nil, err)
 		return
 	}
@@ -322,43 +320,6 @@ func (rs *Rows) next() (*Row, error) {
 			return rs.row, nil
 		case 'I':
 			return nil, ErrEmptyQuery
-		case 'H':
-			_, err := c.ReadCopyOut(rs.ctx)
-			if err != nil {
-				return nil, err
-			}
-		case 'd':
-			// TODO(bmizerany): check if already closed? We may
-			// have gotten something wrong like a 'd' after a
-			// CopyClose?
-			if rs.row == nil {
-				_, err := c.ReadCopyDataBinaryHeader(rs.ctx)
-				if err != nil {
-					return nil, err
-				}
-				rs.row = &Row{}
-			}
-			cr, err := c.ReadCopyDataBinaryNumCols(rs.ctx)
-			if err != nil {
-				return nil, err
-			}
-			fmt.Printf("cr: %+v\n", cr.NumCols)
-			if cr.NumCols < 0 {
-				// end of copy
-				rs.row = nil
-				continue
-			}
-			*rs.row = Row{
-				ctx:     rs.ctx,
-				c:       rs.c,
-				numCols: int(cr.NumCols),
-				rem:     int(cr.NumCols),
-				useCopy: true,
-			}
-			return rs.row, nil
-		case 'c':
-			// header only; no further action needed
-			continue
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx)
 			if err != nil {
