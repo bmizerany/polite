@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 
 	"blake.io/postgres/febe"
@@ -36,8 +35,6 @@ type Conn struct {
 
 	nstmt int
 	cache map[string]string // sql -> stmt name
-
-	args []mem.RO
 
 	rows *Rows
 }
@@ -75,13 +72,7 @@ func (c *Conn) Exec(ctx context.Context, sql string, args ...string) (Result, er
 }
 
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
-	// TODO(bmizerany): stop using mem.RO here and see if that helps
-	// benchmark performance. Probably not, but worth a shot.
-	c.args = slices.Grow(c.args[:0], min(len(args), 100))
-	for _, arg := range args {
-		c.args = append(c.args, mem.S(arg))
-	}
-	if err := c.prepare(ctx, sql, c.args...); err != nil {
+	if err := c.prepare(ctx, sql, args...); err != nil {
 		return &Rows{err: err}
 	}
 	if c.rows == nil {
@@ -91,7 +82,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 	return c.rows
 }
 
-func (c *Conn) prepare(ctx context.Context, sql string, args ...mem.RO) (err error) {
+func (c *Conn) prepare(ctx context.Context, sql string, args ...string) (err error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		return err

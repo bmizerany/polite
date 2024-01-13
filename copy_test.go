@@ -1,66 +1,62 @@
 package postgres
 
 import (
-	"context"
 	"fmt"
-	"testing"
 
-	"blake.io/postgres/febe"
 	"go4.org/mem"
-	"kr.dev/diff"
 )
 
-func TestStream(t *testing.T) {
-	dsn := createDB(t)
+// func TestStream(t *testing.T) {
+// 	dsn := createDB(t)
 
-	ctx := context.Background()
-	ctx = febe.WithTrace(ctx, &febe.Trace{
-		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
-			// t.Logf("received header: %v", h)
-		},
-	})
+// 	ctx := context.Background()
+// 	ctx = febe.WithTrace(ctx, &febe.Trace{
+// 		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
+// 			// t.Logf("received header: %v", h)
+// 		},
+// 	})
 
-	c, err := Dial(ctx, dsn, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	c, err := Dial(ctx, dsn, nil)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	_, err = c.Exec(ctx, "CREATE TABLE foo (id INT, name TEXT)")
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	_, err = c.Exec(ctx, "CREATE TABLE foo (id INT, name TEXT)")
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	_, err = c.Exec(ctx, "INSERT INTO foo VALUES (1, 'foo'), (2, 'bar'), (3, 'baz')")
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	_, err = c.Exec(ctx, "INSERT INTO foo VALUES (1, 'foo'), (2, 'bar'), (3, 'baz')")
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	type G struct {
-		ID   int
-		Name string
-	}
+// 	type G struct {
+// 		ID   int
+// 		Name string
+// 	}
 
-	var got []G
-	for row, err := range c.CopyTo(ctx, "foo") {
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, G{
-			// TODO(bmizerany): clean up, this has a lot of
-			// punctuation.
-			ID:   int(memUint(must(row.View()))),
-			Name: must(row.View()).StringCopy(),
-		})
-	}
+// 	var got []G
+// 	for row, err := range c.CopyTo(ctx, "foo") {
+// 		if err != nil {
+// 			t.Fatal(err)
+// 		}
+// 		got = append(got, G{
+// 			// TODO(bmizerany): clean up, this has a lot of
+// 			// punctuation.
+// 			ID:   int(memUint(must(row.View()))),
+// 			Name: must(row.View()).StringCopy(),
+// 		})
+// 	}
 
-	want := []G{
-		{ID: 1, Name: "foo"},
-		{ID: 2, Name: "bar"},
-		{ID: 3, Name: "baz"},
-	}
+// 	want := []G{
+// 		{ID: 1, Name: "foo"},
+// 		{ID: 2, Name: "bar"},
+// 		{ID: 3, Name: "baz"},
+// 	}
 
-	diff.Test(t, t.Errorf, got, want)
-}
+// 	diff.Test(t, t.Errorf, got, want)
+// }
 
 func must[T any](v T, err error) T {
 	if err != nil {

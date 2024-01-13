@@ -9,7 +9,6 @@ import (
 	"io"
 	"net"
 	"strings"
-	"unsafe"
 
 	"blake.io/postgres/febe/febeio"
 	"blake.io/postgres/iter"
@@ -411,7 +410,7 @@ func (c *Conn) WriteParse(ctx context.Context, stmt, sql string) error {
 
 }
 
-func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []mem.RO) error {
+func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []string) error {
 	var s sizer
 	s.addInt32() // length
 	s.addString(portal)
@@ -419,7 +418,7 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []m
 	s.addInt16() // 0 format codes
 	s.addInt16() // number of parameters
 	for _, arg := range args {
-		s.addSizedBytes(arg.Len())
+		s.addSizedBytes(len(arg))
 	}
 	s.addInt16() // 0 result format codes
 
@@ -430,26 +429,16 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []m
 	c.c.WriteInt16(0) // format code
 	c.c.WriteInt16(int16(len(args)))
 	for _, arg := range args {
-		if err := c.c.WriteInt32(int32(arg.Len())); err != nil {
+		if err := c.c.WriteInt32(int32(len(arg))); err != nil {
 			return err
 		}
-		_, err := writeROTo(c.c, arg)
+		_, err := io.WriteString(c.c, arg)
 		if err != nil {
 			return err
 		}
 	}
 	c.c.WriteInt16(0) // number of result columns
 	return c.Err()
-}
-
-func writeROTo(dst io.Writer, m mem.RO) (int, error) {
-	type S struct {
-		_ [0]func()
-
-		unsafeBytes []byte
-	}
-	v := (*S)(unsafe.Pointer(&m))
-	return dst.Write(v.unsafeBytes)
 }
 
 func (c *Conn) WriteSync(ctx context.Context) error {

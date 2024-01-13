@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"go4.org/mem"
 	"kr.dev/diff"
 )
 
@@ -485,9 +484,9 @@ func TestWriteBind(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
 
-	args := []mem.RO{
-		mem.S("hello"),
-		mem.S("world"),
+	args := []string{
+		"hello",
+		"world",
 	}
 	if err := c.WriteBind(context.Background(), "portal", "stmt", args); err != nil {
 		t.Fatal(err)
