@@ -5,14 +5,15 @@ import (
 	"fmt"
 
 	"blake.io/postgres/iter"
+	"go4.org/mem"
 )
 
 // Notification represents a notification received from the database sent by
 // a NOTIFY command.
 type Notification struct {
 	PID     int    // backend pid that sent the notification
-	Channel []byte // channel name
-	Payload []byte // notification payload
+	Channel mem.RO // channel name
+	Payload mem.RO // notification payload
 }
 
 // Listener listens for notifications sent by the database via
@@ -58,8 +59,8 @@ func (l *Listener) Notifications(ctx context.Context) iter.Seq2[Notification, er
 				}
 				n := Notification{
 					PID:     int(m.PID),
-					Channel: m.Channel,
-					Payload: m.Payload,
+					Channel: mem.B(m.Channel),
+					Payload: mem.B(m.Payload),
 				}
 				if !yield(n, nil) {
 					return
