@@ -43,17 +43,6 @@ func (c *Conn) Close() error {
 	return c.cn.Close()
 }
 
-func (c *Conn) Ping(ctx context.Context) error {
-	res, err := c.Exec(ctx, "SELECT 1")
-	if err != nil {
-		return err
-	}
-	if res.RowsAffected != 1 {
-		return fmt.Errorf("invalid ping response: %v", res)
-	}
-	return nil
-}
-
 type Result struct {
 	RowsAffected int
 }
@@ -61,11 +50,12 @@ type Result struct {
 // Exec executes a query that is not intended to return rows, such as an
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
 // number of rows matched) in a [Result] or any error encountered.
-func (c *Conn) Exec(ctx context.Context, sql string, args ...string) (Result, error) {
-	if err := c.Query(ctx, sql, args...).Close(); err != nil {
-		return Result{}, err
-	}
-	return Result{RowsAffected: int(c.rowsAffected)}, nil
+func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
+	return c.Query(ctx, sql, args...).Close()
+}
+
+func (c *Conn) LastResult() Result {
+	return Result{RowsAffected: int(c.rowsAffected)}
 }
 
 type Rows iter.Seq2[*Row, error]
@@ -80,6 +70,10 @@ func (r Rows) Close() error {
 		}
 	}
 	return nil
+}
+
+func Ping(ctx context.Context, cn *Conn) error {
+	return cn.Exec(ctx, "SELECT 1")
 }
 
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) Rows {

@@ -36,8 +36,7 @@ func (l *Listener) Listen(ctx context.Context, channel string) error {
 	//
 	// TODO: validate channel name (pg doesn't provide nice
 	// feedback on invalid channel names).
-	_, err := l.c.Exec(ctx, "LISTEN "+channel)
-	return err
+	return l.c.Exec(ctx, "LISTEN "+channel)
 }
 
 func (l *Listener) Notifications(ctx context.Context) iter.Seq2[Notification, error] {

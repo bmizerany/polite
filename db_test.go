@@ -18,7 +18,7 @@ func createDB(t testing.TB) string {
 	tname := strings.Replace(t.Name(), "/", "_", -1)
 	dbname := fmt.Sprintf("test_%s_%s", tname, randomString())
 	dbname = strings.ToLower(dbname)
-	_, err := mc().Exec(context.Background(), "CREATE DATABASE "+dbname)
+	err := mc().Exec(context.Background(), "CREATE DATABASE "+dbname)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,8 +39,7 @@ func newConn(t testing.TB) *Conn {
 			t.Fatal(err)
 		}
 	})
-	_, err = c.Exec(ctx, "SELECT 1")
-	if err != nil {
+	if err := c.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 	return c
@@ -191,14 +190,13 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 
 func TestExecSelectTag(t *testing.T) {
 	c := newConn(t)
-	got, err := c.Exec(context.Background(), "SELECT 1")
-	if err != nil {
+	if err := c.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 	want := Result{
 		RowsAffected: 1,
 	}
-	diff.Test(t, t.Errorf, got, want)
+	diff.Test(t, t.Errorf, c.LastResult(), want)
 }
 
 func TestExecLimit1(t *testing.T) {
@@ -209,8 +207,7 @@ func TestExecLimit1(t *testing.T) {
 			got = append(got, h.Type())
 		},
 	})
-	_, err := c.Exec(ctx, "SELECT generate_series(1, 3)")
-	if err != nil {
+	if err := c.Exec(ctx, "SELECT generate_series(1, 3)"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -220,49 +217,43 @@ func TestExecLimit1(t *testing.T) {
 
 func TestExec(t *testing.T) {
 	cn := newConn(t)
-	_, err := cn.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)")
-	if err != nil {
+	if err := cn.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := cn.Exec(context.Background(), "INSERT INTO foo VALUES (1)")
-	if err != nil {
+	if err := cn.Exec(context.Background(), "INSERT INTO foo VALUES (1)"); err != nil {
 		t.Fatal(err)
 	}
 	want := Result{
 		RowsAffected: 1,
 	}
-	diff.Test(t, t.Errorf, got, want)
+	diff.Test(t, t.Errorf, cn.LastResult(), want)
 }
 
 func TestError(t *testing.T) {
 	c := newConn(t)
-	_, err := c.Exec(context.Background(), "SELECT * FROM nothing")
-	if err == nil {
+	if err := c.Exec(context.Background(), "SELECT * FROM nothing"); err == nil {
 		t.Fatal("expected error")
 	}
-	t.Log(err)
 }
 
 func TestNotice(t *testing.T) {
 	c := newConn(t)
 	defer checkPing(t, c) // ensure we leave in a good state
 
-	_, err := c.Exec(context.Background(), `
+	if err := c.Exec(context.Background(), `
 		CREATE FUNCTION raise_notice() RETURNS integer
 		   LANGUAGE plpgsql AS
 		$$BEGIN
 		   RAISE NOTICE 'boom';
 		   RETURN 42;
 		END;$$;
-	`)
-	if err != nil {
+	`); err != nil {
 		t.Fatal(err)
 	}
 
 	notice := func(ctx context.Context) {
 		t.Helper()
-		_, err = c.Exec(ctx, "SELECT raise_notice()")
-		if err != nil {
+		if err := c.Exec(ctx, "SELECT raise_notice()"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -304,8 +295,7 @@ func TestParameterStatus(t *testing.T) {
 		},
 	})
 
-	_, err := c.Exec(ctx, "SET datestyle TO postgres, dmy")
-	if err != nil {
+	if err := c.Exec(ctx, "SET datestyle TO postgres, dmy"); err != nil {
 		t.Fatal(err)
 	}
 

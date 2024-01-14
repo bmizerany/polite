@@ -49,8 +49,7 @@ func TestListenNotify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = c.Exec(ctx, "NOTIFY foo, 'bar'")
-	if err != nil {
+	if err := c.Exec(ctx, "NOTIFY foo, 'bar'"); err != nil {
 		t.Fatal(err)
 	}
 
