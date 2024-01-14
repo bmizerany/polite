@@ -37,7 +37,7 @@ func BenchmarkQuery(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for range b.N {
-				for row, err := range c.Query(ctx, q) {
+				for row, err := range c.QueryAll(ctx, q) {
 					if err != nil {
 						b.Fatal(err)
 					}

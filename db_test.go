@@ -50,7 +50,7 @@ func TestQuery(t *testing.T) {
 
 	const q = `SELECT 1, 2, 'three'`
 	var got [][][]byte
-	for row, err := range c.Query(context.Background(), q) {
+	for row, err := range c.QueryAll(context.Background(), q) {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +86,7 @@ func TestQueryExtended(t *testing.T) {
 		SELECT $2
 	`
 	var got []string
-	for row, err := range c.Query(context.Background(), q, "hello", "world") {
+	for row, err := range c.QueryAll(context.Background(), q, "hello", "world") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,7 +115,7 @@ func values(t testing.TB, row *Row) [][]byte {
 func TestQueryAll(t *testing.T) {
 	c := newConn(t)
 	var got [][][]byte
-	for row, err := range c.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range c.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +134,7 @@ func TestQueryAll(t *testing.T) {
 func TestQueryBreakInAll(t *testing.T) {
 	c := newConn(t)
 	var got [][][]byte
-	for row, err := range c.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range c.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -159,7 +159,7 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 
 	c := newConn(t)
 	var n int
-	for row, err := range c.Query(context.Background(), "SELECT generate_series(1, 3)") {
+	for row, err := range c.QueryAll(context.Background(), "SELECT generate_series(1, 3)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -178,7 +178,7 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 		defer checkPing(t, c)
 
 		var got []error
-		for _, err := range c.Query(context.Background(), "") {
+		for _, err := range c.QueryAll(context.Background(), "") {
 			got = append(got, err)
 		}
 		if len(got) != 1 {
@@ -311,7 +311,7 @@ func TestParameterStatus(t *testing.T) {
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
 	var ok bool
-	for row, err := range c.Query(context.Background(), "SELECT 1") {
+	for row, err := range c.QueryAll(context.Background(), "SELECT 1") {
 		if ok {
 			t.Fatal("got more than one row")
 		}
