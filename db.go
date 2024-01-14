@@ -62,18 +62,27 @@ type Result struct {
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
 // number of rows matched) in a [Result] or any error encountered.
 func (c *Conn) Exec(ctx context.Context, sql string, args ...string) (Result, error) {
-	for row, err := range c.Query(ctx, sql, args...) {
-		if err != nil {
-			return Result{}, err
-		}
-		if err := row.Close(); err != nil {
-			return Result{}, err
-		}
+	if err := c.Query(ctx, sql, args...).Close(); err != nil {
+		return Result{}, err
 	}
 	return Result{RowsAffected: int(c.rowsAffected)}, nil
 }
 
-func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
+type Rows iter.Seq2[*Row, error]
+
+func (r Rows) Close() error {
+	for row, err := range r {
+		if err != nil {
+			return err
+		}
+		if err := row.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Conn) Query(ctx context.Context, sql string, args ...string) Rows {
 	if err := c.prepare(ctx, "", sql, args...); err != nil {
 		return errRows(err)
 	}
@@ -266,7 +275,7 @@ func (r *Row) Close() error {
 	}
 }
 
-func errRows(err error) iter.Seq2[*Row, error] {
+func errRows(err error) Rows {
 	return func(yield func(*Row, error) bool) {
 		yield(nil, err)
 	}
