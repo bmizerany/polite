@@ -14,6 +14,7 @@ import (
 	"os"
 	"time"
 
+	"blake.io/postgres/dsn"
 	"blake.io/postgres/febe"
 	"github.com/lib/pq/scram"
 )
@@ -29,7 +30,7 @@ type Config struct {
 //
 // If sslmode is "disable", then no TLS is used. Otherwise, TLS is used.
 func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
-	o, err := ParseOptions(dsnOrURL)
+	o, err := dsn.ParseOptions(dsnOrURL)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +118,7 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	return c, err
 }
 
-func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
+func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 	// TODO(bmizerany): add tracing
 
 	nextResponse := func(wantType febe.AuthenticationType) (febe.AuthenticationResponse, error) {
@@ -204,7 +205,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *Options) error {
 	}
 }
 
-func maybeUpgradeToTLS(ctx context.Context, cn net.Conn, o *Options, cfg *Config) (net.Conn, error) {
+func maybeUpgradeToTLS(ctx context.Context, cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, error) {
 	if o.SSLMode == "disable" {
 		return cn, nil
 	}
