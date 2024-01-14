@@ -81,12 +81,10 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) Rows {
 		return errRows(err)
 	}
 
-	// Execute the query.
 	if err := c.execAndSync(ctx, ""); err != nil {
 		return errRows(err)
 	}
 
-	// Read the result.
 	return func(yield func(*Row, error) bool) {
 		for {
 			row, err := c.next(ctx)
