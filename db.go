@@ -233,22 +233,6 @@ func (r *Row) View() (mem.RO, error) {
 	return mem.B(v.Data), nil
 }
 
-func (r *Row) Atoi() (int, error) {
-	n, err := r.ParseInt(10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return int(n), nil
-}
-
-func (r *Row) ParseInt(base int, bitSize int) (int64, error) {
-	v, err := r.View()
-	if err != nil {
-		return 0, err
-	}
-	return mem.ParseInt(v, base, bitSize)
-}
-
 // Close discards any remaining columns in the row.
 //
 // Most users will not need to call this method, since Rows.All will call it
