@@ -97,11 +97,13 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) Rows {
 	if err := c.prepare(ctx, "", sql, args...); err != nil {
 		return errRows(err)
 	}
-
 	if err := c.execAndSync(ctx, ""); err != nil {
 		return errRows(err)
 	}
+	return c.rows(ctx)
+}
 
+func (c *Conn) rows(ctx context.Context) Rows {
 	return func(yield func(*Row, error) bool) {
 		for {
 			row, err := c.next(ctx)
@@ -113,11 +115,16 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) Rows {
 				return
 			}
 
-			ok := yield(row, nil)
-			putRow(row)
-			if row.Unprocessed() > 0 {
-				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
-			}
+			ok := func() bool {
+				defer row.Close()
+				ok := yield(row, nil)
+				putRow(row)
+				if row.Unprocessed() > 0 {
+					panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
+				}
+				return ok
+			}()
+
 			if !ok {
 				return
 			}
