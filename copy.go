@@ -31,7 +31,7 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter
 	b.WriteString(" WITH (FORMAT binary)")
 
 	return func(yield func(*CopyRow, error) bool) {
-		if err := c.prepare(ctx, b.String()); err != nil {
+		if err := c.prepare(ctx, "", b.String()); err != nil {
 			yield(nil, err)
 			return
 		}

@@ -36,7 +36,7 @@ type Conn struct {
 	nstmt int
 	cache map[string]string // sql -> stmt name
 
-	rows *Rows
+	rowsAffected int64
 }
 
 func (c *Conn) Close() error {
@@ -62,32 +62,107 @@ type Result struct {
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
 // number of rows matched) in a [Result] or any error encountered.
 func (c *Conn) Exec(ctx context.Context, sql string, args ...string) (Result, error) {
-	rs := c.Query(ctx, sql, args...)
-
-	// This is subtle: Result is not set until after all rows are read.
-	// This means `return rs.Result(), rs.Close()` will always return an
-	// empty Result because the Close is called after rs.Result().
-	err := rs.Close()
-	return rs.Result(), err
+	for row, err := range c.Query(ctx, sql, args...) {
+		if err != nil {
+			return Result{}, err
+		}
+		if err := row.Close(); err != nil {
+			return Result{}, err
+		}
+	}
+	return Result{RowsAffected: int(c.rowsAffected)}, nil
 }
 
-func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
-	if err := c.prepare(ctx, sql, args...); err != nil {
-		return &Rows{err: err}
+func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
+	if err := c.prepare(ctx, "", sql, args...); err != nil {
+		return errRows(err)
 	}
-	if c.rows == nil {
-		c.rows = &Rows{}
+
+	// Execute the query.
+	if err := c.execAndSync(ctx, ""); err != nil {
+		return errRows(err)
 	}
-	*c.rows = Rows{ctx: ctx, c: c, row: c.rows.row}
-	return c.rows
+
+	// Read the result.
+	return func(yield func(*Row, error) bool) {
+		for {
+			row, err := c.next(ctx)
+			if err != nil {
+				if errors.Is(err, ErrDone) {
+					return
+				}
+				yield(nil, err)
+				return
+			}
+
+			ok := yield(row, nil)
+			if row.Unprocessed() > 0 {
+				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
+			}
+			if !ok {
+				return
+			}
+		}
+	}
 }
 
-func (c *Conn) prepare(ctx context.Context, sql string, args ...string) (err error) {
+func (c *Conn) next(ctx context.Context) (*Row, error) {
+	for {
+		h, err := c.fc.ReadHeader(ctx)
+		if err != nil {
+			return nil, err
+		}
+		switch h.Type() {
+		case '1', '2':
+			// Headers only; No discard needed
+			continue
+		case 'C':
+			m, err := c.fc.ReadCommandComplete(ctx)
+			if err != nil {
+				return nil, err
+			}
+			c.rowsAffected = m.RowsAffected
+		case 'T':
+			// Ignore row descriptions for now; they're pretty
+			// useless if you know the query you're running,
+			// especially when code can be generated from the
+			// query, which would already know the types. Save
+			// the energy.
+			if err := c.fc.DiscardMessage(ctx); err != nil {
+				return nil, err
+			}
+		case 'D':
+			m, err := c.fc.ReadDataRow(ctx)
+			if err != nil {
+				return nil, err
+			}
+			row := &Row{
+				c:       c,
+				numCols: int(m.NumCols),
+				rem:     int(m.NumCols),
+			}
+			return row, nil
+		case 'I':
+			return nil, ErrEmptyQuery
+		case 'Z':
+			_, err := c.fc.ReadReadyForQuery(ctx)
+			if err != nil {
+				return nil, err
+			}
+			// TODO(bmizerany): save the transaction status
+			return nil, ErrDone
+		default:
+			return nil, fmt.Errorf("%w: Rows.next: unexpected message type: %q", ErrProtocol, h.Type())
+		}
+	}
+}
+
+func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) (err error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		return err
 	}
-	return c.fc.WriteBind(ctx, "", stmt, args)
+	return c.fc.WriteBind(ctx, portal, stmt, args)
 }
 
 func (c *Conn) newStmtName() (string, error) {
@@ -114,37 +189,6 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (string, error) {
 	}
 	c.cache[sql] = stmt
 	return stmt, nil
-}
-
-// QueryAll is short for:
-//
-//	rs := c.Query(ctx, sql)
-//	defer rs.Close()
-//	for row, err := range rs.All {
-//	  ...
-//	}
-//
-// Callers must process all columns in a row. If a call to yield does not
-// process all columns in the provided rows before returning, QueryAll panics.
-//
-// If a caller needs to discard any remaining rows, it should call rs.Close
-// before returning from yield.
-//
-// Example:
-//
-//	for row, err := range c.QueryAll(ctx, "SELECT * FROM users") {
-//	  ...
-//	}
-func (c *Conn) QueryAll(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
-	return func(yield func(*Row, error) bool) {
-		rs := c.Query(ctx, sql, args...)
-		defer rs.Close()
-		for row, err := range rs.All {
-			if !yield(row, err) {
-				return
-			}
-		}
-	}
 }
 
 func (c *Conn) execAndSync(ctx context.Context, portal string) error {
@@ -222,116 +266,8 @@ func (r *Row) Close() error {
 	}
 }
 
-type Rows struct {
-	ctx context.Context
-	c   *Conn
-	err error
-
-	rowsAffected int64
-
-	row *Row // owned by next()
-}
-
-// RowsAffected returns the number of rows affected by the query. It is only
-// valid after all rows have been read.
-func (rs *Rows) Result() Result {
-	return Result{RowsAffected: int(rs.rowsAffected)}
-}
-
-func (rs *Rows) All(yield func(*Row, error) bool) {
-	if rs.err != nil {
-		yield(nil, rs.err)
-		return
-	}
-	if err := rs.c.execAndSync(rs.ctx, ""); err != nil {
+func errRows(err error) iter.Seq2[*Row, error] {
+	return func(yield func(*Row, error) bool) {
 		yield(nil, err)
-		return
 	}
-	for {
-		row, err := rs.next()
-		if err != nil {
-			rs.err = err
-			if errors.Is(err, ErrDone) {
-				return
-			}
-			yield(nil, err)
-			return
-		}
-
-		ok := yield(row, nil)
-		if row.Unprocessed() > 0 {
-			panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
-		}
-		if !ok {
-			return
-		}
-	}
-}
-
-func (rs *Rows) next() (*Row, error) {
-	c := rs.c.fc
-	for {
-		h, err := c.ReadHeader(rs.ctx)
-		if err != nil {
-			return nil, err
-		}
-		switch h.Type() {
-		case '1', '2':
-			// Headers only; No discard needed
-			continue
-		case 'C':
-			m, err := c.ReadCommandComplete(rs.ctx)
-			if err != nil {
-				return nil, err
-			}
-			rs.rowsAffected = m.RowsAffected
-		case 'T':
-			// Ignore row descriptions for now; they're pretty
-			// useless if you know the query you're running,
-			// especially when code can be generated from the
-			// query, which would already know the types. Save
-			// the energy.
-			if err := c.DiscardMessage(rs.ctx); err != nil {
-				return nil, err
-			}
-		case 'D':
-			m, err := c.ReadDataRow(rs.ctx)
-			if err != nil {
-				return nil, err
-			}
-			if rs.row == nil {
-				rs.row = &Row{}
-			}
-			*rs.row = Row{
-				ctx:     rs.ctx,
-				c:       rs.c,
-				numCols: int(m.NumCols),
-				rem:     int(m.NumCols),
-			}
-			return rs.row, nil
-		case 'I':
-			return nil, ErrEmptyQuery
-		case 'Z':
-			_, err := c.ReadReadyForQuery(rs.ctx)
-			if err != nil {
-				return nil, err
-			}
-			// TODO(bmizerany): save the transaction status
-			return nil, ErrDone
-		default:
-			return nil, fmt.Errorf("%w: Rows.next: unexpected message type: %q", ErrProtocol, h.Type())
-		}
-	}
-}
-
-func (rs *Rows) Close() error {
-	for row, err := range rs.All {
-		if err != nil {
-			return err
-		}
-		if err := row.Close(); err != nil {
-			return err
-		}
-	}
-	return nil
 }

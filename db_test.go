@@ -48,9 +48,10 @@ func newConn(t testing.TB) *Conn {
 
 func TestQuery(t *testing.T) {
 	c := newConn(t)
-	rs := c.Query(context.Background(), "SELECT 1, 2, 'three'")
+
+	const q = `SELECT 1, 2, 'three'`
 	var got [][][]byte
-	for row, err := range rs.All {
+	for row, err := range c.Query(context.Background(), q) {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,7 +87,7 @@ func TestQueryExtended(t *testing.T) {
 		SELECT $2
 	`
 	var got []string
-	for row, err := range c.QueryAll(context.Background(), q, "hello", "world") {
+	for row, err := range c.Query(context.Background(), q, "hello", "world") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,7 +116,7 @@ func values(t testing.TB, row *Row) [][]byte {
 func TestQueryAll(t *testing.T) {
 	c := newConn(t)
 	var got [][][]byte
-	for row, err := range c.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range c.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +135,7 @@ func TestQueryAll(t *testing.T) {
 func TestQueryBreakInAll(t *testing.T) {
 	c := newConn(t)
 	var got [][][]byte
-	for row, err := range c.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range c.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,9 +158,7 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 
 	c := newConn(t)
 	var n int
-	rs := c.Query(context.Background(), "SELECT generate_series(1, 3)")
-	defer rs.Close()
-	for row, err := range rs.All {
+	for row, err := range c.Query(context.Background(), "SELECT generate_series(1, 3)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -177,11 +176,8 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 		c := newConn(t)
 		defer checkPing(t, c)
 
-		rs := c.Query(context.Background(), "")
-		defer rs.Close()
-
 		var got []error
-		for _, err := range rs.All {
+		for _, err := range c.Query(context.Background(), "") {
 			got = append(got, err)
 		}
 		if len(got) != 1 {
@@ -189,15 +185,6 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 		}
 		if !errors.Is(got[0], ErrEmptyQuery) {
 			t.Fatalf("expected ErrEmptyQuery; got %v", got[0])
-		}
-	})
-
-	t.Run("Close", func(t *testing.T) {
-		c := newConn(t)
-		defer checkPing(t, c)
-		got := c.Query(context.Background(), "").Close()
-		if !errors.Is(got, ErrEmptyQuery) {
-			t.Fatalf("got %v; want ErrEmptyQuery", got)
 		}
 	})
 }
@@ -331,9 +318,8 @@ func TestParameterStatus(t *testing.T) {
 
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
-	rs := c.Query(context.Background(), "SELECT 1")
 	var ok bool
-	for row, err := range rs.All {
+	for row, err := range c.Query(context.Background(), "SELECT 1") {
 		if ok {
 			t.Fatal("got more than one row")
 		}
