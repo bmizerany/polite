@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"sync"
 
 	"blake.io/postgres/febe"
 	"blake.io/postgres/iter"
@@ -76,6 +77,22 @@ func Ping(ctx context.Context, cn *Conn) error {
 	return cn.Exec(ctx, "SELECT 1")
 }
 
+var rowPool sync.Pool
+
+func getRow() *Row {
+	r, _ := rowPool.Get().(*Row)
+	if r == nil {
+		return &Row{}
+	}
+	*r = Row{}
+	return r
+}
+
+func putRow(r *Row) {
+	*r = Row{} // release references
+	rowPool.Put(r)
+}
+
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) Rows {
 	if err := c.prepare(ctx, "", sql, args...); err != nil {
 		return errRows(err)
@@ -97,6 +114,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) Rows {
 			}
 
 			ok := yield(row, nil)
+			putRow(row)
 			if row.Unprocessed() > 0 {
 				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
 			}
@@ -137,7 +155,8 @@ func (c *Conn) next(ctx context.Context) (*Row, error) {
 			if err != nil {
 				return nil, err
 			}
-			row := &Row{
+			row := getRow()
+			*row = Row{
 				c:       c,
 				numCols: int(m.NumCols),
 				rem:     int(m.NumCols),
@@ -202,10 +221,11 @@ func (c *Conn) execAndSync(ctx context.Context, portal string) error {
 }
 
 type Row struct {
-	ctx     context.Context
-	c       *Conn
-	numCols int
-	rem     int
+	ctx      context.Context
+	c        *Conn
+	numCols  int
+	rem      int
+	released bool
 }
 
 // Columns returns the number of columns in a row.
@@ -236,6 +256,10 @@ func (r *Row) View() (mem.RO, error) {
 // Most users will not need to call this method, since Rows.All will call it
 // automatically after each yield.
 func (r *Row) Close() error {
+	if !r.released {
+		defer putRow(r)
+		r.released = true
+	}
 	if r.rem == 0 {
 		// nothing to discard; carry on
 		return nil

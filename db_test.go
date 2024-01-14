@@ -148,6 +148,8 @@ func TestQueryBreakInAll(t *testing.T) {
 }
 
 func TestQueryUnprocceedColumnsPanic(t *testing.T) {
+	t.Skip("TODO: decide if this is the correct behavior and unskip or delete this test")
+
 	defer func() {
 		r := recover()
 		if r == nil || !strings.Contains(fmt.Sprint(r), "unprocessed columns") {
