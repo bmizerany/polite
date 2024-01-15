@@ -54,7 +54,7 @@ func main() {
 
 	fmt.Println("PING")
 	defer fmt.Println("PONG")
-	if err := cn.Ping(ctx); err != nil {
+	if err := postgres.Ping(ctx, cn); err != nil {
 		log.Fatal(err)
 	}
 }
