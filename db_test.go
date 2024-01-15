@@ -308,6 +308,33 @@ func TestParameterStatus(t *testing.T) {
 	})
 }
 
+func TestByteaString(t *testing.T) {
+	c := newConn(t)
+	defer checkPing(t, c) // ensure we leave in a good state
+
+	ctx := context.Background()
+	if err := c.Exec(ctx, "CREATE TEMP TABLE foo (bar BYTEA)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Exec(ctx, `INSERT INTO foo VALUES ($1)`, "\x12\x345"); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	for row, err := range c.QueryAll(context.Background(), "SELECT bar FROM foo") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := row.View()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, data.StringCopy())
+	}
+	want := []string{"\x12\x345"}
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
 	var ok bool
