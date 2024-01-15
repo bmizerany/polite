@@ -107,6 +107,26 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (string, error) {
 	if err := c.fc.WriteParse(ctx, stmt, sql); err != nil {
 		return "", err
 	}
+
+	for {
+		h, err := c.fc.ReadHeader(ctx)
+		if err != nil {
+			return "", err
+		}
+		switch h.Type() {
+		case '1':
+			continue
+		case 'T':
+			rd, err := c.fc.ReadRowDescription(ctx)
+			if err != nil {
+				return "", err
+			}
+			return stmt, nil
+		default:
+			return "", fmt.Errorf("unexpected message type: %q", h.Type())
+		}
+	}
+
 	c.cache[sql] = stmt
 	return stmt, nil
 }
@@ -255,7 +275,7 @@ func (rs *Rows) next() (*Row, error) {
 			return nil, err
 		}
 		switch h.Type() {
-		case '1', '2':
+		case '2':
 			// Headers only; No discard needed
 			continue
 		case 'C':
@@ -264,15 +284,6 @@ func (rs *Rows) next() (*Row, error) {
 				return nil, err
 			}
 			rs.rowsAffected = m.RowsAffected
-		case 'T':
-			// Ignore row descriptions for now; they're pretty
-			// useless if you know the query you're running,
-			// especially when code can be generated from the
-			// query, which would already know the types. Save
-			// the energy.
-			if err := c.DiscardMessage(rs.ctx); err != nil {
-				return nil, err
-			}
 		case 'D':
 			m, err := c.ReadDataRow(rs.ctx)
 			if err != nil {
