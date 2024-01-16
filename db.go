@@ -30,7 +30,8 @@ var (
 
 type statement struct {
 	name string
-	febe.RowDescriptionResponse
+	in   febe.ParameterDescriptionResponse
+	out  febe.RowDescriptionResponse
 }
 
 type Conn struct {
@@ -100,14 +101,20 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	if c.cache == nil {
 		c.cache = make(map[string]*statement)
 	}
+
 	stmt := c.cache[sql]
 	if stmt != nil {
 		return stmt, nil
 	}
+	stmt = &statement{}
+	c.cache[sql] = stmt
+
 	name, err := c.newStmtName()
 	if err != nil {
 		return nil, err
 	}
+	stmt.name = name
+
 	c.fc.WriteParse(ctx, name, sql)
 	c.fc.WriteDescribe(ctx, 'S', name)
 	c.fc.WriteSync(ctx)
@@ -128,16 +135,14 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 			if err != nil {
 				return nil, err
 			}
-			panic("TODO") // https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARAMETERDESCRIPTION
+			stmt.in = pd
 		case 'T':
 			rd, err := c.fc.ReadRowDescription(ctx)
 			if err != nil {
 				return nil, err
 			}
-			c.cache[sql] = &statement{
-				name:                   name,
-				RowDescriptionResponse: rd,
-			}
+			stmt.out = rd
+		case 'Z':
 			return stmt, nil
 		default:
 			return nil, fmt.Errorf("unexpected message type: %q", h.Type())
