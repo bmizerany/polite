@@ -108,10 +108,10 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := c.fc.WriteParse(ctx, name, sql); err != nil {
-		return nil, err
-	}
-	if err := c.fc.WriteDescribe(ctx, 'S', name); err != nil {
+	c.fc.WriteParse(ctx, name, sql)
+	c.fc.WriteDescribe(ctx, 'S', name)
+	c.fc.WriteSync(ctx)
+	if err := c.fc.Flush(); err != nil {
 		return nil, err
 	}
 
@@ -123,6 +123,12 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 		switch h.Type() {
 		case '1':
 			continue
+		case 't':
+			pd, err := febe.ReadParameterDescription(ctx)
+			if err != nil {
+				return nil, err
+			}
+			panic("TODO") // https://www.postgresql.org/docs/current/protocol-message-formats.html#PROTOCOL-MESSAGE-FORMATS-PARAMETERDESCRIPTION
 		case 'T':
 			rd, err := c.fc.ReadRowDescription(ctx)
 			if err != nil {
