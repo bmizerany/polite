@@ -498,6 +498,33 @@ func (c *Conn) ReadRowDescription(ctx context.Context) (RowDescriptionResponse, 
 	}, nil
 }
 
+type ParameterDescriptionResponse struct {
+	MessageHeader
+	OIDs []int32
+}
+
+func (c *Conn) ReadParameterDescription(ctx context.Context) (ParameterDescriptionResponse, error) {
+	if err := c.checkMessageHeader('t'); err != nil {
+		return ParameterDescriptionResponse{}, err
+	}
+	n, err := c.c.ReadInt16()
+	if err != nil {
+		return ParameterDescriptionResponse{}, err
+	}
+	oids := make([]int32, n)
+	for i := range oids {
+		oid, err := c.c.ReadInt32()
+		if err != nil {
+			return ParameterDescriptionResponse{}, err
+		}
+		oids[i] = oid
+	}
+	return ParameterDescriptionResponse{
+		MessageHeader: c.h,
+		OIDs:          oids,
+	}, nil
+}
+
 func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []string) error {
 	var s sizer
 	s.addInt32() // length

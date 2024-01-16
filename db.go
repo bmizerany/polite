@@ -47,7 +47,13 @@ type Conn struct {
 }
 
 func Ping(ctx context.Context, cn *Conn) error {
-	return cn.Exec(ctx, "SELECT 1")
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		return err
+	}
+	if cn.LastResult().RowsAffected != 1 {
+		return errors.New("pqlite: ping failed")
+	}
+	return nil
 }
 
 func (c *Conn) Close() error {
@@ -106,14 +112,13 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	if stmt != nil {
 		return stmt, nil
 	}
-	stmt = &statement{}
-	c.cache[sql] = stmt
 
 	name, err := c.newStmtName()
 	if err != nil {
 		return nil, err
 	}
-	stmt.name = name
+
+	stmt = &statement{name: name}
 
 	c.fc.WriteParse(ctx, name, sql)
 	c.fc.WriteDescribe(ctx, 'S', name)
@@ -131,7 +136,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 		case '1':
 			continue
 		case 't':
-			pd, err := febe.ReadParameterDescription(ctx)
+			pd, err := c.fc.ReadParameterDescription(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -142,10 +147,27 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 				return nil, err
 			}
 			stmt.out = rd
+		case 'n':
+			// NoData signals the query is guranateed to return
+			// no rows. There may be value in using this
+			// information, but it is not clearn ATM, since we
+			// know we can infer there is no data if there are
+			// no columns in the row description since it we
+			// an empty row description.
+			//
+			// We can safely swallow this header-only message
+			// for now.
+			continue
 		case 'Z':
+			// TODO(bmizerany): track transaction status
+			_, err := c.fc.ReadReadyForQuery(ctx)
+			if err != nil {
+				return nil, err
+			}
+			c.cache[sql] = stmt
 			return stmt, nil
 		default:
-			return nil, fmt.Errorf("unexpected message type: %q", h.Type())
+			return nil, fmt.Errorf("getStmt: unexpected message type: %q for: %s", h.Type(), sql)
 		}
 	}
 }
@@ -269,7 +291,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		row, err := rs.next()
 		if err != nil {
 			rs.err = err
-			if errors.Is(err, ErrDone) {
+			if errors.Is(err, ErrDone) || errors.Is(err, ErrEmptyQuery) {
 				return
 			}
 			yield(nil, err)

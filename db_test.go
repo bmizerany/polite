@@ -29,6 +29,12 @@ func createDB(t testing.TB) string {
 
 func newConn(t testing.TB) *Conn {
 	ctx := context.Background()
+	ctx = febe.WithTrace(ctx, &febe.Trace{
+		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
+			t.Logf("received header: %v", h)
+		},
+	})
+
 	dsn := createDB(t)
 	c, err := Dial(ctx, dsn, nil)
 	if err != nil {
@@ -321,7 +327,7 @@ func TestByteaString(t *testing.T) {
 	}
 
 	var got []string
-	for row, err := range c.QueryAll(context.Background(), "SELECT bar FROM foo") {
+	for row, err := range c.QueryAll(ctx, "SELECT bar FROM foo") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -337,22 +343,8 @@ func TestByteaString(t *testing.T) {
 
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
-	var ok bool
-	for row, err := range c.QueryAll(context.Background(), "SELECT 1") {
-		if ok {
-			t.Fatal("got more than one row")
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := row.View()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !data.EqualString("1") {
-			t.Fatalf("got %q, want %q", data.StringCopy(), "1")
-		}
-		ok = true
+	if err := Ping(context.Background(), c); err != nil {
+		t.Fatal(err)
 	}
 }
 
