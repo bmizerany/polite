@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -42,16 +43,17 @@ type Conn struct {
 	nstmt int
 	cache map[string]*statement
 
-	rows         *Rows
-	rowsAffected int64
+	rows *Rows
 }
+
+var errPingFailed = errors.New("pqlite: ping failed")
 
 func Ping(ctx context.Context, cn *Conn) error {
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		return err
 	}
 	if cn.LastResult().RowsAffected != 1 {
-		return errors.New("pqlite: ping failed")
+		return errPingFailed
 	}
 	return nil
 }
@@ -89,12 +91,18 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) *Rows {
 	return c.rows
 }
 
+var allBinary = []int16{1}
+
 func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) (err error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		return err
 	}
-	return c.fc.WriteBind(ctx, portal, stmt.name, args)
+	fp := &febe.FormatParams{
+		In:  allBinary,
+		Out: allBinary,
+	}
+	return c.fc.WriteBind(ctx, portal, stmt.name, args, fp)
 }
 
 func (c *Conn) newStmtName() (string, error) {
@@ -242,6 +250,25 @@ func (r *Row) View() (mem.RO, error) {
 	return mem.B(v.Data), nil
 }
 
+func (r *Row) ParseInt() (int, error) {
+	v, err := r.View()
+	if err != nil {
+		return 0, err
+	}
+	switch v.Len() {
+	case 1:
+		return int(v.At(0)), nil
+	case 2:
+		return int(v.At(0))<<8 | int(v.At(1)), nil
+	case 4:
+		return int(v.At(0))<<24 | int(v.At(1))<<16 | int(v.At(2))<<8 | int(v.At(3)), nil
+	case 8:
+		return int(v.At(0))<<56 | int(v.At(1))<<48 | int(v.At(2))<<40 | int(v.At(3))<<32 | int(v.At(4))<<24 | int(v.At(5))<<16 | int(v.At(6))<<8 | int(v.At(7)), nil
+	default:
+		return 0, fmt.Errorf("ParseInt: invalid length: %d", v.Len())
+	}
+}
+
 // Close discards any remaining columns in the row.
 //
 // Most users will not need to call this method, since Rows.All will call it
@@ -272,8 +299,6 @@ type Rows struct {
 	row *Row // owned by next()
 }
 
-// RowsAffected returns the number of rows affected by the query. It is only
-// valid after all rows have been read.
 func (rs *Rows) Result() Result {
 	return Result{RowsAffected: int(rs.rowsAffected)}
 }
@@ -291,18 +316,20 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		row, err := rs.next()
 		if err != nil {
 			rs.err = err
-			if errors.Is(err, ErrDone) || errors.Is(err, ErrEmptyQuery) {
+			if !errors.Is(err, ErrDone) {
+				yield(nil, err)
 				return
 			}
-			yield(nil, err)
 			return
 		}
 
 		ok := yield(row, nil)
 		if row.Unprocessed() > 0 {
+			// TODO(bmizerany): do not panic; consider 'SELECT *' which will panic if the table schema changes
 			panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
 		}
 		if !ok {
+			// panic("TODO")
 			return
 		}
 	}
@@ -310,6 +337,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 
 func (rs *Rows) next() (*Row, error) {
 	c := rs.c.fc
+	var emptyErr error
 	for {
 		h, err := c.ReadHeader(rs.ctx)
 		if err != nil {
@@ -341,14 +369,16 @@ func (rs *Rows) next() (*Row, error) {
 			}
 			return rs.row, nil
 		case 'I':
-			return nil, ErrEmptyQuery
+			// TODO(bmizerany): move this to ReadHeader
+			emptyErr = ErrEmptyQuery
+			continue
 		case 'Z':
 			_, err := c.ReadReadyForQuery(rs.ctx)
 			if err != nil {
 				return nil, err
 			}
 			// TODO(bmizerany): save the transaction status
-			return nil, ErrDone
+			return nil, cmp.Or(emptyErr, ErrDone)
 		default:
 			return nil, fmt.Errorf("%w: Rows.next: unexpected message type: %q", ErrProtocol, h.Type())
 		}

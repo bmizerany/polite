@@ -29,13 +29,17 @@ func createDB(t testing.TB) string {
 
 func newConn(t testing.TB) *Conn {
 	ctx := context.Background()
-	ctx = febe.WithTrace(ctx, &febe.Trace{
-		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
-			t.Logf("received header: %v", h)
-		},
-	})
+	// ctx = febe.WithTrace(ctx, &febe.Trace{
+	// 	ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
+	// 		t.Logf("received header: %v", h)
+	// 	},
+	// })
 
 	dsn := createDB(t)
+	if t.Failed() {
+		t.FailNow()
+	}
+
 	c, err := Dial(ctx, dsn, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -51,34 +55,46 @@ func newConn(t testing.TB) *Conn {
 	return c
 }
 
+func newConnNoDB(t testing.TB) *Conn {
+	ctx := context.Background()
+	c, err := Dial(ctx, mainDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := c.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	return c
+}
+
 func TestQuery(t *testing.T) {
 	c := newConn(t)
 
 	const q = `SELECT 1, 2, 'three'`
-	var got [][][]byte
+	var got [][]any
 	for row, err := range c.QueryAll(context.Background(), q) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var coldata [][]byte
-		for {
-			data, err := row.View()
-			if err != nil {
-				if errors.Is(err, ErrOutOfColumns) {
-					break
-				}
-				t.Fatal(err)
-			}
-			t.Logf("data: %q", data.StringCopy())
-			coldata = append(coldata, []byte(data.StringCopy()))
+		one, err := row.ParseInt()
+		if err != nil {
+			t.Fatal(err)
 		}
-		got = append(got, coldata)
+		two, err := row.ParseInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+		three, err := row.View()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, []any{one, two, three.StringCopy()})
 	}
-	want := [][][]byte{
+	want := [][]any{
 		{
-			{'1'},
-			{'2'},
-			{'t', 'h', 'r', 'e', 'e'},
+			1, 2, "three",
 		},
 	}
 	diff.Test(t, t.Errorf, got, want)
@@ -128,11 +144,11 @@ func TestQueryAll(t *testing.T) {
 		got = append(got, values(t, row))
 	}
 	want := [][][]byte{
-		{{'1'}},
-		{{'2'}},
-		{{'3'}},
-		{{'4'}},
-		{{'5'}},
+		{{0, 0, 0, 1}},
+		{{0, 0, 0, 2}},
+		{{0, 0, 0, 3}},
+		{{0, 0, 0, 4}},
+		{{0, 0, 0, 5}},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }
@@ -148,7 +164,7 @@ func TestQueryBreakInAll(t *testing.T) {
 		break
 	}
 	want := [][][]byte{
-		{{'1'}},
+		{{0, 0, 0, 1}},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }
@@ -179,21 +195,27 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 }
 
 func TestQueryEmptyQueryResponse(t *testing.T) {
-	t.Run("All", func(t *testing.T) {
-		c := newConn(t)
-		defer checkPing(t, c)
-
-		var got []error
-		for _, err := range c.QueryAll(context.Background(), "") {
-			got = append(got, err)
-		}
-		if len(got) != 1 {
-			t.Fatalf("expected 1 error; got %d", len(got))
-		}
-		if !errors.Is(got[0], ErrEmptyQuery) {
-			t.Fatalf("expected ErrEmptyQuery; got %v", got[0])
-		}
+	c := newConnNoDB(t)
+	t.Cleanup(func() {
+		checkPing(t, c)
 	})
+
+	ctx := febe.WithTrace(context.Background(), &febe.Trace{
+		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
+			t.Logf("received header: %v", h)
+		},
+	})
+
+	var got []error
+	for _, err := range c.QueryAll(ctx, "") {
+		got = append(got, err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 error; got %d", len(got))
+	}
+	if !errors.Is(got[0], ErrEmptyQuery) {
+		t.Fatalf("expected ErrEmptyQuery; got %v", got[0])
+	}
 }
 
 func TestExecSelectTag(t *testing.T) {
@@ -219,7 +241,7 @@ func TestExecLimit1(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []byte("12DDDCZ")
+	want := []byte("1tTZ2DDDCZ")
 	diff.Test(t, t.Errorf, got, want)
 }
 
@@ -343,6 +365,9 @@ func TestByteaString(t *testing.T) {
 
 func checkPing(t *testing.T, c *Conn) {
 	t.Helper()
+	if t.Failed() {
+		return
+	}
 	if err := Ping(context.Background(), c); err != nil {
 		t.Fatal(err)
 	}

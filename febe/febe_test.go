@@ -488,23 +488,29 @@ func TestWriteBind(t *testing.T) {
 		"hello",
 		"world",
 	}
-	if err := c.WriteBind(context.Background(), "portal", "stmt", args); err != nil {
+	if err := c.WriteBind(context.Background(), "portal", "stmt", args, &FormatParams{
+		In:  []int16{1},
+		Out: []int16{1, 0},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	c.Flush()
 
 	want := []byte{
 		'B',         // message type
-		0, 0, 0, 40, // message length
+		0, 0, 0, 46, // message length
 		'p', 'o', 'r', 't', 'a', 'l', 0, // portal name (string)
 		's', 't', 'm', 't', 0, // statement name (string)
-		0, 0, // number of format codes (int16)
+		0, 1, // number of format codes (int16)
+		0, 1, // all binary (int16)
 		0, 2, // number of arguments (int16)
 		0, 0, 0, 5, // argument length (int32)
 		'h', 'e', 'l', 'l', 'o', // argument value
 		0, 0, 0, 5, // argument length (int32)
 		'w', 'o', 'r', 'l', 'd', // argument value
-		0, 0, // number of result column types (int16)
+		0, 2, // number of result format codes
+		0, 1, // first binary
+		0, 0, // second text
 	}
 	t.Logf("len:  %d", b.Len())
 	t.Logf("got:  %q", b.Bytes())

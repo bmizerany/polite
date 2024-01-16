@@ -4,6 +4,7 @@ package febe
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -525,23 +526,49 @@ func (c *Conn) ReadParameterDescription(ctx context.Context) (ParameterDescripti
 	}, nil
 }
 
-func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []string) error {
+type FormatParams struct {
+	In  []int16
+	Out []int16
+}
+
+var emptyFormatParams = &FormatParams{}
+
+func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []string, p *FormatParams) error {
+	p = cmp.Or(p, emptyFormatParams)
+
 	var s sizer
 	s.addInt32() // length
 	s.addString(portal)
 	s.addString(statement)
-	s.addInt16() // 0 format codes
-	s.addInt16() // number of parameters
+
+	// parameter format codes
+	s.addInt16()
+	for range len(p.In) {
+		s.addInt16()
+	}
+
+	// parameter values
+	s.addInt16()
 	for _, arg := range args {
 		s.addSizedBytes(len(arg))
 	}
-	s.addInt16() // 0 result format codes
+
+	// result format codes
+	s.addInt16()
+	for range len(p.Out) {
+		s.addInt16()
+	}
 
 	c.c.WriteByte('B')
 	c.c.WriteInt32(s.size())
 	c.c.WriteString(portal)
 	c.c.WriteString(statement)
-	c.c.WriteInt16(0) // format code
+
+	c.c.WriteInt16(int16(len(p.In)))
+	for i := range len(p.In) {
+		c.c.WriteInt16(p.In[i])
+	}
+
 	c.c.WriteInt16(int16(len(args)))
 	for _, arg := range args {
 		if err := c.c.WriteInt32(int32(len(arg))); err != nil {
@@ -552,7 +579,12 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []s
 			return err
 		}
 	}
-	c.c.WriteInt16(0) // number of result columns
+
+	c.c.WriteInt16(int16(len(p.Out)))
+	for i := range len(p.Out) {
+		c.c.WriteInt16(p.Out[i])
+	}
+
 	return c.Err()
 }
 
