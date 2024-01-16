@@ -28,13 +28,18 @@ var (
 	ErrOutOfColumns = errors.New("pqlite: out of columns")
 )
 
+type statement struct {
+	name string
+	febe.RowDescriptionResponse
+}
+
 type Conn struct {
 	dsnOrURL string
 	cn       io.Closer
 	fc       *febe.Conn
 
 	nstmt int
-	cache map[string]string // sql -> stmt name
+	cache map[string]*statement
 
 	rows         *Rows
 	rowsAffected int64
@@ -82,36 +87,38 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) 
 	if err != nil {
 		return err
 	}
-	return c.fc.WriteBind(ctx, portal, stmt, args)
+	return c.fc.WriteBind(ctx, portal, stmt.name, args)
 }
 
 func (c *Conn) newStmtName() (string, error) {
 	stmt := strconv.Itoa(c.nstmt)
-	c.cache[stmt] = stmt
 	c.nstmt++
 	return stmt, nil
 }
 
-func (c *Conn) getStmt(ctx context.Context, sql string) (string, error) {
+func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	if c.cache == nil {
-		c.cache = make(map[string]string)
+		c.cache = make(map[string]*statement)
 	}
 	stmt := c.cache[sql]
-	if stmt != "" {
+	if stmt != nil {
 		return stmt, nil
 	}
-	stmt, err := c.newStmtName()
+	name, err := c.newStmtName()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if err := c.fc.WriteParse(ctx, stmt, sql); err != nil {
-		return "", err
+	if err := c.fc.WriteParse(ctx, name, sql); err != nil {
+		return nil, err
+	}
+	if err := c.fc.WriteDescribe(ctx, 'S', name); err != nil {
+		return nil, err
 	}
 
 	for {
 		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		switch h.Type() {
 		case '1':
@@ -119,16 +126,17 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (string, error) {
 		case 'T':
 			rd, err := c.fc.ReadRowDescription(ctx)
 			if err != nil {
-				return "", err
+				return nil, err
+			}
+			c.cache[sql] = &statement{
+				name:                   name,
+				RowDescriptionResponse: rd,
 			}
 			return stmt, nil
 		default:
-			return "", fmt.Errorf("unexpected message type: %q", h.Type())
+			return nil, fmt.Errorf("unexpected message type: %q", h.Type())
 		}
 	}
-
-	c.cache[sql] = stmt
-	return stmt, nil
 }
 
 // QueryAll is short for:

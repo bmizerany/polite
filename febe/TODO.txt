@@ -19,3 +19,12 @@ TODO:
 [x] StartupMessage(ctx context.Context, params ...string) (err error) {
 [x] Sync?
 [x] Terminate
+
+DESIGN GOALS:
+[ ] Fast AF
+[ ] Zero Alloc (in critical paths)
+
+NON GOALS
+[ ] Large objects (e.g. values >1mb)
+[ ] COPY BOTH
+[ ] FunctionCall

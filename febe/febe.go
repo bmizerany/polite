@@ -410,6 +410,94 @@ func (c *Conn) WriteParse(ctx context.Context, stmt, sql string) error {
 
 }
 
+type FieldDescription struct {
+	Name             string // This is a string to gurarantee that it is a copy, safe for use after a call to any later Read call
+	TableOID         int32
+	TableAttributeID int16
+	DataTypeOID      int32
+	DataTypeSize     int16
+	TypeModifier     int32
+	FormatCode       int16
+}
+
+// This is a zero value, so it is safe to use without initialization and
+// values of FieldDescription are comparable (e.g. the underlying memory
+// cannot be changed (without unsafe) by anymore once it is returned from a
+// Read call).
+var _ = (FieldDescription{}) == (FieldDescription{})
+
+type RowDescriptionResponse struct {
+	MessageHeader
+	Fields []FieldDescription
+}
+
+func (c *Conn) WriteDescribe(ctx context.Context, typ byte, statment string) error {
+	var s sizer
+	s.addInt32() // length
+	s.addByte()
+	s.addString(statment)
+
+	c.c.WriteByte('D')
+	c.c.WriteInt32(s.size())
+	c.c.WriteByte(typ)
+	c.c.WriteString(statment)
+	return c.Err()
+}
+
+func (c *Conn) ReadRowDescription(ctx context.Context) (RowDescriptionResponse, error) {
+	if err := c.checkMessageHeader('T'); err != nil {
+		return RowDescriptionResponse{}, err
+	}
+	n, err := c.c.ReadInt16()
+	if err != nil {
+		return RowDescriptionResponse{}, err
+	}
+	fields := make([]FieldDescription, n)
+	for i := range fields {
+		name, err := c.c.ReadString()
+		if err != nil {
+			return RowDescriptionResponse{}, err
+		}
+		tableOID, err := c.c.ReadInt32()
+		if err != nil {
+			return RowDescriptionResponse{}, err
+		}
+		tableAttributeID, err := c.c.ReadInt16()
+		if err != nil {
+			return RowDescriptionResponse{}, err
+		}
+		dataTypeOID, err := c.c.ReadInt32()
+		if err != nil {
+			return RowDescriptionResponse{}, err
+		}
+		dataTypeSize, err := c.c.ReadInt16()
+		if err != nil {
+			return RowDescriptionResponse{}, err
+		}
+		typeModifier, err := c.c.ReadInt32()
+		if err != nil {
+			return RowDescriptionResponse{}, err
+		}
+		formatCode, err := c.c.ReadInt16()
+		if err != nil {
+			return RowDescriptionResponse{}, err
+		}
+		fields[i] = FieldDescription{
+			Name:             string(name),
+			TableOID:         tableOID,
+			TableAttributeID: tableAttributeID,
+			DataTypeOID:      dataTypeOID,
+			DataTypeSize:     dataTypeSize,
+			TypeModifier:     typeModifier,
+			FormatCode:       formatCode,
+		}
+	}
+	return RowDescriptionResponse{
+		MessageHeader: c.h,
+		Fields:        fields,
+	}, nil
+}
+
 func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []string) error {
 	var s sizer
 	s.addInt32() // length
