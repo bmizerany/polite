@@ -3,10 +3,9 @@ package dsn
 import (
 	"cmp"
 	"fmt"
+	"iter"
 	"net/url"
 	"strings"
-
-	"blake.io/postgres/iter"
 )
 
 type Options struct {

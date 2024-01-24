@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"strconv"
 
 	"blake.io/postgres/febe"
-	"blake.io/postgres/iter"
 	"go4.org/mem"
 )
 

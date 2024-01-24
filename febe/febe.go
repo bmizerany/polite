@@ -8,11 +8,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"iter"
 	"net"
 	"strings"
 
 	"blake.io/postgres/febe/febeio"
-	"blake.io/postgres/iter"
 	"go4.org/mem"
 )
 
