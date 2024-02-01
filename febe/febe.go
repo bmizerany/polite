@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"iter"
 	"net"
 	"strings"
 
@@ -130,7 +129,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		}
 		switch c.h.Type() {
 		case 'N':
-			m, err := c.readNoticeResponse(ctx)
+			m, err := c.readNoticeResponse()
 			if err != nil {
 				return zero, err
 			}
@@ -139,7 +138,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 			}
 			continue
 		case 'E':
-			m, err := c.readNoticeResponse(ctx)
+			m, err := c.readNoticeResponse()
 			if err != nil {
 				return zero, err
 			}
@@ -149,7 +148,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 			}
 			return zero, e
 		case 'f': // CopyFail
-			e, err := c.readCopyFailResponse(ctx)
+			e, err := c.readCopyFailResponse()
 			if err != nil {
 				return zero, err
 			}
@@ -158,7 +157,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 			}
 			return zero, e
 		case 'S':
-			s, err := c.readParameterStatus(ctx)
+			s, err := c.readParameterStatus()
 			if err != nil {
 				return zero, err
 			}
@@ -189,22 +188,7 @@ func (c *Conn) advanceHeader() (err error) {
 	return err
 }
 
-func (c *Conn) Messages(ctx context.Context) iter.Seq2[MessageHeader, error] {
-	return func(yield func(MessageHeader, error) bool) {
-		for {
-			h, err := c.ReadHeader(ctx)
-			if err != nil {
-				yield(h, err)
-				return
-			}
-			if !yield(h, nil) {
-				return
-			}
-		}
-	}
-}
-
-func (c *Conn) DiscardMessage(ctx context.Context) error {
+func (c *Conn) DiscardMessage() error {
 	return c.c.Discard(c.h.BodyLen())
 }
 
@@ -220,7 +204,7 @@ func (s *sizer) addBytes(n int)      { *s += sizer(n) }
 func (s *sizer) addString(v string)  { *s += sizer(len(v) + 1) }
 func (s *sizer) size() int32         { return int32(*s) }
 
-func (c *Conn) WriteStartupMessage(ctx context.Context, params ...string) (err error) {
+func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 	var s sizer
 	s.addInt32() // length
 	s.addInt32() // protocol version
@@ -269,7 +253,7 @@ type AuthenticationResponse struct {
 	MD5Salt []byte
 }
 
-func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, error) {
+func (c *Conn) ReadAuthentication() (AuthenticationResponse, error) {
 	var zero AuthenticationResponse
 	if err := c.checkMessageHeader('R'); err != nil {
 		return zero, err
@@ -315,15 +299,10 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 		r.MD5Salt = salt
 	}
 
-	t := traceFromContext(ctx)
-	if t.ReceivedAuthenticationResponse != nil {
-		t.ReceivedAuthenticationResponse(ctx, r)
-	}
-
 	return r, nil
 }
 
-func (c *Conn) WritePasswordMessage(ctx context.Context, password string) error {
+func (c *Conn) WritePasswordMessage(password string) error {
 	var s sizer
 	s.addInt32() // length
 	s.addString(password)
@@ -333,7 +312,7 @@ func (c *Conn) WritePasswordMessage(ctx context.Context, password string) error 
 	return c.Err()
 }
 
-func (c *Conn) WriteSASLInitialResponse(ctx context.Context, mechanism string, data []byte) error {
+func (c *Conn) WriteSASLInitialResponse(mechanism string, data []byte) error {
 	var s sizer
 	s.addInt32() // length
 	s.addString(mechanism)
@@ -345,7 +324,7 @@ func (c *Conn) WriteSASLInitialResponse(ctx context.Context, mechanism string, d
 	return c.Err()
 }
 
-func (c *Conn) WriteSASLResponse(ctx context.Context, data []byte) error {
+func (c *Conn) WriteSASLResponse(data []byte) error {
 	var s sizer
 	s.addInt32() // length
 	s.addBytes(len(data))
@@ -355,7 +334,7 @@ func (c *Conn) WriteSASLResponse(ctx context.Context, data []byte) error {
 	return c.Err()
 }
 
-func (c *Conn) ReadReadyForQuery(ctx context.Context) (ReadyForQueryResponse, error) {
+func (c *Conn) ReadReadyForQuery() (ReadyForQueryResponse, error) {
 	if err := c.checkMessageHeader('Z'); err != nil {
 		return ReadyForQueryResponse{}, err
 	}
@@ -376,7 +355,7 @@ type NotificationResponse struct {
 	Payload []byte
 }
 
-func (c *Conn) ReadNotification(ctx context.Context) (NotificationResponse, error) {
+func (c *Conn) ReadNotification() (NotificationResponse, error) {
 	if err := c.checkMessageHeader('A'); err != nil {
 		return NotificationResponse{}, err
 	}
@@ -400,7 +379,7 @@ func (c *Conn) ReadNotification(ctx context.Context) (NotificationResponse, erro
 	}, nil
 }
 
-func (c *Conn) WriteParse(ctx context.Context, stmt, sql string) error {
+func (c *Conn) WriteParse(stmt, sql string) error {
 	var s sizer
 	s.addInt32() // length
 	s.addString(stmt)
@@ -437,7 +416,7 @@ type RowDescriptionResponse struct {
 	Fields []FieldDescription
 }
 
-func (c *Conn) WriteDescribe(ctx context.Context, typ byte, statment string) error {
+func (c *Conn) WriteDescribe(typ byte, statment string) error {
 	var s sizer
 	s.addInt32() // length
 	s.addByte()
@@ -450,7 +429,7 @@ func (c *Conn) WriteDescribe(ctx context.Context, typ byte, statment string) err
 	return c.Err()
 }
 
-func (c *Conn) ReadRowDescription(ctx context.Context) (RowDescriptionResponse, error) {
+func (c *Conn) ReadRowDescription() (RowDescriptionResponse, error) {
 	if err := c.checkMessageHeader('T'); err != nil {
 		return RowDescriptionResponse{}, err
 	}
@@ -509,7 +488,7 @@ type ParameterDescriptionResponse struct {
 	OIDs []int32
 }
 
-func (c *Conn) ReadParameterDescription(ctx context.Context) (ParameterDescriptionResponse, error) {
+func (c *Conn) ReadParameterDescription() (ParameterDescriptionResponse, error) {
 	if err := c.checkMessageHeader('t'); err != nil {
 		return ParameterDescriptionResponse{}, err
 	}
@@ -538,7 +517,7 @@ type FormatParams struct {
 
 var emptyFormatParams = &FormatParams{}
 
-func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []string, p *FormatParams) error {
+func (c *Conn) WriteBind(portal, statement string, args []string, p *FormatParams) error {
 	p = cmp.Or(p, emptyFormatParams)
 
 	var s sizer
@@ -593,13 +572,13 @@ func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args []s
 	return c.Err()
 }
 
-func (c *Conn) WriteSync(ctx context.Context) error {
+func (c *Conn) WriteSync() error {
 	c.c.WriteByte('S')
 	c.c.WriteInt32(4)
 	return c.Err()
 }
 
-func (c *Conn) WriteExecute(ctx context.Context, portal string, limit int) error {
+func (c *Conn) WriteExecute(portal string, limit int) error {
 	var s sizer
 	s.addInt32() // length
 	s.addString(portal)
@@ -616,7 +595,7 @@ type EmptyQueryResponse struct {
 	MessageHeader
 }
 
-func (c *Conn) ReadEmptyQuery(ctx context.Context) (EmptyQueryResponse, error) {
+func (c *Conn) ReadEmptyQuery() (EmptyQueryResponse, error) {
 	if err := c.checkMessageHeader('I'); err != nil {
 		return EmptyQueryResponse{}, err
 	}
@@ -628,7 +607,7 @@ type CommandCompleteResponse struct {
 	Tag
 }
 
-func (c *Conn) ReadCommandComplete(ctx context.Context) (CommandCompleteResponse, error) {
+func (c *Conn) ReadCommandComplete() (CommandCompleteResponse, error) {
 	var zero CommandCompleteResponse
 	if err := c.checkMessageHeader('C'); err != nil {
 		return zero, err
@@ -694,7 +673,7 @@ type DataRowValueResponse struct {
 	Data []byte
 }
 
-func (c *Conn) ReadDataRow(ctx context.Context) (DataRowResponse, error) {
+func (c *Conn) ReadDataRow() (DataRowResponse, error) {
 	if err := c.checkMessageHeader('D'); err != nil {
 		return DataRowResponse{}, err
 	}
@@ -708,7 +687,7 @@ func (c *Conn) ReadDataRow(ctx context.Context) (DataRowResponse, error) {
 	}, nil
 }
 
-func (c *Conn) ReadDataRowValue(ctx context.Context) (DataRowValueResponse, error) {
+func (c *Conn) ReadDataRowValue() (DataRowValueResponse, error) {
 	if err := c.checkMessageHeader('D'); err != nil {
 		return DataRowValueResponse{}, err
 	}

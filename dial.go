@@ -60,7 +60,7 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 		return nil, err
 	}
 
-	cn, err = maybeUpgradeToTLS(ctx, cn, o, cfg)
+	cn, err = maybeUpgradeToTLS(cn, o, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	}
 
 	err = func() error {
-		if err := c.fc.WriteStartupMessage(ctx, o.Extra...); err != nil {
+		if err := c.fc.WriteStartupMessage(o.Extra...); err != nil {
 			return err
 		}
 		if err := c.fc.Flush(); err != nil {
@@ -96,16 +96,16 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 					return err
 				}
 			case 'S':
-				if err := c.fc.DiscardMessage(ctx); err != nil {
+				if err := c.fc.DiscardMessage(); err != nil {
 					return err
 				}
 			case 'K':
 				// TODO(bmizerany): save the key for cancellations later
-				if err := c.fc.DiscardMessage(ctx); err != nil {
+				if err := c.fc.DiscardMessage(); err != nil {
 					return err
 				}
 			case 'Z':
-				_, err := c.fc.ReadReadyForQuery(ctx)
+				_, err := c.fc.ReadReadyForQuery()
 				if err != nil {
 					return err
 				}
@@ -138,7 +138,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 		if err != nil {
 			return zero, err
 		}
-		cr, err := c.fc.ReadAuthentication(ctx)
+		cr, err := c.fc.ReadAuthentication()
 		if err != nil {
 			return zero, err
 		}
@@ -148,7 +148,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 		return cr, nil
 	}
 
-	cr, err := c.fc.ReadAuthentication(ctx)
+	cr, err := c.fc.ReadAuthentication()
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 		}
 
 		// Initial response
-		if err := c.fc.WriteSASLInitialResponse(ctx, "SCRAM-SHA-256", sc.Out()); err != nil {
+		if err := c.fc.WriteSASLInitialResponse("SCRAM-SHA-256", sc.Out()); err != nil {
 			return err
 		}
 		cr, err := nextResponse(febe.AuthenticationTypeSASLContinue)
@@ -177,7 +177,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 		}
 
 		// Final response
-		if err := c.fc.WriteSASLResponse(ctx, sc.Out()); err != nil {
+		if err := c.fc.WriteSASLResponse(sc.Out()); err != nil {
 			return err
 		}
 		cr, err = nextResponse(febe.AuthenticationTypeSASLFinal)
@@ -202,7 +202,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 		}
 
 		msg := "md5" + md5(md5(o.Password, o.User), string(cr.MD5Salt))
-		if err := c.fc.WritePasswordMessage(ctx, msg); err != nil {
+		if err := c.fc.WritePasswordMessage(msg); err != nil {
 			return err
 		}
 		_, err := nextResponse(febe.AuthenticationTypeOK)
@@ -212,7 +212,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 	}
 }
 
-func maybeUpgradeToTLS(ctx context.Context, cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, error) {
+func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, error) {
 	if o.SSLMode == "disable" {
 		return cn, nil
 	}
