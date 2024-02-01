@@ -16,7 +16,7 @@ import (
 func TestError(t *testing.T) {
 	c := New(nil, errorWriter{}) // panics if a Read is called
 	for i := 0; i < 3; i++ {
-		err := c.WriteStartupMessage(context.Background())
+		err := c.WriteStartupMessage()
 		if i == 0 && err != nil {
 			t.Fatalf("[%d]: unexpected error: %v", i, err)
 		} else if i > 0 && !errors.Is(err, errTest) {
@@ -122,7 +122,7 @@ func TestNoticeResponse(t *testing.T) {
 func TestWriteStartupMessage(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
-	if err := c.WriteStartupMessage(context.Background(), "user=test"); err != nil {
+	if err := c.WriteStartupMessage("user=test"); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Err(); err != nil {
@@ -156,7 +156,7 @@ func TestReadReadyForQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadReadyForQuery(context.Background())
+	got, err := c.ReadReadyForQuery()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestReadAuthentication(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := c.ReadAuthentication(context.Background())
+		got, err := c.ReadAuthentication()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -255,7 +255,7 @@ func TestReadCommandComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadCommandComplete(context.Background())
+	got, err := c.ReadCommandComplete()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestReadDataRow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := c.ReadDataRow(ctx)
+	got, err := c.ReadDataRow()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestReadDataRow(t *testing.T) {
 
 	gotValues := make([][]byte, got.NumCols)
 	for i := range got.NumCols {
-		v, err := c.ReadDataRowValue(ctx)
+		v, err := c.ReadDataRowValue()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -348,7 +348,7 @@ func TestReadEmptyQueryResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadEmptyQuery(context.Background())
+	got, err := c.ReadEmptyQuery()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,6 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 			testReadMethodSignature(t, m)
 
 			vm := vo.Method(i)
-			ctx := context.Background()
 			c.h = MessageHeader{
 				msgType: '!',
 				msgLen:  1,
@@ -404,9 +403,7 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 			// right byte value. This is left up to other tests, mostly
 			// integration, which would fail if a ReadX type field check
 			// would
-			out := vm.Call([]reflect.Value{
-				reflect.ValueOf(ctx),
-			})
+			out := vm.Call(nil)
 			if err := out[1].Interface().(error); err == nil {
 				t.Errorf("expected error, got nil")
 			}
@@ -440,7 +437,7 @@ func TestReadNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := c.ReadNotification(context.Background())
+	got, err := c.ReadNotification()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +460,7 @@ func TestWriteParse(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
 
-	if err := c.WriteParse(context.Background(), "test", "SELECT 1"); err != nil {
+	if err := c.WriteParse("test", "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 	c.Flush()
@@ -480,7 +477,6 @@ func TestWriteParse(t *testing.T) {
 }
 
 func TestWriteBind(t *testing.T) {
-	// func (c *Conn) WriteBind(ctx context.Context, portal, statement string, args [][]byte) error {
 	var b bytes.Buffer
 	c := New(&b, &b)
 
@@ -488,7 +484,7 @@ func TestWriteBind(t *testing.T) {
 		"hello",
 		"world",
 	}
-	if err := c.WriteBind(context.Background(), "portal", "stmt", args, &FormatParams{
+	if err := c.WriteBind("portal", "stmt", args, &FormatParams{
 		In:  []int16{1},
 		Out: []int16{1, 0},
 	}); err != nil {
@@ -522,7 +518,7 @@ func TestWriteSync(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
 
-	if err := c.WriteSync(context.Background()); err != nil {
+	if err := c.WriteSync(); err != nil {
 		t.Fatal(err)
 	}
 	c.Flush()
@@ -537,7 +533,7 @@ func TestWriteExecute(t *testing.T) {
 	var b bytes.Buffer
 	c := New(&b, &b)
 
-	if err := c.WriteExecute(context.Background(), "portal", 0); err != nil {
+	if err := c.WriteExecute("portal", 0); err != nil {
 		t.Fatal(err)
 	}
 	c.Flush()
@@ -606,14 +602,11 @@ func testReadMethodSignature(t *testing.T, m reflect.Method) {
 	if strings.HasSuffix(m.Name, "Response") {
 		t.Fatalf("%s should not end with Response", m.Name)
 	}
-	if m.Type.NumIn() != 2 || m.Type.NumOut() != 2 {
+	if m.Type.NumIn() != 1 || m.Type.NumOut() != 2 {
 		t.Fatalf("wrong number of in/out params: %d/%d", m.Type.NumIn(), m.Type.NumOut())
 	}
 	if m.Type.In(0) != reflect.TypeOf((*Conn)(nil)) {
 		t.Errorf("wrong type for first param")
-	}
-	if m.Type.In(1) != reflect.TypeOf((*context.Context)(nil)).Elem() {
-		t.Errorf("wrong type for second param")
 	}
 	if m.Type.NumOut() != 2 {
 		t.Fatal("wrong number of out params")

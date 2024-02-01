@@ -1,7 +1,6 @@
 package febe
 
 import (
-	"context"
 	"fmt"
 	"strings"
 )
@@ -77,7 +76,7 @@ type NoticeResponse struct {
 	*Notice
 }
 
-func (c *Conn) readNoticeResponse(ctx context.Context) (NoticeResponse, error) {
+func (c *Conn) readNoticeResponse() (NoticeResponse, error) {
 	if err := c.checkMessageHeader('N', 'E'); err != nil {
 		return NoticeResponse{}, err
 	}
@@ -146,7 +145,7 @@ type ParameterStatusResponse struct {
 	Value string
 }
 
-func (c *Conn) readParameterStatus(ctx context.Context) (ParameterStatusResponse, error) {
+func (c *Conn) readParameterStatus() (ParameterStatusResponse, error) {
 	var zero ParameterStatusResponse
 	if err := c.checkMessageHeader('S'); err != nil {
 		return zero, err
@@ -165,7 +164,7 @@ func (c *Conn) readParameterStatus(ctx context.Context) (ParameterStatusResponse
 	}, nil
 }
 
-func (c *Conn) readCopyFailResponse(ctx context.Context) (*Error, error) {
+func (c *Conn) readCopyFailResponse() (*Error, error) {
 	if err := c.checkMessageHeader('f'); err != nil {
 		return nil, err
 	}
