@@ -15,10 +15,6 @@ type Trace struct {
 	ReceivedNotice          func(context.Context, *Notice)
 	ReceivedError           func(context.Context, *Error)
 	ReceivedParameterStatus func(context.Context, Parameter)
-
-	ReceivedAuthenticationResponse func(context.Context, AuthenticationResponse)
-
-	WroteExecute func(ctx context.Context, portal, statement string, args []string)
 }
 
 type traceContextKey struct{}

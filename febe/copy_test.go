@@ -30,7 +30,7 @@ func TestCopyData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	co, err := cn.ReadCopyOut(ctx)
+	co, err := cn.ReadCopyOut()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestCopyData(t *testing.T) {
 		if h.Type() != 'd' {
 			t.Fatalf("[%d]: Type = %c; want %c", i, h.Type(), 'd')
 		}
-		cd, err := cn.ReadCopyData(ctx)
+		cd, err := cn.ReadCopyData()
 		if err != nil {
 			t.Fatalf("[%d]: ReadCopyData() = %v; want nil", i, err)
 		}

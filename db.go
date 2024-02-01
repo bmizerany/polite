@@ -103,7 +103,7 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) 
 		In:  allBinary,
 		Out: allBinary,
 	}
-	return c.fc.WriteBind(ctx, portal, stmt.name, args, fp)
+	return c.fc.WriteBind(portal, stmt.name, args, fp)
 }
 
 func (c *Conn) newStmtName() (string, error) {
@@ -129,9 +129,9 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 
 	stmt = &statement{name: name}
 
-	c.fc.WriteParse(ctx, name, sql)
-	c.fc.WriteDescribe(ctx, 'S', name)
-	c.fc.WriteSync(ctx)
+	c.fc.WriteParse(name, sql)
+	c.fc.WriteDescribe('S', name)
+	c.fc.WriteSync()
 	if err := c.fc.Flush(); err != nil {
 		return nil, err
 	}
@@ -145,13 +145,13 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 		case '1':
 			continue
 		case 't':
-			pd, err := c.fc.ReadParameterDescription(ctx)
+			pd, err := c.fc.ReadParameterDescription()
 			if err != nil {
 				return nil, err
 			}
 			stmt.in = pd
 		case 'T':
-			rd, err := c.fc.ReadRowDescription(ctx)
+			rd, err := c.fc.ReadRowDescription()
 			if err != nil {
 				return nil, err
 			}
@@ -169,7 +169,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 			continue
 		case 'Z':
 			// TODO(bmizerany): track transaction status
-			_, err := c.fc.ReadReadyForQuery(ctx)
+			_, err := c.fc.ReadReadyForQuery()
 			if err != nil {
 				return nil, err
 			}
@@ -212,9 +212,9 @@ func (c *Conn) QueryAll(ctx context.Context, sql string, args ...string) iter.Se
 	}
 }
 
-func (c *Conn) execAndSync(ctx context.Context, portal string) error {
-	c.fc.WriteExecute(ctx, "", 0)
-	c.fc.WriteSync(ctx)
+func (c *Conn) execAndSync(portal string) error {
+	c.fc.WriteExecute("", 0)
+	c.fc.WriteSync()
 	if err := c.fc.Flush(); err != nil {
 		return err
 	}
@@ -222,7 +222,6 @@ func (c *Conn) execAndSync(ctx context.Context, portal string) error {
 }
 
 type Row struct {
-	ctx     context.Context
 	c       *Conn
 	numCols int
 	rem     int
@@ -244,7 +243,7 @@ func (r *Row) View() (mem.RO, error) {
 		return mem.RO{}, ErrOutOfColumns
 	}
 	r.rem--
-	v, err := r.c.fc.ReadDataRowValue(r.ctx)
+	v, err := r.c.fc.ReadDataRowValue()
 	if err != nil {
 		return mem.RO{}, err
 	}
@@ -309,7 +308,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 		yield(nil, rs.err)
 		return
 	}
-	if err := rs.c.execAndSync(rs.ctx, ""); err != nil {
+	if err := rs.c.execAndSync(""); err != nil {
 		yield(nil, err)
 		return
 	}
@@ -349,13 +348,13 @@ func (rs *Rows) next() (*Row, error) {
 			// Headers only; No discard needed
 			continue
 		case 'C':
-			m, err := c.ReadCommandComplete(rs.ctx)
+			m, err := c.ReadCommandComplete()
 			if err != nil {
 				return nil, err
 			}
 			rs.rowsAffected = m.RowsAffected
 		case 'D':
-			m, err := c.ReadDataRow(rs.ctx)
+			m, err := c.ReadDataRow()
 			if err != nil {
 				return nil, err
 			}
@@ -363,7 +362,6 @@ func (rs *Rows) next() (*Row, error) {
 				rs.row = &Row{}
 			}
 			*rs.row = Row{
-				ctx:     rs.ctx,
 				c:       rs.c,
 				numCols: int(m.NumCols),
 				rem:     int(m.NumCols),
@@ -374,7 +372,7 @@ func (rs *Rows) next() (*Row, error) {
 			emptyErr = ErrEmptyQuery
 			continue
 		case 'Z':
-			_, err := c.ReadReadyForQuery(rs.ctx)
+			_, err := c.ReadReadyForQuery()
 			if err != nil {
 				return nil, err
 			}

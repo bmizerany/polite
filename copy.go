@@ -34,7 +34,7 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter
 			yield(nil, err)
 			return
 		}
-		if err := c.execAndSync(ctx, ""); err != nil {
+		if err := c.execAndSync(""); err != nil {
 			yield(nil, err)
 			return
 		}
@@ -45,7 +45,7 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter
 				return
 			}
 			if h.Type() == 'd' {
-				cd, err := c.fc.ReadCopyData(ctx)
+				cd, err := c.fc.ReadCopyData()
 				if err != nil {
 					yield(nil, err)
 					return
