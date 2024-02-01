@@ -13,40 +13,50 @@ func TestParseOptions(t *testing.T) {
 		want *Options
 	}{
 		{"dbname=test", &Options{
-			Host:  "localhost",
-			Port:  "5432",
-			Extra: []string{"database=test"},
+			User:     defaultUser,
+			Host:     "/tmp",
+			Port:     "5432",
+			Database: "test",
+			Extra:    []string{"user=" + defaultUser, "database=test"},
 		}},
 		{"dbname=test user=foo", &Options{
-			Host:  "localhost",
-			Port:  "5432",
-			User:  "foo",
-			Extra: []string{"database=test", "user=foo"},
+			Host:     "/tmp",
+			Port:     "5432",
+			User:     "foo",
+			Database: "test",
+			Extra:    []string{"user=foo", "database=test"},
 		}},
 		{"dbname=test user=foo password=bar", &Options{
-			Host:     "localhost",
+			Host:     "/tmp",
 			Port:     "5432",
 			User:     "foo",
 			Password: "bar",
+			Database: "test",
 
 			// password is NOT to be included in the Extra field
 			Extra: []string{"database=test", "user=foo"},
 		}},
 		{"user=foo", &Options{
-			Host:  "localhost",
-			Port:  "5432",
-			User:  "foo",
-			Extra: []string{"user=foo"},
+			Host:     "/tmp",
+			Port:     "5432",
+			User:     "foo",
+			Database: "postgres",
+			Extra:    []string{"user=foo", "database=postgres"},
 		}},
 		{"sslmode=foo", &Options{
-			Host:    "localhost",
-			Port:    "5432",
-			SSLMode: "foo",
+			Host:     "/tmp",
+			Port:     "5432",
+			User:     defaultUser,
+			Database: "postgres",
+			SSLMode:  "foo",
+			Extra:    []string{"user=" + defaultUser, "database=postgres"},
 		}},
 		{"a=x b=y", &Options{
-			Host:  "localhost",
-			Port:  "5432",
-			Extra: []string{"a=x", "b=y"},
+			Host:     "/tmp",
+			Port:     "5432",
+			User:     defaultUser,
+			Database: "postgres",
+			Extra:    []string{"a=x", "b=y", "user=" + defaultUser, "database=postgres"},
 		}},
 
 		// URL options
@@ -59,10 +69,11 @@ func TestParseOptions(t *testing.T) {
 			Extra:    []string{"database=test", "user=foo"},
 		}},
 		{"postgres:///test", &Options{
-			Host:     "localhost",
+			Host:     "/tmp",
 			Port:     "5432",
+			User:     defaultUser,
 			Database: "test",
-			Extra:    []string{"user=", "database=test"},
+			Extra:    []string{"user=" + defaultUser, "database=test"},
 		}},
 		{"postgres://foo:bar@localhost:5432/test?a=x&b=y", &Options{
 			Host:     "localhost",
@@ -73,14 +84,19 @@ func TestParseOptions(t *testing.T) {
 			Extra:    []string{"a=x", "b=y", "database=test", "user=foo"},
 		}},
 		{"sslrootcert=foo", &Options{
-			Host:        "localhost",
+			Host:        "/tmp",
 			Port:        "5432",
+			User:        defaultUser,
+			Database:    "postgres",
 			SSLRootCert: "foo",
+			Extra:       []string{"user=" + defaultUser, "database=postgres"},
 		}},
 		{"quote='foo bar'", &Options{
-			Host:  "localhost",
-			Port:  "5432",
-			Extra: []string{"quote='foo bar'"},
+			Host:     "/tmp",
+			Port:     "5432",
+			User:     defaultUser,
+			Database: "postgres",
+			Extra:    []string{"quote='foo bar'", "user=" + defaultUser, "database=postgres"},
 		}},
 	}
 

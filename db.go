@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"iter"
 	"strconv"
 
 	"blake.io/postgres/febe"
+	"blake.io/postgres/iter"
 	"go4.org/mem"
 )
 
@@ -59,6 +59,7 @@ func Ping(ctx context.Context, cn *Conn) error {
 }
 
 func (c *Conn) Close() error {
+	// TODO(bmizerany): send Terminate message
 	return c.cn.Close()
 }
 

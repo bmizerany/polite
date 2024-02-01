@@ -8,11 +8,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"iter"
 	"net"
 	"strings"
 
 	"blake.io/postgres/febe/febeio"
+	"blake.io/postgres/iter"
 	"go4.org/mem"
 )
 
@@ -263,8 +263,8 @@ type AuthenticationResponse struct {
 	MessageHeader
 	Type AuthenticationType
 
-	SASLData      []byte
-	SASLMechanism string
+	SASLData       []byte
+	SASLMechanisms []string
 
 	MD5Salt []byte
 }
@@ -288,11 +288,16 @@ func (c *Conn) ReadAuthentication(ctx context.Context) (AuthenticationResponse, 
 
 	switch r.Type {
 	case AuthenticationTypeSASL:
-		mech, err := c.c.ReadString()
-		if err != nil {
-			return zero, err
+		for {
+			mech, err := c.c.ReadString()
+			if err != nil {
+				return zero, err
+			}
+			if len(mech) == 0 {
+				break
+			}
+			r.SASLMechanisms = append(r.SASLMechanisms, string(mech))
 		}
-		r.SASLMechanism = string(mech)
 	case AuthenticationTypeSASLContinue, AuthenticationTypeSASLFinal:
 		// read the remaining bytes: message body length - size of
 		// type (int32)
