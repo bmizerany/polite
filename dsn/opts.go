@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"net/url"
+	"os/user"
 	"strings"
 )
 
@@ -26,15 +27,35 @@ type Options struct {
 	Extra []string
 }
 
+var defaultUser = func() string {
+	u, _ := user.Current()
+	return u.Username
+}()
+
+// setDefaults sets the default values for the options. It also sets the
+// user and database in the Extra field, overwriting them if they are already
+// present.
+func setDefaults(o *Options) error {
+	o.User = cmp.Or(o.User, defaultUser, "postgres")
+	o.Host = cmp.Or(o.Host, "/tmp")
+	o.Port = cmp.Or(o.Port, "5432")
+	o.Database = cmp.Or(o.Database, "postgres")
+	o.SSLMode = cmp.Or(o.SSLMode, "require")
+
+	// Include username, and database in the extra options. We
+	// keep them on the struct for convenience, but the backend
+	// needs them too.
+	o.Extra = append(o.Extra, "user="+o.User)
+	o.Extra = append(o.Extra, "database="+o.Database)
+	return nil
+}
+
 // ParseOptions parses a DSN or URL string into an Options struct. The defaults are:
 //
-//	dbname=postgres user=postgres host=localhost port=5432 sslmode=verify
+//	dbname=postgres user=$USER host=/tmp port=5432 sslmode=verify
 func ParseOptions(dsn string) (*Options, error) {
-	o := &Options{
-		SSLMode: "require", // match lib/pq default
-		Host:    "localhost",
-		Port:    "5432",
-	}
+	o := &Options{}
+	defer setDefaults(o)
 
 	if strings.HasPrefix(dsn, "postgres://") {
 		u, err := url.Parse(dsn)
@@ -59,16 +80,10 @@ func ParseOptions(dsn string) (*Options, error) {
 		q := u.Query()
 
 		// SSLMode is parsed from the query string.
-		o.SSLMode = cmp.Or(q.Get("sslmode"), o.SSLMode)
+		o.SSLMode = q.Get("sslmode")
 		q.Del("sslmode") // remove from extra options
 		o.SSLRootCert = q.Get("sslrootcert")
 		q.Del("sslrootcert") // remove from extra options
-
-		// Include username, and database in the extra options. We
-		// keep them on the struct for convenience, but the backend
-		// needs them too.
-		o.Extra = append(o.Extra, "user="+o.User)
-		o.Extra = append(o.Extra, "database="+o.Database)
 
 		for k := range q {
 			// TODO(bmizerany): escape k and v?
@@ -107,10 +122,9 @@ func ParseOptions(dsn string) (*Options, error) {
 			case "dbname", "database":
 				// for backwards compat when switching from drivers
 				// that support dbname
-				o.Extra = append(o.Extra, "database="+val)
+				o.Database = val
 			case "user":
 				o.User = val
-				o.Extra = append(o.Extra, "user="+val)
 			case "password":
 				o.Password = val
 			default:

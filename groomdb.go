@@ -42,8 +42,7 @@ func main() {
 		dropQ := fmt.Sprintf("DROP DATABASE %s", name.StringCopy())
 		log.Print(dropQ)
 
-		_, err = dropCN.Exec(ctx, dropQ)
-		if err != nil {
+		if err := dropCN.Exec(ctx, dropQ); err != nil {
 			log.Fatal(err)
 		}
 	}

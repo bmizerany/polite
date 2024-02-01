@@ -3,8 +3,8 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"iter"
 
+	"blake.io/postgres/iter"
 	"go4.org/mem"
 )
 

@@ -3,8 +3,9 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"iter"
 	"strings"
+
+	"blake.io/postgres/iter"
 )
 
 type CopyRow struct {

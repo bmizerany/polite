@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -83,6 +82,68 @@ func TestDialAuthMD5(t *testing.T) {
 	}
 }
 
+func TestDialAuthSCRAM(t *testing.T) {
+	mainDSN := startPG(t, withHBA(t, []string{
+		"-c", "password_encryption=scram-sha-256",
+		"-c", "listen_addresses=127.0.0.1",
+	}, `
+		# order is paramount; first match takes precedence
+		host   all  test  127.0.0.1/32 scram-sha-256
+		local  all  all   trust
+	`)...)
+
+	func() {
+		// Create test user with pass
+		cn, err := Dial(context.Background(), mainDSN, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cn.Close()
+
+		const q = `CREATE USER test WITH PASSWORD 'pass'`
+		if err := cn.Exec(context.Background(), q); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	mainDSN += " host=127.0.0.1"
+
+	cases := []struct {
+		user, pass string
+		wantErr    bool
+	}{
+		{"test", "pass", false},
+		{"test", "wrong", true},
+		{"wrong", "pass", true},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.user+"/"+tt.pass, func(t *testing.T) {
+			// connect with password
+			dsn := fmt.Sprintf("%s user=%s password=%s", mainDSN, tt.user, tt.pass)
+
+			ctx := context.Background()
+			cn, err := Dial(ctx, dsn, nil)
+			if cn != nil {
+				defer cn.Close()
+			}
+			if err != nil {
+				if tt.wantErr {
+					return
+				}
+				t.Fatal(err)
+			}
+			if tt.wantErr {
+				t.Fatal("expected error")
+			}
+
+			if err := Ping(context.Background(), cn); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestDialTLS(t *testing.T) {
 	sslrootcert, tlsargs := configureTLSOnly(t)
 	dsn := startPG(t, tlsargs...)
@@ -135,6 +196,11 @@ func TestDialTLS(t *testing.T) {
 	}
 }
 
+func TestMain(m *testing.M) {
+	maybeBecomeSupervisor()
+	os.Exit(m.Run())
+}
+
 // startPG starts a postgres instance and returns a DSN to connect to it.
 // Any settings passed in will be appended to the DSN (e.g. "sslmode=disable").
 //
@@ -145,18 +211,10 @@ func TestDialTLS(t *testing.T) {
 //
 // The postgres instance will be stopped when the test is done.
 func startPG(t *testing.T, settings ...string) string {
-	maybeBecomeSupervisor()
-
 	t.Helper()
 
 	port := "9999"
 	dir := t.TempDir()
-	socketPath := filepath.Join(dir, ".s.PGSQL."+port)
-
-	_, err := os.Stat(socketPath)
-	if err == nil {
-		t.Fatal("host socket already exists: ", socketPath)
-	}
 
 	ctx, cancel := withTestDeadline(context.Background(), t)
 	ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
@@ -177,7 +235,7 @@ func startPG(t *testing.T, settings ...string) string {
 	args := append([]string{
 		"-D", dir,
 		"-d", "2",
-		"-p", "9999",
+		"-p", port,
 		"-c", "listen_addresses=",
 		"-c", "unix_socket_directories=" + dir,
 	}, settings...)
@@ -188,7 +246,7 @@ func startPG(t *testing.T, settings ...string) string {
 	cmd.Dir = dir
 	cmd.WaitDelay = 1 * time.Second
 	cmd.Cancel = func() error {
-		return cmd.Process.Signal(syscall.SIGTERM)
+		return cmd.Process.Signal(syscall.SIGQUIT)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -243,16 +301,10 @@ func startPG(t *testing.T, settings ...string) string {
 		}
 	})
 
-	waitForPGReady(ctx, dir)
-
-	user, err := user.Current()
-	if err != nil {
-		t.Fatal(err)
-	}
+	waitForPGReady(ctx, t.Logf, dir, port)
 
 	return strings.Join([]string{
-		"host=" + socketPath,
-		"user=" + user.Username,
+		"host=" + dir,
 		"dbname=postgres",
 		"port=" + port,
 		"sslmode=disable",
@@ -273,7 +325,9 @@ func withTestDeadline(ctx context.Context, t *testing.T) (context.Context, conte
 	return context.WithDeadline(ctx, deadline.Add(-200*time.Millisecond))
 }
 
-func waitForPGReady(ctx context.Context, host string) error {
+type logf func(format string, args ...interface{})
+
+func waitForPGReady(ctx context.Context, logf logf, host, port string) error {
 	for {
 		// Avoid bootstrapping problems and use pg_isready to wait for
 		// postgres to be ready, instead of our driver. Using our
@@ -285,7 +339,7 @@ func waitForPGReady(ctx context.Context, host string) error {
 		cmd := exec.CommandContext(ctx, "pg_isready",
 			"-d", "postgres",
 			"-h", host,
-			"-p", "9999",
+			"-p", port,
 			"-t", "3",
 			"-U", "postgres",
 		)
@@ -295,6 +349,7 @@ func waitForPGReady(ctx context.Context, host string) error {
 		if err == nil {
 			return nil
 		}
+		logf("pg_isready failed: %v; trying again", err)
 		tt := time.NewTimer(200 * time.Millisecond)
 		select {
 		case <-tt.C:

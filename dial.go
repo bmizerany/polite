@@ -12,6 +12,8 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"blake.io/postgres/dsn"
@@ -37,13 +39,19 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 
 	cfg = cmp.Or(cfg, &Config{})
 
-	network := "unix"
-	addr := o.Host
-	_, err = os.Stat(addr)
-	if err != nil {
+	var network, addr string
+	if strings.HasPrefix(o.Host, "/") {
+		_, err = os.Stat(o.Host)
+		if err != nil {
+			return nil, err
+		}
+		network = "unix"
+		addr = filepath.Join(o.Host, ".s.PGSQL."+o.Port)
+	} else {
 		network = "tcp"
 		addr = o.Host + ":" + o.Port
 	}
+
 	// TODO(bmizerany): check info is a valid file and socket
 
 	var d net.Dialer
@@ -183,7 +191,6 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 
 		// Success
 		return nil
-
 	case febe.AuthenticationTypeMD5:
 		// See: https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-START-UP
 		md5 := func(s ...string) string {

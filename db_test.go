@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"os/user"
 	"strings"
 	"sync"
 	"testing"
@@ -29,12 +28,6 @@ func createDB(t testing.TB) string {
 
 func newConn(t testing.TB) *Conn {
 	ctx := context.Background()
-	// ctx = febe.WithTrace(ctx, &febe.Trace{
-	// 	ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
-	// 		t.Logf("received header: %v", h)
-	// 	},
-	// })
-
 	dsn := createDB(t)
 	if t.Failed() {
 		t.FailNow()
@@ -200,11 +193,7 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 		checkPing(t, c)
 	})
 
-	ctx := febe.WithTrace(context.Background(), &febe.Trace{
-		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
-			t.Logf("received header: %v", h)
-		},
-	})
+	ctx := context.Background()
 
 	var got []error
 	for _, err := range c.QueryAll(ctx, "") {
@@ -246,17 +235,17 @@ func TestExecLimit1(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	cn := newConn(t)
-	if err := cn.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)"); err != nil {
+	c := newConn(t)
+	if err := c.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cn.Exec(context.Background(), "INSERT INTO foo VALUES (1)"); err != nil {
+	if err := c.Exec(context.Background(), "INSERT INTO foo VALUES (1)"); err != nil {
 		t.Fatal(err)
 	}
 	want := Result{
 		RowsAffected: 1,
 	}
-	diff.Test(t, t.Errorf, cn.LastResult(), want)
+	diff.Test(t, t.Errorf, c.LastResult(), want)
 }
 
 func TestError(t *testing.T) {
@@ -373,21 +362,10 @@ func checkPing(t *testing.T, c *Conn) {
 	}
 }
 
-func mustGetUsername() string {
-	cu, err := user.Current()
-	if err != nil {
-		panic(err)
-	}
-	return cu.Username
-}
-
 var (
-	mainDSN = "dbname=postgres port=5433 host=localhost sslmode=disable user=" + mustGetUsername()
+	mainDSN = "dbname=postgres port=5433 host=localhost sslmode=disable user=postgres password=postgres"
 	mc      = sync.OnceValue(func() *Conn {
-		ctx := febe.WithTrace(context.Background(), &febe.Trace{
-			// Placeholder for debugging
-		})
-		c, err := Dial(ctx, mainDSN, nil)
+		c, err := Dial(context.Background(), mainDSN, nil)
 		if err != nil {
 			panic(err)
 		}
