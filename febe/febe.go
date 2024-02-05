@@ -674,7 +674,7 @@ type DataRowValueResponse struct {
 }
 
 func (c *Conn) ReadDataRow() (DataRowResponse, error) {
-	if err := c.checkMessageHeader('D'); err != nil {
+	if err := c.checkMessageHeader('D', 'd'); err != nil {
 		return DataRowResponse{}, err
 	}
 	n, err := c.c.ReadInt16()
@@ -688,7 +688,7 @@ func (c *Conn) ReadDataRow() (DataRowResponse, error) {
 }
 
 func (c *Conn) ReadDataRowValue() (DataRowValueResponse, error) {
-	if err := c.checkMessageHeader('D'); err != nil {
+	if err := c.checkMessageHeader('D', 'd'); err != nil {
 		return DataRowValueResponse{}, err
 	}
 	data, err := c.c.ReadBytes()

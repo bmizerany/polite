@@ -49,25 +49,16 @@ func (c *Conn) ReadCopyOut() (CopyResponse, error) {
 	}, nil
 }
 
-type CopyDataResponse struct {
-	MessageHeader
-	Data []byte
-}
-
-func (c *Conn) ReadCopyData() (CopyDataResponse, error) {
-	var zero CopyDataResponse
-	if err := c.checkMessageHeader('d'); err != nil {
-		return zero, err
+func (c *Conn) DiscardBinarySignatureFlagsAndExt() error {
+	if err := c.c.Discard(11 + 4); err != nil {
+		// signature + flags field
+		return err
 	}
-	n := c.h.BodyLen()
-	data, err := c.c.ReadByteN(int(n))
+	n, err := c.c.ReadInt32() // length of the extension area
 	if err != nil {
-		return zero, err
+		return err
 	}
-	return CopyDataResponse{
-		MessageHeader: c.h,
-		Data:          data,
-	}, nil
+	return c.c.Discard(int(n))
 }
 
 type CopyDoneResponse struct {
