@@ -355,9 +355,12 @@ func (rs *Rows) next() (*Row, error) {
 			rs.rowsAffected = m.RowsAffected
 		case 'H':
 			// TODO(bmizerany): maybe sage NumCols for comparing against 'd' messages?
-			_, err := c.ReadCopyOut()
+			m, err := c.ReadCopyOut()
 			if err != nil {
 				return nil, err
+			}
+			if m.Format != febe.CopyFormatBinary {
+				return nil, fmt.Errorf("pqlite: unsupported COPY format (must use '... WITH (FORMAT binary)') %v", m.Format)
 			}
 		case 'D', 'd':
 			if rs.row == nil {
