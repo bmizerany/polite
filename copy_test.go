@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"go4.org/mem"
@@ -40,6 +41,33 @@ func TestCopyFreehand(t *testing.T) {
 		if w := "foo"; !name.EqualString(w) {
 			t.Fatalf("name = %q, want %q", name.StringCopy(), w)
 		}
+	}
+}
+
+func TestCopyNonBinary(t *testing.T) {
+	ctx := context.Background()
+	dsn := createDB(t)
+	c, err := Dial(ctx, dsn, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const q = `
+		COPY (SELECT 1) TO STDOUT WITH (FORMAT text)
+	`
+	var got []error
+	for row, err := range c.QueryAll(ctx, q) {
+		got = append(got, err)
+		if row != nil {
+			row.Close()
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %v, want 1 error", len(got))
+	}
+	const want = "unsupported COPY format"
+	if g := got[0]; !strings.Contains(g.Error(), want) {
+		t.Fatalf("got %q, want %q", g, want)
 	}
 }
 
