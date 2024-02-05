@@ -353,13 +353,27 @@ func (rs *Rows) next() (*Row, error) {
 				return nil, err
 			}
 			rs.rowsAffected = m.RowsAffected
-		case 'D':
+		case 'H':
+			// TODO(bmizerany): maybe sage NumCols for comparing against 'd' messages?
+			_, err := c.ReadCopyOut()
+			if err != nil {
+				return nil, err
+			}
+		case 'D', 'd':
+			if rs.row == nil {
+				if h.Type() == 'd' {
+					if err := rs.c.fc.DiscardBinarySignatureFlagsAndExt(); err != nil {
+						return nil, err
+					}
+				}
+				rs.row = &Row{}
+			}
 			m, err := c.ReadDataRow()
 			if err != nil {
 				return nil, err
 			}
-			if rs.row == nil {
-				rs.row = &Row{}
+			if m.NumCols == -1 {
+				continue
 			}
 			*rs.row = Row{
 				c:       rs.c,
@@ -367,6 +381,11 @@ func (rs *Rows) next() (*Row, error) {
 				rem:     int(m.NumCols),
 			}
 			return rs.row, nil
+		case 'c':
+			_, err := c.ReadCopyDone()
+			if err != nil {
+				return nil, err
+			}
 		case 'I':
 			// TODO(bmizerany): move this to ReadHeader
 			emptyErr = ErrEmptyQuery
