@@ -1,62 +1,93 @@
 package postgres
 
 import (
+	"context"
 	"fmt"
+	"testing"
 
 	"go4.org/mem"
+	"kr.dev/diff"
 )
 
-// func TestStream(t *testing.T) {
-// 	dsn := createDB(t)
+func TestCopyFreehand(t *testing.T) {
+	ctx := context.Background()
+	dsn := createDB(t)
+	dsn += " host=localhost" // so we can use Wireshark
+	c, err := Dial(ctx, dsn, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-// 	ctx := context.Background()
-// 	ctx = febe.WithTrace(ctx, &febe.Trace{
-// 		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
-// 			// t.Logf("received header: %v", h)
-// 		},
-// 	})
+	const q = `
+		COPY (SELECT 1 AS id, 'foo' AS name) TO STDOUT WITH (FORMAT binary)
+	`
+	for row, err := range c.QueryAll(ctx, q) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := row.ParseInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if id != 1 {
+			t.Fatalf("id = %v, want 1", id)
+		}
 
-// 	c, err := Dial(ctx, dsn, nil)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+		name, err := row.View()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if w := "foo"; !name.EqualString(w) {
+			t.Fatalf("name = %q, want %q", name.StringCopy(), w)
+		}
+	}
+}
 
-// 	_, err = c.Exec(ctx, "CREATE TABLE foo (id INT, name TEXT)")
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+func TestStream(t *testing.T) {
+	dsn := createDB(t)
 
-// 	_, err = c.Exec(ctx, "INSERT INTO foo VALUES (1, 'foo'), (2, 'bar'), (3, 'baz')")
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+	ctx := context.Background()
+	c, err := Dial(ctx, dsn, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-// 	type G struct {
-// 		ID   int
-// 		Name string
-// 	}
+	err = c.Exec(ctx, "CREATE TABLE foo (id INT, name TEXT)")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-// 	var got []G
-// 	for row, err := range c.CopyTo(ctx, "foo") {
-// 		if err != nil {
-// 			t.Fatal(err)
-// 		}
-// 		got = append(got, G{
-// 			// TODO(bmizerany): clean up, this has a lot of
-// 			// punctuation.
-// 			ID:   int(memUint(must(row.View()))),
-// 			Name: must(row.View()).StringCopy(),
-// 		})
-// 	}
+	err = c.Exec(ctx, "INSERT INTO foo VALUES (1, 'foo'), (2, 'bar'), (3, 'baz')")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-// 	want := []G{
-// 		{ID: 1, Name: "foo"},
-// 		{ID: 2, Name: "bar"},
-// 		{ID: 3, Name: "baz"},
-// 	}
+	type G struct {
+		ID   int
+		Name string
+	}
 
-// 	diff.Test(t, t.Errorf, got, want)
-// }
+	var got []G
+	for row, err := range c.CopyTo(ctx, "foo").All {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, G{
+			// TODO(bmizerany): clean up, this has a lot of
+			// punctuation.
+			ID:   int(memUint(must(row.View()))),
+			Name: must(row.View()).StringCopy(),
+		})
+	}
+
+	want := []G{
+		{ID: 1, Name: "foo"},
+		{ID: 2, Name: "bar"},
+		{ID: 3, Name: "baz"},
+	}
+
+	diff.Test(t, t.Errorf, got, want)
+}
 
 func must[T any](v T, err error) T {
 	if err != nil {

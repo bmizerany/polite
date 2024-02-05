@@ -2,16 +2,10 @@ package postgres
 
 import (
 	"context"
-	"fmt"
-	"iter"
 	"strings"
 )
 
-type CopyRow struct {
-	err error
-}
-
-func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter.Seq2[*CopyRow, error] {
+func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) *Rows {
 	var b strings.Builder
 	b.WriteString("COPY ")
 	writeQuotedIdentifier(&b, table)
@@ -28,43 +22,8 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns ...string) iter
 	}
 	b.WriteString(" TO STDOUT")
 	b.WriteString(" WITH (FORMAT binary)")
-
-	return func(yield func(*CopyRow, error) bool) {
-		if err := c.prepare(ctx, "", b.String()); err != nil {
-			yield(nil, err)
-			return
-		}
-		if err := c.execAndSync(""); err != nil {
-			yield(nil, err)
-			return
-		}
-		for {
-			h, err := c.fc.ReadHeader(ctx)
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-			if h.Type() == 'd' {
-				cd, err := c.fc.ReadCopyData()
-				if err != nil {
-					yield(nil, err)
-					return
-				}
-				_ = cd // TODO(bmizerany): use this
-				if !yield(&CopyRow{}, nil) {
-					return
-				}
-				continue
-			} else if h.Type() == 'c' {
-				return
-			} else {
-				yield(nil, fmt.Errorf("unexpected message type %q", h.Type()))
-				return
-			}
-		}
-	}
+	return c.Query(ctx, b.String())
 }
-
 func writeQuotedIdentifier(b *strings.Builder, name string) {
 	end := strings.IndexRune(name, 0)
 	if end > -1 {
