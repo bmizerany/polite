@@ -8,10 +8,27 @@ var (
 	CopyDone = errors.New("copy done")
 )
 
+type CopyFormat byte
+
+var (
+	CopyFormatText   CopyFormat = 0
+	CopyFormatBinary CopyFormat = 1
+)
+
+func (c *CopyFormat) String() string {
+	switch *c {
+	case CopyFormatText:
+		return "text"
+	case CopyFormatBinary:
+		return "binary"
+	}
+	return "unknown"
+}
+
 // CopyResponse represnets the response to the COPY IN, COPY OUT commands.
 type CopyResponse struct {
 	MessageHeader
-	Format  byte
+	Format  CopyFormat
 	NumCols int16
 
 	// NOTE: format codes, today, will always be all 0 or all 1
@@ -44,7 +61,7 @@ func (c *Conn) ReadCopyOut() (CopyResponse, error) {
 
 	return CopyResponse{
 		MessageHeader: c.h,
-		Format:        format,
+		Format:        CopyFormat(format),
 		NumCols:       numCols,
 	}, nil
 }
