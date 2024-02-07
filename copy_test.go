@@ -10,14 +10,16 @@ import (
 	"kr.dev/diff"
 )
 
-func TestCopyFreehand(t *testing.T) {
+func TestCopyFreestyle(t *testing.T) {
 	ctx := context.Background()
-	dsn := createDB(t)
-	dsn += " host=localhost" // so we can use Wireshark
-	c, err := Dial(ctx, dsn, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := newSession(t)
+
+	defer func() {
+		// Make sure the connection is still alive and in a good state.
+		if err := Ping(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}()
 
 	const q = `
 		COPY (SELECT 1 AS id, 'foo' AS name) TO STDOUT WITH (FORMAT binary)
@@ -42,15 +44,19 @@ func TestCopyFreehand(t *testing.T) {
 			t.Fatalf("name = %q, want %q", name.StringCopy(), w)
 		}
 	}
+
 }
 
 func TestCopyNonBinary(t *testing.T) {
 	ctx := context.Background()
-	dsn := createDB(t)
-	c, err := Dial(ctx, dsn, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := newSession(t)
+
+	defer func() {
+		// Make sure the connection is still alive and in a good state.
+		if err := Ping(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}()
 
 	const q = `
 		COPY (SELECT 1) TO STDOUT WITH (FORMAT text)
@@ -71,32 +77,30 @@ func TestCopyNonBinary(t *testing.T) {
 	}
 }
 
-func TestStream(t *testing.T) {
-	dsn := createDB(t)
-
+func TestCopyTo(t *testing.T) {
 	ctx := context.Background()
-	c, err := Dial(ctx, dsn, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := newSession(t)
 
-	err = c.Exec(ctx, "CREATE TABLE foo (id INT, name TEXT)")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = c.Exec(ctx, "INSERT INTO foo VALUES (1, 'foo'), (2, 'bar'), (3, 'baz')")
-	if err != nil {
-		t.Fatal(err)
+	for _, q := range []string{
+		"CREATE TEMP TABLE foo (id INT, name TEXT)",
+		"INSERT INTO foo VALUES (4, 'qux'), (5, 'quux')",
+	} {
+		err := c.Exec(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	type G struct {
 		ID   int
 		Name string
 	}
-
 	var got []G
-	for row, err := range c.CopyTo(ctx, "foo").All {
+	rows, err := c.CopyTo(ctx, "foo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for row, err := range rows.All {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -109,12 +113,48 @@ func TestStream(t *testing.T) {
 	}
 
 	want := []G{
-		{ID: 1, Name: "foo"},
-		{ID: 2, Name: "bar"},
-		{ID: 3, Name: "baz"},
+		{ID: 4, Name: "qux"},
+		{ID: 5, Name: "quux"},
 	}
 
 	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestCopyFrom(t *testing.T) {
+	ctx := context.Background()
+	c := newSession(t)
+
+	err := c.Exec(ctx, "CREATE TEMP TABLE foo (id INT, name TEXT)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	columns := []string{"id", "name"}
+	err = c.CopyFrom(ctx, "foo", columns, func(yield func([][]byte, error) bool) {
+		yield([][]byte{[]byte("\x00\x00\x00\x04"), []byte("qux")}, nil)
+		yield([][]byte{[]byte("\x00\x00\x00\x05"), []byte("quux")}, nil)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type G struct {
+		ID   int
+		Name string
+	}
+
+	var got []G
+	for row, err := range c.QueryAll(ctx, "SELECT * FROM foo") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, G{
+			// TODO(bmizerany): clean up, this has a lot of
+			// punctuation.
+			ID:   int(memUint(must(row.View()))),
+			Name: must(row.View()).StringCopy(),
+		})
+	}
 }
 
 func must[T any](v T, err error) T {
@@ -135,4 +175,10 @@ func memUint(v mem.RO) uint {
 		return uint(uint64(v.At(7)) | uint64(v.At(6))<<8 | uint64(v.At(5))<<16 | uint64(v.At(4))<<24 | uint64(v.At(3))<<32 | uint64(v.At(2))<<40 | uint64(v.At(1))<<48 | uint64(v.At(0))<<56)
 	}
 	panic(fmt.Errorf("invalid length: %d", v.Len()))
+}
+
+func pop[T any, S ~[]T](v *S) T {
+	x := (*v)[0]
+	*v = (*v)[1:]
+	return x
 }
