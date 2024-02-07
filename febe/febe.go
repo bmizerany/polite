@@ -95,6 +95,13 @@ func (c *Conn) Flush() error {
 	return c.c.Flush()
 }
 
+func maybeWrapWithBadConn(err error) error {
+	if err == io.EOF {
+		return io.ErrUnexpectedEOF
+	}
+	return err
+}
+
 type Message interface {
 	Header() MessageHeader
 }

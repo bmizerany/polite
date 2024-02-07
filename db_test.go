@@ -48,7 +48,7 @@ func newConn(t testing.TB) *Conn {
 	return c
 }
 
-func newConnNoDB(t testing.TB) *Conn {
+func newSession(t testing.TB) *Conn {
 	ctx := context.Background()
 	c, err := Dial(ctx, mainDSN, nil)
 	if err != nil {
@@ -188,7 +188,7 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 }
 
 func TestQueryEmptyQueryResponse(t *testing.T) {
-	c := newConnNoDB(t)
+	c := newSession(t)
 	t.Cleanup(func() {
 		checkPing(t, c)
 	})
