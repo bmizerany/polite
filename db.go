@@ -36,9 +36,8 @@ type statement struct {
 }
 
 type Conn struct {
-	dsnOrURL string
-	cn       io.Closer
-	fc       *febe.Conn
+	cn io.Closer
+	fc *febe.Conn
 
 	nstmt int
 	cache map[string]*statement

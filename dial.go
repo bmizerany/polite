@@ -72,9 +72,8 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	})
 
 	c := &Conn{
-		dsnOrURL: dsnOrURL,
-		cn:       cn,
-		fc:       febe.New(cn, cn),
+		cn: cn,
+		fc: febe.New(cn, cn),
 	}
 
 	err = func() error {
