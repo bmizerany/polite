@@ -30,11 +30,11 @@ type Conn struct {
 // clients may use a buffer size larger than the default by passing
 // bufio.Reader and bufio.Writer.
 func NewConn(r io.Reader, w io.Writer) *Conn {
-	c := &Conn{
+	cn := &Conn{
 		r: &byteReader{r: r},
 		w: bufio.NewWriterSize(w, postgresBufferSize),
 	}
-	return c
+	return cn
 }
 
 func (c *Conn) Err() error {

@@ -24,11 +24,11 @@ type Listener struct {
 }
 
 func DialListener(ctx context.Context, dsnOrURL string, cfg *Config) (*Listener, error) {
-	c, err := Dial(ctx, dsnOrURL, cfg)
+	cn, err := Dial(ctx, dsnOrURL, cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &Listener{c: c}, nil
+	return &Listener{c: cn}, nil
 }
 
 func (l *Listener) Listen(ctx context.Context, channel string) error {

@@ -74,8 +74,8 @@ type Conn struct {
 }
 
 func New(r io.Reader, w io.Writer) *Conn {
-	c := febeio.NewConn(r, w)
-	return &Conn{c: c}
+	cn := febeio.NewConn(r, w)
+	return &Conn{c: cn}
 }
 
 func (c *Conn) checkMessageHeader(want ...byte) error {
