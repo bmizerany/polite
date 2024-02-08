@@ -115,7 +115,7 @@ func TestQueryExtended(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func values(t testing.TB, row *Row) [][]byte {
+func collectValues(t testing.TB, row *Row) [][]byte {
 	var got [][]byte
 	for range row.Columns() {
 		data, err := row.View()
@@ -134,7 +134,7 @@ func TestQueryAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, values(t, row))
+		got = append(got, collectValues(t, row))
 	}
 	want := [][][]byte{
 		{{0, 0, 0, 1}},
@@ -153,7 +153,7 @@ func TestQueryBreakInAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, values(t, row))
+		got = append(got, collectValues(t, row))
 		break
 	}
 	want := [][][]byte{
