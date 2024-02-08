@@ -22,13 +22,13 @@ func testRead[T knownTypes](t *testing.T, name string, read func(*Conn) (T, erro
 	t.Run(name, func(t *testing.T) {
 		t.Helper()
 		for i, tt := range cases {
-			c := NewConn(strings.NewReader(tt.in), nil)
-			got, err := read(c)
+			cn := NewConn(strings.NewReader(tt.in), nil)
+			got, err := read(cn)
 			if got != tt.want || err != tt.err {
 				t.Errorf("[%d]: read(%q) = %v, %v, want %v, %v", i, tt.in, got, err, tt.want, tt.err)
 			}
 			if !tt.skipFollowupReadCheck {
-				_, err = read(c)
+				_, err = read(cn)
 				if !errors.Is(err, io.ErrUnexpectedEOF) {
 					t.Errorf("[%d]: read(%q) = %v, want ErrUnexpectedEOF", i, tt.in, err)
 				}
@@ -107,17 +107,17 @@ func testRoundTrip[T knownTypes](t *testing.T, name string, write func(*Conn, T)
 	t.Helper()
 
 	var buf bytes.Buffer
-	c := NewConn(&buf, &buf)
+	cn := NewConn(&buf, &buf)
 	for i, tt := range cases {
-		if err := write(c, tt); err != nil {
+		if err := write(cn, tt); err != nil {
 			t.Errorf("[%d]: write(%v) = %v, want nil", i, tt, err)
 		}
 	}
-	if err := c.Flush(); err != nil {
+	if err := cn.Flush(); err != nil {
 		t.Errorf("flush = %v, want nil", err)
 	}
 	for i, tt := range cases {
-		got, err := read(c)
+		got, err := read(cn)
 		if got != tt || err != nil {
 			t.Errorf("[%d]: read = %v, %v, want %v, nil", i, got, err, tt)
 		}
@@ -173,10 +173,10 @@ func benchmarkRead[T knownTypes](b *testing.B, name, in string, want T, read fun
 		b.Helper()
 		b.ReportAllocs()
 		r := strings.NewReader(in)
-		c := NewConn(r, nil)
+		cn := NewConn(r, nil)
 		for i := 0; i < b.N; i++ {
 			r.Reset(in)
-			n, err := read(c)
+			n, err := read(cn)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -199,9 +199,9 @@ func benchmarkWrite[T knownTypes](b *testing.B, name string, v T, write func(*Co
 	b.Run(name, func(b *testing.B) {
 		b.Helper()
 		b.ReportAllocs()
-		c := NewConn(nil, io.Discard)
+		cn := NewConn(nil, io.Discard)
 		for i := 0; i < b.N; i++ {
-			if err := write(c, v); err != nil {
+			if err := write(cn, v); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -218,9 +218,9 @@ func testWriteAllocs[T knownTypes](t *testing.T, name string, v T, write func(*C
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
 		t.Helper()
-		c := NewConn(nil, io.Discard)
+		cn := NewConn(nil, io.Discard)
 		n := testing.AllocsPerRun(1000, func() {
-			if err := write(c, v); err != nil {
+			if err := write(cn, v); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -241,10 +241,10 @@ func testReadAllocs[T knownTypes](t *testing.T, name, in string, want T, read fu
 	t.Run(name, func(t *testing.T) {
 		t.Helper()
 		r := strings.NewReader("")
-		c := NewConn(r, nil)
+		cn := NewConn(r, nil)
 		n := testing.AllocsPerRun(100, func() {
 			r.Reset(in)
-			n, err := read(c)
+			n, err := read(cn)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -268,12 +268,12 @@ func TestReadAllocs(t *testing.T) {
 
 func TestWriteBytes(t *testing.T) {
 	var buf bytes.Buffer
-	c := NewConn(&buf, &buf)
-	c.WriteBytesString("FEBE")
-	if err := c.Flush(); err != nil {
+	cn := NewConn(&buf, &buf)
+	cn.WriteBytesString("FEBE")
+	if err := cn.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadBytes()
+	got, err := cn.ReadBytes()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,8 +297,8 @@ func TestReadByteN(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run("", func(t *testing.T) {
-			c := NewConn(strings.NewReader(tt.in), nil)
-			got, err := c.ReadByteN(tt.n)
+			cn := NewConn(strings.NewReader(tt.in), nil)
+			got, err := cn.ReadByteN(tt.n)
 			if !errors.Is(err, tt.err) {
 				t.Errorf("err = %v, want %v", err, tt.err)
 			}
@@ -311,10 +311,10 @@ func TestReadByteN(t *testing.T) {
 
 func TestReadByteNAllocs(t *testing.T) {
 	r := strings.NewReader("")
-	c := NewConn(r, nil)
+	cn := NewConn(r, nil)
 	got := testing.AllocsPerRun(100, func() {
 		r.Reset("FEBE")
-		data, err := c.ReadByteN(4)
+		data, err := cn.ReadByteN(4)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -329,10 +329,10 @@ func TestReadByteNAllocs(t *testing.T) {
 
 func TestReadStringAllocs(t *testing.T) {
 	r := strings.NewReader("")
-	c := NewConn(r, nil)
+	cn := NewConn(r, nil)
 	got := testing.AllocsPerRun(100, func() {
 		r.Reset("FEBE\x00")
-		got, err := c.ReadString()
+		got, err := cn.ReadString()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -348,11 +348,11 @@ func TestReadStringAllocs(t *testing.T) {
 func TestDiscard(t *testing.T) {
 	const size = 10 << 10
 	r := strings.NewReader(strings.Repeat("X", size))
-	c := NewConn(r, nil)
-	if err := c.Discard(size); err != nil {
+	cn := NewConn(r, nil)
+	if err := cn.Discard(size); err != nil {
 		t.Fatal(err)
 	}
-	rem, err := c.ReadByte()
+	rem, err := cn.ReadByte()
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Errorf("err = %v, want %v", err, io.ErrUnexpectedEOF)
 	}

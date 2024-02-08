@@ -39,7 +39,7 @@ func TestListenNotify(t *testing.T) {
 	dsn := createDB(t)
 	ctx := context.Background()
 
-	c, err := Dial(ctx, dsn, nil)
+	cn, err := Dial(ctx, dsn, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -54,7 +54,7 @@ func TestListenNotify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := c.Exec(ctx, "NOTIFY foo, 'bar'"); err != nil {
+	if err := cn.Exec(ctx, "NOTIFY foo, 'bar'"); err != nil {
 		t.Fatal(err)
 	}
 

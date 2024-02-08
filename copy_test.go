@@ -12,11 +12,11 @@ import (
 
 func TestCopyFreestyle(t *testing.T) {
 	ctx := context.Background()
-	c := newSession(t)
+	cn := newSession(t)
 
 	defer func() {
 		// Make sure the connection is still alive and in a good state.
-		if err := Ping(ctx, c); err != nil {
+		if err := Ping(ctx, cn); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -24,7 +24,7 @@ func TestCopyFreestyle(t *testing.T) {
 	const q = `
 		COPY (SELECT 1 AS id, 'foo' AS name) TO STDOUT WITH (FORMAT binary)
 	`
-	for row, err := range c.QueryAll(ctx, q) {
+	for row, err := range cn.QueryAll(ctx, q) {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,11 +49,11 @@ func TestCopyFreestyle(t *testing.T) {
 
 func TestCopyNonBinary(t *testing.T) {
 	ctx := context.Background()
-	c := newSession(t)
+	cn := newSession(t)
 
 	defer func() {
 		// Make sure the connection is still alive and in a good state.
-		if err := Ping(ctx, c); err != nil {
+		if err := Ping(ctx, cn); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -62,7 +62,7 @@ func TestCopyNonBinary(t *testing.T) {
 		COPY (SELECT 1) TO STDOUT WITH (FORMAT text)
 	`
 	var got []error
-	for row, err := range c.QueryAll(ctx, q) {
+	for row, err := range cn.QueryAll(ctx, q) {
 		got = append(got, err)
 		if row != nil {
 			row.Close()
@@ -79,13 +79,13 @@ func TestCopyNonBinary(t *testing.T) {
 
 func TestCopyTo(t *testing.T) {
 	ctx := context.Background()
-	c := newSession(t)
+	cn := newSession(t)
 
 	for _, q := range []string{
 		"CREATE TEMP TABLE foo (id INT, name TEXT)",
 		"INSERT INTO foo VALUES (4, 'qux'), (5, 'quux')",
 	} {
-		err := c.Exec(ctx, q)
+		err := cn.Exec(ctx, q)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -96,7 +96,7 @@ func TestCopyTo(t *testing.T) {
 		Name string
 	}
 	var got []G
-	rows, err := c.CopyTo(ctx, "foo", nil)
+	rows, err := cn.CopyTo(ctx, "foo", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,15 +122,15 @@ func TestCopyTo(t *testing.T) {
 
 func TestCopyFrom(t *testing.T) {
 	ctx := context.Background()
-	c := newSession(t)
+	cn := newSession(t)
 
-	err := c.Exec(ctx, "CREATE TEMP TABLE foo (id INT, name TEXT)")
+	err := cn.Exec(ctx, "CREATE TEMP TABLE foo (id INT, name TEXT)")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	columns := []string{"id", "name"}
-	err = c.CopyFrom(ctx, "foo", columns, func(yield func([][]byte, error) bool) {
+	err = cn.CopyFrom(ctx, "foo", columns, func(yield func([][]byte, error) bool) {
 		yield([][]byte{[]byte("\x00\x00\x00\x04"), []byte("qux")}, nil)
 		yield([][]byte{[]byte("\x00\x00\x00\x05"), []byte("quux")}, nil)
 	})
@@ -144,7 +144,7 @@ func TestCopyFrom(t *testing.T) {
 	}
 
 	var got []G
-	for row, err := range c.QueryAll(ctx, "SELECT * FROM foo") {
+	for row, err := range cn.QueryAll(ctx, "SELECT * FROM foo") {
 		if err != nil {
 			t.Fatal(err)
 		}

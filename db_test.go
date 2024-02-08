@@ -33,41 +33,41 @@ func newSessionDB(t testing.TB) *Conn {
 		t.FailNow()
 	}
 
-	c, err := Dial(ctx, dsn, nil)
+	cn, err := Dial(ctx, dsn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := c.Close(); err != nil {
+		if err := cn.Close(); err != nil {
 			t.Fatal(err)
 		}
 	})
-	if err := c.Exec(ctx, "SELECT 1"); err != nil {
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
-	return c
+	return cn
 }
 
 func newSession(t testing.TB) *Conn {
 	ctx := context.Background()
-	c, err := Dial(ctx, mainDSN, nil)
+	cn, err := Dial(ctx, mainDSN, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := c.Close(); err != nil {
+		if err := cn.Close(); err != nil {
 			t.Fatal(err)
 		}
 	})
-	return c
+	return cn
 }
 
 func TestQuery(t *testing.T) {
-	c := newSessionDB(t)
+	cn := newSessionDB(t)
 
 	const q = `SELECT 1, 2, 'three'`
 	var got [][]any
-	for row, err := range c.QueryAll(context.Background(), q) {
+	for row, err := range cn.QueryAll(context.Background(), q) {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,14 +94,14 @@ func TestQuery(t *testing.T) {
 }
 
 func TestQueryExtended(t *testing.T) {
-	c := newSessionDB(t)
+	cn := newSessionDB(t)
 	const q = `
 		SELECT $1
 		UNION ALL
 		SELECT $2
 	`
 	var got []string
-	for row, err := range c.QueryAll(context.Background(), q, "hello", "world") {
+	for row, err := range cn.QueryAll(context.Background(), q, "hello", "world") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -128,9 +128,9 @@ func values(t testing.TB, row *Row) [][]byte {
 }
 
 func TestQueryAll(t *testing.T) {
-	c := newSessionDB(t)
+	cn := newSessionDB(t)
 	var got [][][]byte
-	for row, err := range c.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range cn.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -147,9 +147,9 @@ func TestQueryAll(t *testing.T) {
 }
 
 func TestQueryBreakInAll(t *testing.T) {
-	c := newSessionDB(t)
+	cn := newSessionDB(t)
 	var got [][][]byte
-	for row, err := range c.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range cn.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -172,9 +172,9 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 		}
 	}()
 
-	c := newSessionDB(t)
+	cn := newSessionDB(t)
 	var n int
-	for row, err := range c.QueryAll(context.Background(), "SELECT generate_series(1, 3)") {
+	for row, err := range cn.QueryAll(context.Background(), "SELECT generate_series(1, 3)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -188,15 +188,15 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 }
 
 func TestQueryEmptyQueryResponse(t *testing.T) {
-	c := newSession(t)
+	cn := newSession(t)
 	t.Cleanup(func() {
-		checkPing(t, c)
+		checkPing(t, cn)
 	})
 
 	ctx := context.Background()
 
 	var got []error
-	for _, err := range c.QueryAll(ctx, "") {
+	for _, err := range cn.QueryAll(ctx, "") {
 		got = append(got, err)
 	}
 	if len(got) != 1 {
@@ -208,25 +208,25 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 }
 
 func TestExecSelectTag(t *testing.T) {
-	c := newSessionDB(t)
-	if err := c.Exec(context.Background(), "SELECT 1"); err != nil {
+	cn := newSessionDB(t)
+	if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 	want := Result{
 		RowsAffected: 1,
 	}
-	diff.Test(t, t.Errorf, c.LastResult(), want)
+	diff.Test(t, t.Errorf, cn.LastResult(), want)
 }
 
 func TestExecLimit1(t *testing.T) {
-	c := newSessionDB(t)
+	cn := newSessionDB(t)
 	var got []byte
 	ctx := febe.WithTrace(context.Background(), &febe.Trace{
 		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
 			got = append(got, h.Type())
 		},
 	})
-	if err := c.Exec(ctx, "SELECT generate_series(1, 3)"); err != nil {
+	if err := cn.Exec(ctx, "SELECT generate_series(1, 3)"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -235,24 +235,24 @@ func TestExecLimit1(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	c := newSessionDB(t)
-	if err := c.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)"); err != nil {
+	cn := newSessionDB(t)
+	if err := cn.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Exec(context.Background(), "INSERT INTO foo VALUES (1)"); err != nil {
+	if err := cn.Exec(context.Background(), "INSERT INTO foo VALUES (1)"); err != nil {
 		t.Fatal(err)
 	}
 	want := Result{
 		RowsAffected: 1,
 	}
-	diff.Test(t, t.Errorf, c.LastResult(), want)
+	diff.Test(t, t.Errorf, cn.LastResult(), want)
 }
 
 func TestErrors(t *testing.T) {
 	ctx := context.Background()
-	c := newSession(t)
+	cn := newSession(t)
 
-	err := c.Exec(ctx, "SELECT !")
+	err := cn.Exec(ctx, "SELECT !")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -265,16 +265,16 @@ func TestErrors(t *testing.T) {
 	}
 
 	// ensure we leave in a good state
-	if err = Ping(ctx, c); err != nil {
+	if err = Ping(ctx, cn); err != nil {
 		t.Fatalf("ping failed: %v", err)
 	}
 }
 
 func TestNotice(t *testing.T) {
-	c := newSessionDB(t)
-	defer checkPing(t, c) // ensure we leave in a good state
+	cn := newSessionDB(t)
+	defer checkPing(t, cn) // ensure we leave in a good state
 
-	if err := c.Exec(context.Background(), `
+	if err := cn.Exec(context.Background(), `
 		CREATE FUNCTION raise_notice() RETURNS integer
 		   LANGUAGE plpgsql AS
 		$$BEGIN
@@ -287,7 +287,7 @@ func TestNotice(t *testing.T) {
 
 	notice := func(ctx context.Context) {
 		t.Helper()
-		if err := c.Exec(ctx, "SELECT raise_notice()"); err != nil {
+		if err := cn.Exec(ctx, "SELECT raise_notice()"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -296,7 +296,7 @@ func TestNotice(t *testing.T) {
 
 	// no handler
 	notice(ctx)
-	checkPing(t, c) // check notice is dropped
+	checkPing(t, cn) // check notice is dropped
 
 	var got []*febe.Notice
 	ctx = febe.WithTrace(ctx, &febe.Trace{
@@ -319,8 +319,8 @@ func TestNotice(t *testing.T) {
 }
 
 func TestParameterStatus(t *testing.T) {
-	c := newSessionDB(t)
-	defer checkPing(t, c) // ensure we leave in a good state
+	cn := newSessionDB(t)
+	defer checkPing(t, cn) // ensure we leave in a good state
 
 	var got []febe.Parameter
 	ctx := febe.WithTrace(context.Background(), &febe.Trace{
@@ -329,11 +329,11 @@ func TestParameterStatus(t *testing.T) {
 		},
 	})
 
-	if err := c.Exec(ctx, "SET datestyle TO postgres, dmy"); err != nil {
+	if err := cn.Exec(ctx, "SET datestyle TO postgres, dmy"); err != nil {
 		t.Fatal(err)
 	}
 
-	checkPing(t, c) // flush out parameter status if not received by Exec
+	checkPing(t, cn) // flush out parameter status if not received by Exec
 
 	diff.Test(t, t.Errorf, got, []febe.Parameter{
 		{Name: "DateStyle", Value: "Postgres, DMY"},
@@ -341,19 +341,19 @@ func TestParameterStatus(t *testing.T) {
 }
 
 func TestByteaString(t *testing.T) {
-	c := newSessionDB(t)
-	defer checkPing(t, c) // ensure we leave in a good state
+	cn := newSessionDB(t)
+	defer checkPing(t, cn) // ensure we leave in a good state
 
 	ctx := context.Background()
-	if err := c.Exec(ctx, "CREATE TEMP TABLE foo (bar BYTEA)"); err != nil {
+	if err := cn.Exec(ctx, "CREATE TEMP TABLE foo (bar BYTEA)"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Exec(ctx, `INSERT INTO foo VALUES ($1)`, "\x12\x345"); err != nil {
+	if err := cn.Exec(ctx, `INSERT INTO foo VALUES ($1)`, "\x12\x345"); err != nil {
 		t.Fatal(err)
 	}
 
 	var got []string
-	for row, err := range c.QueryAll(ctx, "SELECT bar FROM foo") {
+	for row, err := range cn.QueryAll(ctx, "SELECT bar FROM foo") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -380,11 +380,11 @@ func checkPing(t *testing.T, c *Conn) {
 var (
 	mainDSN = "dbname=postgres port=5433 host=localhost sslmode=disable user=postgres password=postgres"
 	mc      = sync.OnceValue(func() *Conn {
-		c, err := Dial(context.Background(), mainDSN, nil)
+		cn, err := Dial(context.Background(), mainDSN, nil)
 		if err != nil {
 			panic(err)
 		}
-		return c
+		return cn
 	})
 )
 

@@ -14,18 +14,18 @@ import (
 )
 
 func TestError(t *testing.T) {
-	c := New(nil, errorWriter{}) // panics if a Read is called
+	cn := New(nil, errorWriter{}) // panics if a Read is called
 	for i := 0; i < 3; i++ {
-		err := c.WriteStartupMessage()
+		err := cn.WriteStartupMessage()
 		if i == 0 && err != nil {
 			t.Fatalf("[%d]: unexpected error: %v", i, err)
 		} else if i > 0 && !errors.Is(err, errTest) {
 			t.Fatalf("[%d]: unexpected error: %v", i, err)
 		}
-		if !errors.Is(c.Flush(), errTest) {
+		if !errors.Is(cn.Flush(), errTest) {
 			t.Fatalf("[%d]: unexpected error: %v", i, err)
 		}
-		if !errors.Is(c.Err(), errTest) {
+		if !errors.Is(cn.Err(), errTest) {
 			t.Fatalf("[%d]: unexpected error: %v", i, err)
 		}
 	}
@@ -74,31 +74,31 @@ func writeNoticeResponse(t *testing.T, EorN byte, c *Conn) {
 
 func TestReadHeaderReadErrorResponse(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
-	writeNoticeResponse(t, 'E', c)
+	cn := New(&b, &b)
+	writeNoticeResponse(t, 'E', cn)
 	ctx := context.Background()
-	h, err := c.ReadHeader(ctx)
+	h, err := cn.ReadHeader(ctx)
 	diff.Test(t, t.Errorf, h, MessageHeader{})
 	diff.Test(t, t.Errorf, err, testNotice.AsError())
 }
 
 func TestReadHeaderEmpty(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
+	cn := New(&b, &b)
 
 	ctx := context.Background()
-	gotH, gotErr := c.ReadHeader(ctx)
+	gotH, gotErr := cn.ReadHeader(ctx)
 	diff.Test(t, t.Errorf, gotH, MessageHeader{})
 	diff.Test(t, t.Errorf, gotErr, io.ErrUnexpectedEOF)
 }
 
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
-	writeNoticeResponse(t, 'N', c)
-	c.c.WriteByte('X') // Terminate
-	c.c.WriteInt32(4)
-	c.c.Flush()
+	cn := New(&b, &b)
+	writeNoticeResponse(t, 'N', cn)
+	cn.c.WriteByte('X') // Terminate
+	cn.c.WriteInt32(4)
+	cn.c.Flush()
 
 	var got *Notice
 	ctx := WithTrace(context.Background(), &Trace{
@@ -111,7 +111,7 @@ func TestNoticeResponse(t *testing.T) {
 		},
 	})
 
-	_, err := c.ReadHeader(ctx)
+	_, err := cn.ReadHeader(ctx)
 	if !errors.Is(err, ErrTerminated) {
 		t.Fatalf("err = %v; want %v", err, ErrTerminated)
 	}
@@ -121,14 +121,14 @@ func TestNoticeResponse(t *testing.T) {
 
 func TestWriteStartupMessage(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
-	if err := c.WriteStartupMessage("user=test"); err != nil {
+	cn := New(&b, &b)
+	if err := cn.WriteStartupMessage("user=test"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Err(); err != nil {
+	if err := cn.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Flush(); err != nil {
+	if err := cn.Flush(); err != nil {
 		t.Fatal(err)
 	}
 	want := []byte{
@@ -146,17 +146,17 @@ func TestWriteStartupMessage(t *testing.T) {
 
 func TestReadReadyForQuery(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
-	c.c.WriteByte('Z')
-	c.c.WriteInt32(5)
-	c.c.WriteByte('I')
-	c.c.Flush()
+	cn := New(&b, &b)
+	cn.c.WriteByte('Z')
+	cn.c.WriteInt32(5)
+	cn.c.WriteByte('I')
+	cn.c.Flush()
 
-	_, err := c.ReadHeader(context.Background())
+	_, err := cn.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadReadyForQuery()
+	got, err := cn.ReadReadyForQuery()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,18 +179,18 @@ func TestReadAuthentication(t *testing.T) {
 	}
 	for _, tt := range cases {
 		var b bytes.Buffer
-		c := New(&b, &b)
+		cn := New(&b, &b)
 
-		c.c.WriteByte('R')
-		c.c.WriteInt32(8)
-		c.c.WriteInt32(int32(tt.typ))
-		c.c.Flush()
+		cn.c.WriteByte('R')
+		cn.c.WriteInt32(8)
+		cn.c.WriteInt32(int32(tt.typ))
+		cn.c.Flush()
 
-		_, err := c.ReadHeader(context.Background())
+		_, err := cn.ReadHeader(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := c.ReadAuthentication()
+		got, err := cn.ReadAuthentication()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -245,17 +245,17 @@ func BenchmarkParseCommandTag(b *testing.B) {
 
 func TestReadCommandComplete(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
-	c.c.WriteByte('C')
-	c.c.WriteInt32(13)
-	c.c.WriteString("SELECT 1")
-	c.c.Flush()
+	cn := New(&b, &b)
+	cn.c.WriteByte('C')
+	cn.c.WriteInt32(13)
+	cn.c.WriteString("SELECT 1")
+	cn.c.Flush()
 
-	_, err := c.ReadHeader(context.Background())
+	_, err := cn.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadCommandComplete()
+	got, err := cn.ReadCommandComplete()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,22 +292,22 @@ func TestReadDataRow(t *testing.T) {
 	ctx := context.Background()
 
 	var b bytes.Buffer
-	c := New(&b, &b)
-	defer c.checkDone(t)
+	cn := New(&b, &b)
+	defer cn.checkDone(t)
 
-	c.c.WriteByte('D')
-	c.c.WriteInt32(24)
-	c.c.WriteInt16(2) // number of cols
-	c.c.WriteSizedBytes([]byte("hello"))
-	c.c.WriteSizedBytes([]byte("world"))
-	c.c.Flush()
+	cn.c.WriteByte('D')
+	cn.c.WriteInt32(24)
+	cn.c.WriteInt16(2) // number of cols
+	cn.c.WriteSizedBytes([]byte("hello"))
+	cn.c.WriteSizedBytes([]byte("world"))
+	cn.c.Flush()
 
-	_, err := c.ReadHeader(ctx)
+	_, err := cn.ReadHeader(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := c.ReadDataRow()
+	got, err := cn.ReadDataRow()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestReadDataRow(t *testing.T) {
 
 	gotValues := make([][]byte, got.NumCols)
 	for i := range got.NumCols {
-		v, err := c.ReadDataRowValue()
+		v, err := cn.ReadDataRowValue()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -337,18 +337,18 @@ func TestReadDataRow(t *testing.T) {
 
 func TestReadEmptyQueryResponse(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
-	c.c.WriteByte('I')
-	c.c.WriteInt32(4)
-	c.c.Flush()
-	if err := c.Flush(); err != nil {
+	cn := New(&b, &b)
+	cn.c.WriteByte('I')
+	cn.c.WriteInt32(4)
+	cn.c.Flush()
+	if err := cn.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	_, err := c.ReadHeader(context.Background())
+	_, err := cn.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := c.ReadEmptyQuery()
+	got, err := cn.ReadEmptyQuery()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,8 +374,8 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 	var checked int
 
 	to := reflect.TypeOf(&Conn{})
-	c := &Conn{}
-	vo := reflect.ValueOf(c)
+	cn := &Conn{}
+	vo := reflect.ValueOf(cn)
 	for i := 0; i < to.NumMethod(); i++ {
 		m := to.Method(i)
 		if !strings.HasPrefix(m.Name, "Read") {
@@ -390,7 +390,7 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 			testReadMethodSignature(t, m)
 
 			vm := vo.Method(i)
-			c.h = MessageHeader{
+			cn.h = MessageHeader{
 				msgType: '!',
 				msgLen:  1,
 			}
@@ -422,22 +422,22 @@ func TestReadNotification(t *testing.T) {
 	// struct.
 
 	var b bytes.Buffer
-	c := New(&b, &b)
-	defer c.checkDone(t)
+	cn := New(&b, &b)
+	defer cn.checkDone(t)
 
-	c.c.WriteByte('A')
-	c.c.WriteInt32(33)
-	c.c.WriteInt32(1234) // pid
-	c.c.WriteString("hello")
-	c.c.WriteString("world")
-	c.c.Flush()
+	cn.c.WriteByte('A')
+	cn.c.WriteInt32(33)
+	cn.c.WriteInt32(1234) // pid
+	cn.c.WriteString("hello")
+	cn.c.WriteString("world")
+	cn.c.Flush()
 
-	_, err := c.ReadHeader(context.Background())
+	_, err := cn.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := c.ReadNotification()
+	got, err := cn.ReadNotification()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,12 +458,12 @@ func TestReadNotification(t *testing.T) {
 
 func TestWriteParse(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
+	cn := New(&b, &b)
 
-	if err := c.WriteParse("test", "SELECT 1"); err != nil {
+	if err := cn.WriteParse("test", "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
-	c.Flush()
+	cn.Flush()
 
 	want := []byte{
 		'P', 0, 0, 0, 20, // message header
@@ -478,19 +478,19 @@ func TestWriteParse(t *testing.T) {
 
 func TestWriteBind(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
+	cn := New(&b, &b)
 
 	args := []string{
 		"hello",
 		"world",
 	}
-	if err := c.WriteBind("portal", "stmt", args, &FormatParams{
+	if err := cn.WriteBind("portal", "stmt", args, &FormatParams{
 		In:  []int16{1},
 		Out: []int16{1, 0},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	c.Flush()
+	cn.Flush()
 
 	want := []byte{
 		'B',         // message type
@@ -516,12 +516,12 @@ func TestWriteBind(t *testing.T) {
 
 func TestWriteSync(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
+	cn := New(&b, &b)
 
-	if err := c.WriteSync(); err != nil {
+	if err := cn.WriteSync(); err != nil {
 		t.Fatal(err)
 	}
-	c.Flush()
+	cn.Flush()
 
 	want := []byte{
 		'S', 0, 0, 0, 4, // message header
@@ -531,12 +531,12 @@ func TestWriteSync(t *testing.T) {
 
 func TestWriteExecute(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
+	cn := New(&b, &b)
 
-	if err := c.WriteExecute("portal", 0); err != nil {
+	if err := cn.WriteExecute("portal", 0); err != nil {
 		t.Fatal(err)
 	}
-	c.Flush()
+	cn.Flush()
 
 	want := []byte{
 		'E',         // message type
@@ -549,15 +549,15 @@ func TestWriteExecute(t *testing.T) {
 
 func TestReadParameterStatus(t *testing.T) {
 	var b bytes.Buffer
-	c := New(&b, &b)
+	cn := New(&b, &b)
 
-	c.c.WriteByte('S')
-	c.c.WriteInt32(21)
-	c.c.WriteString("server_version")
-	c.c.WriteString("9.6.5")
-	c.c.WriteByte('X')
-	c.c.WriteInt32(4)
-	c.Flush()
+	cn.c.WriteByte('S')
+	cn.c.WriteInt32(21)
+	cn.c.WriteString("server_version")
+	cn.c.WriteString("9.6.5")
+	cn.c.WriteByte('X')
+	cn.c.WriteInt32(4)
+	cn.Flush()
 
 	var got []Parameter
 	ctx := context.Background()
@@ -567,7 +567,7 @@ func TestReadParameterStatus(t *testing.T) {
 		},
 	})
 
-	_, err := c.ReadHeader(ctx)
+	_, err := cn.ReadHeader(ctx)
 	if !errors.Is(err, ErrTerminated) {
 		t.Fatal(err)
 	}
