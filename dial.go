@@ -111,7 +111,7 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 				}
 				return nil
 			default:
-				return fmt.Errorf("%w: unexpected message %q", ErrBadConn, h.Type())
+				return unexpectedMessage(h)
 			}
 		}
 	}()
@@ -143,7 +143,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 			return zero, err
 		}
 		if cr.Type != wantType {
-			return zero, fmt.Errorf("%w: unexpected authentication type %s; want %d", ErrBadConn, cr.Type, wantType)
+			return zero, fmt.Errorf("unexpected authentication type %s; want %d", cr.Type, wantType)
 		}
 		return cr, nil
 	}
@@ -208,7 +208,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 		_, err := nextResponse(febe.AuthenticationTypeOK)
 		return err
 	default:
-		return fmt.Errorf("%w: unexpected authentication type %s", ErrBadConn, cr.Type)
+		return fmt.Errorf("unexpected authentication type %s", cr.Type)
 	}
 }
 
@@ -223,7 +223,7 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("%w: backend does not support TLS", ErrBadConn)
+		return nil, ErrTLSRefused
 	}
 
 	tcfg := cmp.Or(cfg.TLSConfig.Clone(), &tls.Config{})

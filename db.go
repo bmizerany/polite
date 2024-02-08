@@ -26,7 +26,7 @@ var (
 	ErrDone         = errors.New("pqlite: done")
 	ErrEmptyQuery   = errors.New("pqlite: empty query")
 	ErrOutOfColumns = errors.New("pqlite: out of columns")
-	ErrBadConn      = errors.New("pqlite: bad connection")
+	ErrTLSRefused   = errors.New("pqlite: TLS refused by backend")
 )
 
 type statement struct {
@@ -408,7 +408,7 @@ func (rs *Rows) next() (*Row, error) {
 			// TODO(bmizerany): save the transaction status
 			return nil, cmp.Or(emptyErr, ErrDone)
 		default:
-			return nil, fmt.Errorf("%w: Rows.next: unexpected message type: %q", ErrBadConn, h.Type())
+			return nil, unexpectedMessage(h)
 		}
 	}
 }
@@ -425,4 +425,8 @@ func (rs *Rows) Close() error {
 		}
 	}
 	return nil
+}
+
+func unexpectedMessage(h febe.MessageHeader) error {
+	return fmt.Errorf("pqlite: unknown message type: %q", h.Type())
 }
