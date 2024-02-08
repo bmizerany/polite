@@ -154,7 +154,7 @@ func (c *Conn) discardUntilReady(ctx context.Context) error {
 			return err
 		}
 		if err := c.fc.DiscardMessage(); err != nil {
-			return fmt.Errorf("%w: %w", ErrBadConn, err)
+			return err
 		}
 		if h.Type() == 'Z' {
 			return nil
