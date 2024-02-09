@@ -138,11 +138,10 @@ func (c *Conn) copyFrom(ctx context.Context, table string, columns []string, fro
 
 func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
 	var fe *febe.Error
-	if !errors.As(initErr, &fe) {
-		return initErr
-	}
-	if err := c.discardUntilReady(ctx); err != nil {
-		return err
+	if errors.As(initErr, &fe) {
+		if err := c.discardUntilReady(ctx); err != nil {
+			return err
+		}
 	}
 	return initErr
 }
