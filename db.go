@@ -302,6 +302,7 @@ type Rows struct {
 	err error
 
 	rowsAffected int64
+	processed    int
 
 	row *Row // owned by next()
 }
@@ -370,12 +371,12 @@ func (rs *Rows) next() (*Row, error) {
 			}
 		case 'D', 'd':
 			if rs.row == nil {
-				if h.Type() == 'd' {
-					if err := rs.c.fc.DiscardBinarySignatureFlagsAndExt(); err != nil {
-						return nil, err
-					}
-				}
 				rs.row = &Row{}
+			}
+			if rs.processed == 0 && h.Type() == 'd' {
+				if err := rs.c.fc.DiscardBinarySignatureFlagsAndExt(); err != nil {
+					return nil, err
+				}
 			}
 			m, err := c.ReadDataRow()
 			if err != nil {
@@ -384,6 +385,7 @@ func (rs *Rows) next() (*Row, error) {
 			if m.NumCols == -1 {
 				continue
 			}
+			rs.processed++
 			*rs.row = Row{
 				c:       rs.c,
 				numCols: int(m.NumCols),
