@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -91,33 +92,76 @@ func TestCopyTo(t *testing.T) {
 		}
 	}
 
-	type G struct {
-		ID   int
-		Name string
+	cases := []struct {
+		columns []string
+		want    [][]string // values in binary
+	}{
+		{
+			columns: nil,
+			want: [][]string{
+				{"\x00\x00\x00\x04", "qux"},
+				{"\x00\x00\x00\x05", "quux"},
+			},
+		},
+		{
+			columns: []string{"id"},
+			want: [][]string{
+				{"\x00\x00\x00\x04"},
+				{"\x00\x00\x00\x05"},
+			},
+		},
+		{
+			columns: []string{"name"},
+			want: [][]string{
+				{"qux"},
+				{"quux"},
+			},
+		},
+		{
+			columns: []string{"id", "name"},
+			want: [][]string{
+				{"\x00\x00\x00\x04", "qux"},
+				{"\x00\x00\x00\x05", "quux"},
+			},
+		},
+		{
+			columns: []string{"name", "id"},
+			want: [][]string{
+				{"qux", "\x00\x00\x00\x04"},
+				{"quux", "\x00\x00\x00\x05"},
+			},
+		},
 	}
-	var got []G
-	rows, err := cn.CopyTo(ctx, "foo", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for row, err := range rows.All {
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, G{
-			// TODO(bmizerany): clean up, this has a lot of
-			// punctuation.
-			ID:   int(memUint(must(row.View()))),
-			Name: must(row.View()).StringCopy(),
+
+	for _, tt := range cases {
+		t.Run(fmt.Sprintf("%v", tt.columns), func(t *testing.T) {
+			rows, err := cn.CopyTo(ctx, "foo", tt.columns)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got [][]string
+			for row, err := range rows.All {
+				if err != nil {
+					t.Fatal(err)
+				}
+				var vv []string
+				for {
+					v, err := row.View()
+					if errors.Is(err, ErrOutOfColumns) {
+						break
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Logf("v = %v", v)
+					vv = append(vv, v.StringCopy())
+				}
+				got = append(got, vv)
+			}
+
+			diff.Test(t, t.Errorf, got, tt.want)
 		})
 	}
-
-	want := []G{
-		{ID: 4, Name: "qux"},
-		{ID: 5, Name: "quux"},
-	}
-
-	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestCopyFrom(t *testing.T) {
