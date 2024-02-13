@@ -115,40 +115,51 @@ func TestQueryExtended(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func collectValues(t testing.TB, row *Row) [][]byte {
-	var got [][]byte
+func collectRows(t testing.TB, rows *Rows) [][]string {
+	var got [][]string
+	for row, err := range rows.All {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, collectValues(t, row))
+	}
+	return got
+}
+
+func collectValues(t testing.TB, row *Row) []string {
+	var got []string
 	for range row.Columns() {
 		data, err := row.View()
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, []byte(data.StringCopy()))
+		got = append(got, data.StringCopy())
 	}
 	return got
 }
 
 func TestQueryAll(t *testing.T) {
 	cn := newSessionDB(t)
-	var got [][][]byte
+	var got [][]string
 	for row, err := range cn.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
 		got = append(got, collectValues(t, row))
 	}
-	want := [][][]byte{
-		{{0, 0, 0, 1}},
-		{{0, 0, 0, 2}},
-		{{0, 0, 0, 3}},
-		{{0, 0, 0, 4}},
-		{{0, 0, 0, 5}},
+	want := [][]string{
+		{"\x00\x00\x00\x01"},
+		{"\x00\x00\x00\x02"},
+		{"\x00\x00\x00\x03"},
+		{"\x00\x00\x00\x04"},
+		{"\x00\x00\x00\x05"},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestQueryBreakInAll(t *testing.T) {
 	cn := newSessionDB(t)
-	var got [][][]byte
+	var got [][]string
 	for row, err := range cn.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
@@ -156,8 +167,8 @@ func TestQueryBreakInAll(t *testing.T) {
 		got = append(got, collectValues(t, row))
 		break
 	}
-	want := [][][]byte{
-		{{0, 0, 0, 1}},
+	want := [][]string{
+		{"\x00\x00\x00\x01"},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }

@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -139,29 +138,31 @@ func TestCopyTo(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var got [][]string
-			for row, err := range rows.All {
-				if err != nil {
-					t.Fatal(err)
-				}
-				var vv []string
-				for {
-					v, err := row.View()
-					if errors.Is(err, ErrOutOfColumns) {
-						break
-					}
-					if err != nil {
-						t.Fatal(err)
-					}
-					t.Logf("v = %v", v)
-					vv = append(vv, v.StringCopy())
-				}
-				got = append(got, vv)
-			}
-
+			got := collectRows(t, rows)
 			diff.Test(t, t.Errorf, got, tt.want)
 		})
 	}
+}
+
+func TestCopyToReset(t *testing.T) {
+	const q = `
+		COPY (SELECT 1) TO STDOUT WITH (FORMAT binary)
+	`
+
+	ctx := context.Background()
+	cn := newSession(t)
+
+	rows, err := cn.Query(ctx, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Reset the connection to make sure the copy is properly aborted.
+	got := collectRows(t, rows)
+	want := [][]string{
+		{"\x00\x00\x00\x01"},
+	}
+	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestCopyFrom(t *testing.T) {
