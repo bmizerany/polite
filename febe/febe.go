@@ -20,6 +20,10 @@ var (
 	// ErrTerminate is returned when the server has terminated a
 	// connection.
 	ErrTerminated = fmt.Errorf("febe: terminated")
+
+	// ErrEmptyQuery is returned when the server has terminated a
+	// query because it was empty.
+	ErrEmptyQuery = (&Notice{Message: "empty query"}).AsError()
 )
 
 // RequestTLS sends the frontend message to request TLS to the server. If
@@ -175,6 +179,8 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 				})
 			}
 			continue
+		case 'I':
+			return zero, ErrEmptyQuery
 		case 'X':
 			return zero, ErrTerminated
 		default:
@@ -596,17 +602,6 @@ func (c *Conn) WriteExecute(portal string, limit int) error {
 	c.c.WriteString(portal)
 	c.c.WriteInt32(int32(limit))
 	return c.Err()
-}
-
-type EmptyQueryResponse struct {
-	MessageHeader
-}
-
-func (c *Conn) ReadEmptyQuery() (EmptyQueryResponse, error) {
-	if err := c.checkMessageHeader('I'); err != nil {
-		return EmptyQueryResponse{}, err
-	}
-	return EmptyQueryResponse{MessageHeader: c.h}, nil
 }
 
 type CommandCompleteResponse struct {

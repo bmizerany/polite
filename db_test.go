@@ -194,7 +194,7 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected 1 error; got %d", len(got))
 	}
-	if !errors.Is(got[0], ErrEmptyQuery) {
+	if !errors.Is(got[0], febe.ErrEmptyQuery) {
 		t.Fatalf("expected ErrEmptyQuery; got %v", got[0])
 	}
 }

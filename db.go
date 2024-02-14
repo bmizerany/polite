@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -348,7 +347,6 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 
 func (rs *Rows) next() (*Row, error) {
 	c := rs.c.fc
-	var emptyErr error
 	for {
 		h, err := c.ReadHeader(rs.ctx)
 		if err != nil {
@@ -404,17 +402,13 @@ func (rs *Rows) next() (*Row, error) {
 			if err != nil {
 				return nil, err
 			}
-		case 'I':
-			// TODO(bmizerany): move this to ReadHeader
-			emptyErr = ErrEmptyQuery
-			continue
 		case 'Z':
 			_, err := c.ReadReadyForQuery()
 			if err != nil {
 				return nil, err
 			}
 			// TODO(bmizerany): save the transaction status
-			return nil, cmp.Or(emptyErr, ErrDone)
+			return nil, ErrDone
 		default:
 			return nil, unexpectedMessage(h)
 		}
