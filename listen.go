@@ -4,16 +4,14 @@ import (
 	"context"
 	"fmt"
 	"iter"
-
-	"go4.org/mem"
 )
 
 // Notification represents a notification received from the database sent by
 // a NOTIFY command.
 type Notification struct {
 	PID     int    // backend pid that sent the notification
-	Channel mem.RO // channel name
-	Payload mem.RO // notification payload
+	Channel []byte // channel name
+	Payload []byte // notification payload
 }
 
 // Listener listens for notifications sent by the database via
@@ -59,8 +57,8 @@ func (l *Listener) Notifications(ctx context.Context) iter.Seq2[Notification, er
 				}
 				n := Notification{
 					PID:     int(m.PID),
-					Channel: mem.B(m.Channel),
-					Payload: mem.B(m.Payload),
+					Channel: m.Channel,
+					Payload: m.Payload,
 				}
 				if !yield(n, nil) {
 					return

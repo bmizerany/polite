@@ -5,7 +5,6 @@ go 1.22rc2
 require (
 	github.com/jackc/pgx/v5 v5.5.0
 	github.com/lib/pq v1.10.9
-	go4.org/mem v0.0.0-20220726221520-4f986261bf13
 	golang.org/x/exp v0.0.0-20220218215828-6cf2b201936e
 	kr.dev/diff v0.3.0
 )
