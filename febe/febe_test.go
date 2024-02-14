@@ -345,20 +345,9 @@ func TestReadEmptyQueryResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := cn.ReadHeader(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrEmptyQuery) {
+		t.Fatalf("got %v, want %v", err, ErrEmptyQuery)
 	}
-	got, err := cn.ReadEmptyQuery()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := EmptyQueryResponse{
-		MessageHeader: MessageHeader{
-			msgType: 'I',
-			msgLen:  4,
-		},
-	}
-	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestReadUnknownTypeChecks(t *testing.T) {
