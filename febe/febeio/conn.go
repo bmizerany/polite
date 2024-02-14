@@ -5,8 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-
-	"go4.org/mem"
 )
 
 const postgresBufferSize = 8 << 10
@@ -190,9 +188,4 @@ func (c *Conn) Discard(n int) error {
 // Flush calls the underlying bufio.Writer's Flush method.
 func (c *Conn) Flush() error {
 	return c.w.Flush()
-}
-
-// Buffer returns the underlying buffer window.
-func (c *Conn) Buffer() mem.RO {
-	return mem.B(c.r.window())
 }

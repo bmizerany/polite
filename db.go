@@ -10,7 +10,6 @@ import (
 	"strconv"
 
 	"blake.io/postgres/febe"
-	"go4.org/mem"
 )
 
 // TODO: https://www.postgresql.org/docs/current/protocol-flow.html
@@ -245,16 +244,16 @@ func (r *Row) Unprocessed() int {
 	return r.rem
 }
 
-func (r *Row) View() (mem.RO, error) {
+func (r *Row) View() ([]byte, error) {
 	if r.rem == 0 {
-		return mem.RO{}, ErrOutOfColumns
+		return nil, ErrOutOfColumns
 	}
 	r.rem--
 	v, err := r.c.fc.ReadDataRowValue()
 	if err != nil {
-		return mem.RO{}, err
+		return nil, err
 	}
-	return mem.B(v.Data), nil
+	return v.Data, nil
 }
 
 func (r *Row) ParseInt() (int, error) {
@@ -262,18 +261,26 @@ func (r *Row) ParseInt() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	switch v.Len() {
+	switch len(v) {
 	case 1:
-		return int(v.At(0)), nil
+		return int(v[0]), nil
 	case 2:
-		return int(v.At(0))<<8 | int(v.At(1)), nil
+		return int(v[0])<<8 | int(v[1]), nil
 	case 4:
-		return int(v.At(0))<<24 | int(v.At(1))<<16 | int(v.At(2))<<8 | int(v.At(3)), nil
+		return int(v[0])<<24 | int(v[1])<<16 | int(v[2])<<8 | int(v[3]), nil
 	case 8:
-		return int(v.At(0))<<56 | int(v.At(1))<<48 | int(v.At(2))<<40 | int(v.At(3))<<32 | int(v.At(4))<<24 | int(v.At(5))<<16 | int(v.At(6))<<8 | int(v.At(7)), nil
+		return int(v[0])<<56 | int(v[1])<<48 | int(v[2])<<40 | int(v[3])<<32 | int(v[4])<<24 | int(v[5])<<16 | int(v[6])<<8 | int(v[7]), nil
 	default:
-		return 0, fmt.Errorf("ParseInt: invalid length: %d", v.Len())
+		return 0, fmt.Errorf("ParseInt: invalid length: %d", len(v))
 	}
+}
+
+func (r *Row) ParseString() (string, error) {
+	v, err := r.View()
+	if err != nil {
+		return "", err
+	}
+	return string(v), nil
 }
 
 // Close discards any remaining columns in the row.
