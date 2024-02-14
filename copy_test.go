@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"go4.org/mem"
 	"kr.dev/diff"
 )
 
@@ -40,8 +39,8 @@ func TestCopyFreestyle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if w := "foo"; !name.EqualString(w) {
-			t.Fatalf("name = %q, want %q", name.StringCopy(), w)
+		if string(name) != "foo" {
+			t.Fatalf("name = %q, want 'foo'", name)
 		}
 	}
 
@@ -194,10 +193,8 @@ func TestCopyFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 		got = append(got, G{
-			// TODO(bmizerany): clean up, this has a lot of
-			// punctuation.
-			ID:   int(memUint(must(row.View()))),
-			Name: must(row.View()).StringCopy(),
+			ID:   must(row.ParseInt()),
+			Name: must(row.ParseString()),
 		})
 	}
 }
@@ -207,19 +204,6 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
-}
-
-func memUint(v mem.RO) uint {
-	if v.Len() == 2 {
-		return uint(uint16(v.At(1)) | uint16(v.At(0))<<8)
-	}
-	if v.Len() == 4 {
-		return uint(uint32(v.At(3)) | uint32(v.At(2))<<8 | uint32(v.At(1))<<16 | uint32(v.At(0))<<24)
-	}
-	if v.Len() == 8 {
-		return uint(uint64(v.At(7)) | uint64(v.At(6))<<8 | uint64(v.At(5))<<16 | uint64(v.At(4))<<24 | uint64(v.At(3))<<32 | uint64(v.At(2))<<40 | uint64(v.At(1))<<48 | uint64(v.At(0))<<56)
-	}
-	panic(fmt.Errorf("invalid length: %d", v.Len()))
 }
 
 func pop[T any, S ~[]T](v *S) T {

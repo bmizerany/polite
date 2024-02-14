@@ -6,13 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"go4.org/mem"
 	"kr.dev/diff"
 )
-
-var compareMem = diff.Transform(func(s mem.RO) any {
-	return s.StringCopy()
-})
 
 func ExampleListener() {
 	ctx := context.Background()
@@ -31,7 +26,7 @@ func ExampleListener() {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println("NOTIFICATION:", n.Channel.StringCopy(), n.Payload.StringCopy())
+		fmt.Println("NOTIFICATION:", string(n.Channel), string(n.Payload))
 	}
 }
 
@@ -74,8 +69,8 @@ func TestListenNotify(t *testing.T) {
 	}
 	got.PID = 0
 	want := Notification{
-		Channel: mem.S("foo"),
-		Payload: mem.S("bar"),
+		Channel: []byte("foo"),
+		Payload: []byte("bar"),
 	}
-	diff.Test(t, t.Errorf, got, want, compareMem)
+	diff.Test(t, t.Errorf, got, want)
 }

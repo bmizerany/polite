@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 
 	"blake.io/postgres/febe/febeio"
-	"go4.org/mem"
 )
 
 // Errors
@@ -663,7 +663,7 @@ func ParseCommandTag(tag []byte) Tag {
 		intern = string(cmd)
 	}
 
-	rowsInt, _ := mem.ParseInt(mem.B(data), 10, 64)
+	rowsInt, _ := strconv.ParseInt(string(data), 10, 64)
 	return Tag{
 		Command:      intern,
 		RowsAffected: rowsInt,

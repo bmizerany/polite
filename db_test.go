@@ -71,25 +71,13 @@ func TestQuery(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		one, err := row.ParseInt()
-		if err != nil {
-			t.Fatal(err)
-		}
-		two, err := row.ParseInt()
-		if err != nil {
-			t.Fatal(err)
-		}
-		three, err := row.View()
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, []any{one, two, three.StringCopy()})
+		got = append(got, []any{
+			must(row.ParseInt()),
+			must(row.ParseInt()),
+			must(row.ParseString()),
+		})
 	}
-	want := [][]any{
-		{
-			1, 2, "three",
-		},
-	}
+	want := [][]any{{1, 2, "three"}}
 	diff.Test(t, t.Errorf, got, want)
 }
 
@@ -105,12 +93,9 @@ func TestQueryExtended(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, err := row.View()
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, data.StringCopy())
+		got = append(got, must(row.ParseString()))
 	}
+
 	want := []string{"hello", "world"}
 	diff.Test(t, t.Errorf, got, want)
 }
@@ -129,11 +114,7 @@ func collectRows(t testing.TB, rows *Rows) [][]string {
 func collectValues(t testing.TB, row *Row) []string {
 	var got []string
 	for range row.Columns() {
-		data, err := row.View()
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, data.StringCopy())
+		got = append(got, must(row.ParseString()))
 	}
 	return got
 }
@@ -368,11 +349,7 @@ func TestByteaString(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, err := row.View()
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, data.StringCopy())
+		got = append(got, must(row.ParseString()))
 	}
 	want := []string{"\x12\x345"}
 	diff.Test(t, t.Errorf, got, want)
