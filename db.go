@@ -11,18 +11,9 @@ import (
 	"blake.io/postgres/febe"
 )
 
-// TODO: https://www.postgresql.org/docs/current/protocol-flow.html
-//
-// [ ] 55.2.8. Canceling Requests in Progress
-// [ ] 55.2.6. COPY Operations
-// [ ] 55.2.10. SSL Session Encryption
-//
-// TODO(bmizerany): QueryOne
-
 // Errors
 var (
 	ErrDone         = errors.New("pqlite: done")
-	ErrEmptyQuery   = errors.New("pqlite: empty query")
 	ErrOutOfColumns = errors.New("pqlite: out of columns")
 	ErrTLSRefused   = errors.New("pqlite: TLS refused by backend")
 )
