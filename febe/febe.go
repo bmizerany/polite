@@ -198,11 +198,13 @@ func (c *Conn) advanceHeader() (err error) {
 	}
 	h.msgLen, err = c.c.ReadInt32()
 	c.h = h
+	c.c.ResetN()
 	return err
 }
 
 func (c *Conn) DiscardMessage() error {
-	return c.c.Discard(c.h.BodyLen())
+	left := c.h.BodyLen() - c.c.N()
+	return c.c.Discard(left)
 }
 
 // TODO(bmizerany): https://www.postgresql.org/docs/current/errcodes-appendix.html

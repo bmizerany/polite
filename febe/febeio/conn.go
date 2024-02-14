@@ -19,6 +19,7 @@ const postgresBufferSize = 8 << 10
 type Conn struct {
 	r *byteReader
 	w *bufio.Writer
+	n int // number of bytes read
 }
 
 // NewConn returns a Conn ready for use.
@@ -34,6 +35,9 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 	}
 	return cn
 }
+
+func (c *Conn) N() int  { return c.n }
+func (c *Conn) ResetN() { c.n = 0 }
 
 func (c *Conn) Err() error {
 	_, err := c.w.Write(nil)
@@ -52,6 +56,7 @@ func (c *Conn) peek(n int) ([]byte, error) {
 		w = c.r.window()
 	}
 	c.r.release(n)
+	c.n += n
 	return w[:n], nil
 }
 
