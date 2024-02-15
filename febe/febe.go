@@ -132,6 +132,9 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	var zero MessageHeader
 	t := traceFromContext(ctx)
 	for {
+		if err := c.discardMessage(); err != nil {
+			return zero, err
+		}
 		if err := c.advanceHeader(); err != nil {
 			return zero, err
 		}
@@ -202,7 +205,10 @@ func (c *Conn) advanceHeader() (err error) {
 	return err
 }
 
-func (c *Conn) DiscardMessage() error {
+func (c *Conn) discardMessage() error {
+	if c.h.BodyLen() <= 0 {
+		return nil
+	}
 	left := c.h.BodyLen() - c.c.N()
 	return c.c.Discard(left)
 }

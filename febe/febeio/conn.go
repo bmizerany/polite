@@ -55,9 +55,13 @@ func (c *Conn) peek(n int) ([]byte, error) {
 		}
 		w = c.r.window()
 	}
+	c.release(n)
+	return w[:n], nil
+}
+
+func (c *Conn) release(n int) {
 	c.r.release(n)
 	c.n += n
-	return w[:n], nil
 }
 
 // ReadByte reads a single byte from the stream.
@@ -164,7 +168,7 @@ func (c *Conn) ReadString() ([]byte, error) {
 		// in a previous pass.
 		i := bytes.IndexByte(w, 0)
 		if i >= 0 {
-			c.r.release(i + 1)
+			c.release(i + 1)
 			return w[:i], nil
 		}
 		if c.r.extend() == 0 {
@@ -178,7 +182,7 @@ func (c *Conn) Discard(n int) error {
 	w := c.r.window()
 	for {
 		rel := min(n, len(w))
-		c.r.release(rel)
+		c.release(rel)
 		n -= rel
 		if n <= 0 {
 			return nil
