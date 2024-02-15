@@ -123,7 +123,8 @@ func (h MessageHeader) String() string {
 	return fmt.Sprintf("<MessageHeader Type:%q Len:%d>", h.msgType, h.msgLen)
 }
 
-// ReadHeader reads the next febe message header on the Conn. It returns a
+// ReadHeader reads the next febe message header on the Conn after
+// discarding any remaining bytes from the previous message. It returns a
 // network or deserialization error if any.
 //
 // As a special case, if the message type is 'E', it will read the error
@@ -132,10 +133,10 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	var zero MessageHeader
 	t := traceFromContext(ctx)
 	for {
-		if err := c.discardMessage(); err != nil {
+		if err := c.discardRemainingMessageBytes(); err != nil {
 			return zero, err
 		}
-		if err := c.advanceHeader(); err != nil {
+		if err := c.readAndSetCurrentHeader(); err != nil {
 			return zero, err
 		}
 		if t.ReceivedHeader != nil {
@@ -192,24 +193,27 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	}
 }
 
-func (c *Conn) advanceHeader() (err error) {
+func (c *Conn) readAndSetCurrentHeader() (err error) {
 	// TODO(bmizerany): take a context and use it to set a deadline
 	var h MessageHeader
 	h.msgType, err = c.c.ReadByte()
 	if err != nil {
 		return err
 	}
+
+	// The length includes itself, so reset before reading the length.
+	c.c.ResetN()
+
 	h.msgLen, err = c.c.ReadInt32()
 	c.h = h
-	c.c.ResetN()
 	return err
 }
 
-func (c *Conn) discardMessage() error {
-	if c.h.BodyLen() <= 0 {
+func (c *Conn) discardRemainingMessageBytes() error {
+	if c.h.Len() == 0 {
 		return nil
 	}
-	left := c.h.BodyLen() - c.c.N()
+	left := c.h.Len() - c.c.N()
 	return c.c.Discard(left)
 }
 

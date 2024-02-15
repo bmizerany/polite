@@ -582,7 +582,7 @@ func TestReadParameterStatus(t *testing.T) {
 	cn := New(&b, &b)
 
 	cn.c.WriteByte('S')
-	cn.c.WriteInt32(21)
+	cn.c.WriteInt32(25)
 	cn.c.WriteString("server_version")
 	cn.c.WriteString("9.6.5")
 	cn.c.WriteByte('X')

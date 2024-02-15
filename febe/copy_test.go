@@ -15,16 +15,20 @@ func TestCopyData(t *testing.T) {
 	b.WriteString("H\x00\x00\x00\x09\x00\x00\x01\x00\x00")
 
 	// Binary Header
-	b.WriteString("d\x00\x00\x00\x1e")
-	b.WriteString("PGCOPY\n\xff\r\n\x00")      // Binary Signature
-	b.WriteString("\x00\x00\x00\x00")          // Flags
-	b.WriteString("\x00\x00\x00\x00")          // Ext
-	b.WriteString("\x00\x01\x00\x00\x00\x01a") // Data (initial row tuple piggybacked on initial data message)
+	b.WriteByte('d')
+	b.Write([]byte{0, 0, 0, 30})          // Length
+	b.WriteString("PGCOPY\n\xff\r\n\x00") // Binary Signature
+	b.WriteString("\x00\x00\x00\x00")     // Flags
+	b.WriteString("\x00\x00\x00\x00")     // Ext
 
-	b.WriteString("d\x00\x00\x00\x07")
+	b.WriteString("\x00\x01\x00\x00\x00\x01a") // initial data
+
+	b.WriteByte('d')
+	b.Write([]byte{0, 0, 0, 12}) // Length
 	b.WriteString("\x00\x01\x00\x00\x00\x02bb")
 
-	b.WriteString("d\x00\x00\x00\x08")
+	b.WriteByte('d')
+	b.Write([]byte{0, 0, 0, 13}) // Length
 	b.WriteString("\x00\x01\x00\x00\x00\x03ccc")
 
 	// CopyDone response
