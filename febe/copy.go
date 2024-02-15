@@ -120,7 +120,7 @@ func (c *Conn) WriteCopyDataRow(values [][]byte, includeHeader bool) error {
 	}
 }
 
-func (c *Conn) DiscardBinarySignatureFlagsAndExt() error {
+func (c *Conn) discardBinarySignatureFlagsAndExt() error {
 	if err := c.c.Discard(len(BinarySignature) + len(BinaryFlags)); err != nil {
 		return err
 	}

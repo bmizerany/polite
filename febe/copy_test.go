@@ -62,12 +62,7 @@ func TestCopyData(t *testing.T) {
 		if h.Type() != 'd' {
 			t.Fatalf("[%d]: Type = %c; want %c", i, h.Type(), 'd')
 		}
-		if i == 0 {
-			if err := cn.DiscardBinarySignatureFlagsAndExt(); err != nil {
-				t.Fatalf("[%d]: DiscardBinarySignatureFlagsAndExt() = %v; want nil", i, err)
-			}
-		}
-		dr, err := cn.ReadDataRow()
+		dr, err := cn.ReadDataRow(i == 0)
 		if err != nil {
 			t.Fatalf("[%d]: ReadCopyData() = %v; want nil", i, err)
 		}
