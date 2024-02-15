@@ -31,7 +31,7 @@ type Conn struct {
 	nstmt int
 	cache map[string]*statement
 
-	rows *Rows
+	rows *rows
 }
 
 var errPingFailed = errors.New("pqlite: ping failed")
@@ -59,7 +59,7 @@ type Result struct {
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
 // number of rows matched) in a [Result] or any error encountered.
 func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
-	rows, err := c.Query(ctx, sql, args...)
+	rows, err := c.query(ctx, sql, args...)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (c *Conn) LastResult() Result {
 	return c.rows.Result()
 }
 
-func (c *Conn) Query(ctx context.Context, sql string, args ...string) (*Rows, error) {
+func (c *Conn) query(ctx context.Context, sql string, args ...string) (*rows, error) {
 	if err := c.prepare(ctx, "", sql, args...); err != nil {
 		return nil, err
 	}
@@ -81,9 +81,9 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) (*Rows, er
 		return nil, err
 	}
 	if c.rows == nil {
-		c.rows = &Rows{}
+		c.rows = &rows{}
 	}
-	*c.rows = Rows{ctx: ctx, c: c, row: c.rows.row}
+	*c.rows = rows{ctx: ctx, c: c, row: c.rows.row}
 	return c.rows, nil
 }
 
@@ -176,28 +176,9 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	}
 }
 
-// QueryAll is short for:
-//
-//	rs := c.Query(ctx, sql)
-//	defer rs.Close()
-//	for row, err := range rs.All {
-//	  ...
-//	}
-//
-// Callers must process all columns in a row. If a call to yield does not
-// process all columns in the provided rows before returning, QueryAll panics.
-//
-// If a caller needs to discard any remaining rows, it should call rs.Close
-// before returning from yield.
-//
-// Example:
-//
-//	for row, err := range c.QueryAll(ctx, "SELECT * FROM users") {
-//	  ...
-//	}
-func (c *Conn) QueryAll(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
+func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
-		rs, err := c.Query(ctx, sql, args...)
+		rs, err := c.query(ctx, sql, args...)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -293,7 +274,7 @@ func (r *Row) Close() error {
 	}
 }
 
-type Rows struct {
+type rows struct {
 	ctx context.Context
 	c   *Conn
 	err error
@@ -304,11 +285,11 @@ type Rows struct {
 	row *Row // owned by next()
 }
 
-func (rs *Rows) Result() Result {
+func (rs *rows) Result() Result {
 	return Result{RowsAffected: int(rs.rowsAffected)}
 }
 
-func (rs *Rows) All(yield func(*Row, error) bool) {
+func (rs *rows) All(yield func(*Row, error) bool) {
 	if rs.err != nil {
 		yield(nil, rs.err)
 		return
@@ -336,7 +317,7 @@ func (rs *Rows) All(yield func(*Row, error) bool) {
 	}
 }
 
-func (rs *Rows) next() (*Row, error) {
+func (rs *rows) next() (*Row, error) {
 	c := rs.c.fc
 	for {
 		h, err := c.ReadHeader(rs.ctx)
@@ -402,7 +383,7 @@ func (rs *Rows) next() (*Row, error) {
 	}
 }
 
-func (rs *Rows) Close() error {
+func (rs *rows) Close() error {
 	// TODO(bmizerany): !!!!!!!!!!!!!!!!!!!!!!!!!!!
 	// This currently re executes the query!!! FIX
 	for row, err := range rs.All {
