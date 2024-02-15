@@ -25,13 +25,14 @@ type Config struct {
 	TLSConfig *tls.Config
 }
 
-// Dial connects to postgres using the parameters in dsnOrURL, which is a DSN
-// or URL. The host, port, and sslmode parameters are defaulted to localhost,
-// 5432, and verify, respectively. No other parameter has a default, including
-// user, which must be specified by users of Dial.
+// Open opens a connection to postgres using the parameters in dsnOrURL,
+// which is a DSN or URL. The host, port, and sslmode parameters are
+// defaulted to localhost, 5432, and verify, respectively. No other
+// parameter has a default, including user, which must be specified by users
+// of Open.
 //
 // If sslmode is "disable", then no TLS is used. Otherwise, TLS is used.
-func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
+func Open(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	o, err := dsn.ParseOptions(dsnOrURL)
 	if err != nil {
 		return nil, err

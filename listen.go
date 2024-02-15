@@ -21,8 +21,10 @@ type Listener struct {
 	c *Conn
 }
 
-func DialListener(ctx context.Context, dsnOrURL string, cfg *Config) (*Listener, error) {
-	cn, err := Dial(ctx, dsnOrURL, cfg)
+// OpenListener opens a dedicated connection for listening for and sending
+// notifications on channels using postgres's LISTEN/NOITFY feature.
+func OpenListener(ctx context.Context, dsnOrURL string, cfg *Config) (*Listener, error) {
+	cn, err := Open(ctx, dsnOrURL, cfg)
 	if err != nil {
 		return nil, err
 	}

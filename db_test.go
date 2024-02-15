@@ -34,7 +34,7 @@ func newSessionDB(t testing.TB) *Conn {
 		t.FailNow()
 	}
 
-	cn, err := Dial(ctx, dsn, nil)
+	cn, err := Open(ctx, dsn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func newSessionDB(t testing.TB) *Conn {
 
 func newSession(t testing.TB) *Conn {
 	ctx := context.Background()
-	cn, err := Dial(ctx, mainDSN, nil)
+	cn, err := Open(ctx, mainDSN, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +369,7 @@ func checkPing(t *testing.T, c *Conn) {
 var (
 	mainDSN = "dbname=postgres port=5433 host=localhost sslmode=disable user=postgres password=postgres"
 	mc      = sync.OnceValue(func() *Conn {
-		cn, err := Dial(context.Background(), mainDSN, nil)
+		cn, err := Open(context.Background(), mainDSN, nil)
 		if err != nil {
 			panic(err)
 		}

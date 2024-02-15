@@ -16,7 +16,7 @@ import (
 
 func TestDialAuthNone(t *testing.T) {
 	dsn := startPG(t)
-	cn, err := Dial(context.Background(), dsn, nil)
+	cn, err := Open(context.Background(), dsn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestDialAuthMD5(t *testing.T) {
 
 	func() {
 		// Create test user with pass
-		cn, err := Dial(context.Background(), mainDSN, nil)
+		cn, err := Open(context.Background(), mainDSN, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -64,7 +64,7 @@ func TestDialAuthMD5(t *testing.T) {
 		t.Run(tt.user+"/"+tt.pass, func(t *testing.T) {
 			// connect with password
 			dsn := fmt.Sprintf("%s user=%s password=%s", mainDSN, tt.user, tt.pass)
-			cn, err := Dial(context.Background(), dsn, nil)
+			cn, err := Open(context.Background(), dsn, nil)
 			if tt.wantErr && err == nil {
 				t.Fatal("expected error")
 			} else if !tt.wantErr && err != nil {
@@ -94,7 +94,7 @@ func TestDialAuthSCRAM(t *testing.T) {
 
 	func() {
 		// Create test user with pass
-		cn, err := Dial(context.Background(), mainDSN, nil)
+		cn, err := Open(context.Background(), mainDSN, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func TestDialAuthSCRAM(t *testing.T) {
 			dsn := fmt.Sprintf("%s user=%s password=%s", mainDSN, tt.user, tt.pass)
 
 			ctx := context.Background()
-			cn, err := Dial(ctx, dsn, nil)
+			cn, err := Open(ctx, dsn, nil)
 			if cn != nil {
 				defer cn.Close()
 			}
@@ -180,7 +180,7 @@ func TestDialTLS(t *testing.T) {
 				dsn += " sslrootcert=" + tc.sslroot
 			}
 
-			cn, err := Dial(context.Background(), dsn, nil)
+			cn, err := Open(context.Background(), dsn, nil)
 			if err != nil {
 				if !tc.wantErr {
 					t.Fatal(err)
