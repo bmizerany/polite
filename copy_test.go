@@ -23,7 +23,7 @@ func TestCopyFreestyle(t *testing.T) {
 	const q = `
 		COPY (SELECT 1 AS id, 'foo' AS name) TO STDOUT WITH (FORMAT binary)
 	`
-	for row, err := range cn.QueryAll(ctx, q) {
+	for row, err := range cn.Query(ctx, q) {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,7 +52,7 @@ func TestCopyNonBinary(t *testing.T) {
 		COPY (SELECT 1) TO STDOUT WITH (FORMAT text)
 	`
 	var got []error
-	for row, err := range cn.QueryAll(ctx, q) {
+	for row, err := range cn.Query(ctx, q) {
 		got = append(got, err)
 		if row != nil {
 			row.Close()
@@ -124,11 +124,7 @@ func TestCopyTo(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(fmt.Sprintf("%v", tt.columns), func(t *testing.T) {
-			rows, err := cn.CopyTo(ctx, "foo", tt.columns)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := collectRows(t, rows)
+			got := collectRows(t, cn.CopyTo(ctx, "foo", tt.columns))
 			diff.Test(t, t.Errorf, got, tt.want)
 		})
 	}
@@ -142,13 +138,8 @@ func TestCopyToReset(t *testing.T) {
 	ctx := context.Background()
 	cn := newSession(t)
 
-	rows, err := cn.Query(ctx, q)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	// Reset the connection to make sure the copy is properly aborted.
-	got := collectRows(t, rows)
+	got := collectRows(t, cn.Query(ctx, q))
 	want := [][]string{
 		{"\x00\x00\x00\x01"},
 	}
@@ -179,7 +170,7 @@ func TestCopyFrom(t *testing.T) {
 	}
 
 	var got []G
-	for row, err := range cn.QueryAll(ctx, "SELECT * FROM foo") {
+	for row, err := range cn.Query(ctx, "SELECT * FROM foo") {
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -22,7 +22,7 @@ type CopyFailError string
 
 func (e CopyFailError) Error() string { return string(e) }
 
-func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) (*Rows, error) {
+func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.Seq2[*Row, error] {
 	var b strings.Builder
 	b.WriteString("COPY ")
 	writeQuotedIdentifier(&b, table)
