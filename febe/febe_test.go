@@ -556,7 +556,8 @@ func TestReadParameterStatus(t *testing.T) {
 		},
 	})
 
-	_, err := cn.ReadHeader(ctx)
+	h, err := cn.ReadHeader(ctx)
+	t.Logf("header: %v", h)
 	if !errors.Is(err, ErrTerminated) {
 		t.Fatal(err)
 	}
