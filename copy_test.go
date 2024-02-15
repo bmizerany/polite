@@ -205,9 +205,3 @@ func must[T any](v T, err error) T {
 	}
 	return v
 }
-
-func pop[T any, S ~[]T](v *S) T {
-	x := (*v)[0]
-	*v = (*v)[1:]
-	return x
-}
