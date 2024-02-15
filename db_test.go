@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"iter"
 	"strings"
 	"sync"
 	"testing"
@@ -67,7 +68,7 @@ func TestQuery(t *testing.T) {
 
 	const q = `SELECT 1, 2, 'three'`
 	var got [][]any
-	for row, err := range cn.QueryAll(context.Background(), q) {
+	for row, err := range cn.Query(context.Background(), q) {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +90,7 @@ func TestQueryExtended(t *testing.T) {
 		SELECT $2
 	`
 	var got []string
-	for row, err := range cn.QueryAll(context.Background(), q, "hello", "world") {
+	for row, err := range cn.Query(context.Background(), q, "hello", "world") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -100,9 +101,9 @@ func TestQueryExtended(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func collectRows(t testing.TB, rows *Rows) [][]string {
+func collectRows(t testing.TB, rows iter.Seq2[*Row, error]) [][]string {
 	var got [][]string
-	for row, err := range rows.All {
+	for row, err := range rows {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -122,7 +123,7 @@ func collectValues(t testing.TB, row *Row) []string {
 func TestQueryAll(t *testing.T) {
 	cn := newSessionDB(t)
 	var got [][]string
-	for row, err := range cn.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range cn.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,7 +142,7 @@ func TestQueryAll(t *testing.T) {
 func TestQueryBreakInAll(t *testing.T) {
 	cn := newSessionDB(t)
 	var got [][]string
-	for row, err := range cn.QueryAll(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range cn.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,7 +167,7 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 
 	cn := newSessionDB(t)
 	var n int
-	for row, err := range cn.QueryAll(context.Background(), "SELECT generate_series(1, 3)") {
+	for row, err := range cn.Query(context.Background(), "SELECT generate_series(1, 3)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -188,7 +189,7 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 	ctx := context.Background()
 
 	var got []error
-	for _, err := range cn.QueryAll(ctx, "") {
+	for _, err := range cn.Query(ctx, "") {
 		got = append(got, err)
 	}
 	if len(got) != 1 {
@@ -345,7 +346,7 @@ func TestByteaString(t *testing.T) {
 	}
 
 	var got []string
-	for row, err := range cn.QueryAll(ctx, "SELECT bar FROM foo") {
+	for row, err := range cn.Query(ctx, "SELECT bar FROM foo") {
 		if err != nil {
 			t.Fatal(err)
 		}
