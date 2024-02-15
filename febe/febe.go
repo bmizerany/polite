@@ -206,7 +206,6 @@ func (c *Conn) advanceHeader() (err error) {
 }
 
 func (c *Conn) discardMessage() error {
-	fmt.Printf("discarding message: h=%v, n=%d\n", c.h, c.c.N())
 	if c.h.BodyLen() <= 0 {
 		return nil
 	}
