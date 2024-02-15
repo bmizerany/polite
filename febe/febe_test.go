@@ -348,7 +348,7 @@ func TestReadDataRow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := cn.ReadDataRow()
+	got, err := cn.ReadDataRow(false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +395,7 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 	// Using reflect, iterate over all methods on Conn that start with
 	// "Read" and match the generic signature:
 	//
-	//         func(context.Context, MessageHeader) (T, error)
+	//         func() (T, error)
 	//
 	// For each one found, create a test that calls the method with the
 	// MessageHeader.Type set to '!' and and length of the arbitrary value
@@ -406,14 +406,18 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 	to := reflect.TypeOf(&Conn{})
 	cn := &Conn{}
 	vo := reflect.ValueOf(cn)
+
+	exempt := map[string]bool{
+		"ReadHeader":  true,
+		"ReadDataRow": true,
+	}
+
 	for i := 0; i < to.NumMethod(); i++ {
 		m := to.Method(i)
 		if !strings.HasPrefix(m.Name, "Read") {
 			continue
 		}
-		if m.Name == "ReadHeader" {
-			// only exception o our rule that ReadX methods must be like:
-			//   ReadX(context.Context, MessageHeader) (T, error)
+		if exempt[m.Name] {
 			continue
 		}
 		t.Run(m.Name, func(t *testing.T) {
