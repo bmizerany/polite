@@ -384,8 +384,6 @@ func (rs *rows) next() (*Row, error) {
 }
 
 func (rs *rows) Close() error {
-	// TODO(bmizerany): !!!!!!!!!!!!!!!!!!!!!!!!!!!
-	// This currently re executes the query!!! FIX
 	for row, err := range rs.All {
 		if err != nil {
 			return err
