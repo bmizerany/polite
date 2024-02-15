@@ -27,20 +27,11 @@ func TestCopyFreestyle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, err := row.ParseInt()
-		if err != nil {
-			t.Fatal(err)
+		if g := must(row.ParseInt()); g != 1 {
+			t.Fatalf("id = %v, want 1", g)
 		}
-		if id != 1 {
-			t.Fatalf("id = %v, want 1", id)
-		}
-
-		name, err := row.View()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(name) != "foo" {
-			t.Fatalf("name = %q, want 'foo'", name)
+		if g := must(row.ParseString()); g != "foo" {
+			t.Fatalf("name = %q, want 'foo'", g)
 		}
 	}
 
