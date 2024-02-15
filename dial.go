@@ -94,15 +94,8 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 				if err := c.handleAuth(ctx, o); err != nil {
 					return err
 				}
-			case 'S':
-				if err := c.fc.DiscardMessage(); err != nil {
-					return err
-				}
 			case 'K':
 				// TODO(bmizerany): save the key for cancellations later
-				if err := c.fc.DiscardMessage(); err != nil {
-					return err
-				}
 			case 'Z':
 				_, err := c.fc.ReadReadyForQuery()
 				if err != nil {

@@ -92,6 +92,47 @@ func TestReadHeaderEmpty(t *testing.T) {
 	diff.Test(t, t.Errorf, gotErr, io.ErrUnexpectedEOF)
 }
 
+func TestReadHeaderDiscard(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	cn.c.WriteByte('D')
+	cn.c.WriteInt32(4 + 7)
+	cn.c.Write([]byte("DISCARD"))
+	cn.c.WriteByte('Z')
+	cn.c.WriteInt32(4)
+	cn.c.WriteByte('X')
+	cn.c.WriteInt32(4)
+	cn.c.Flush()
+
+	h, err := cn.ReadHeader(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Type() != 'D' {
+		t.Fatalf("h.Type = %c; want D", h.Type())
+	}
+	if h.Len() != 4+7 {
+		t.Fatalf("h.Length = %d; want 4", h.Len())
+	}
+
+	h, err = cn.ReadHeader(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Type() != 'Z' {
+		t.Fatalf("h.Type = %c; want Z", h.Type())
+	}
+	if h.Len() != 4 {
+		t.Fatalf("h.Length = %d; want 11", h.Len())
+	}
+
+	h, err = cn.ReadHeader(context.Background())
+	t.Logf("h = %v; err = %v", h, err)
+	if !errors.Is(err, ErrTerminated) {
+		t.Fatalf("err = %v; want EOF", err)
+	}
+}
+
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
@@ -541,7 +582,7 @@ func TestReadParameterStatus(t *testing.T) {
 	cn := New(&b, &b)
 
 	cn.c.WriteByte('S')
-	cn.c.WriteInt32(21)
+	cn.c.WriteInt32(25)
 	cn.c.WriteString("server_version")
 	cn.c.WriteString("9.6.5")
 	cn.c.WriteByte('X')
@@ -556,7 +597,8 @@ func TestReadParameterStatus(t *testing.T) {
 		},
 	})
 
-	_, err := cn.ReadHeader(ctx)
+	h, err := cn.ReadHeader(ctx)
+	t.Logf("header: %v", h)
 	if !errors.Is(err, ErrTerminated) {
 		t.Fatal(err)
 	}
