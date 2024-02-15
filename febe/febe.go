@@ -123,7 +123,8 @@ func (h MessageHeader) String() string {
 	return fmt.Sprintf("<MessageHeader Type:%q Len:%d>", h.msgType, h.msgLen)
 }
 
-// ReadHeader reads the next febe message header on the Conn. It returns a
+// ReadHeader reads the next febe message header on the Conn after
+// discarding any remaining bytes from the previous message. It returns a
 // network or deserialization error if any.
 //
 // As a special case, if the message type is 'E', it will read the error
@@ -132,7 +133,10 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	var zero MessageHeader
 	t := traceFromContext(ctx)
 	for {
-		if err := c.advanceHeader(); err != nil {
+		if err := c.discardRemainingMessageBytes(); err != nil {
+			return zero, err
+		}
+		if err := c.readAndSetCurrentHeader(); err != nil {
 			return zero, err
 		}
 		if t.ReceivedHeader != nil {
@@ -189,20 +193,28 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	}
 }
 
-func (c *Conn) advanceHeader() (err error) {
+func (c *Conn) readAndSetCurrentHeader() (err error) {
 	// TODO(bmizerany): take a context and use it to set a deadline
 	var h MessageHeader
 	h.msgType, err = c.c.ReadByte()
 	if err != nil {
 		return err
 	}
+
+	// The length includes itself, so reset before reading the length.
+	c.c.ResetN()
+
 	h.msgLen, err = c.c.ReadInt32()
 	c.h = h
 	return err
 }
 
-func (c *Conn) DiscardMessage() error {
-	return c.c.Discard(c.h.BodyLen())
+func (c *Conn) discardRemainingMessageBytes() error {
+	if c.h.Len() == 0 {
+		return nil
+	}
+	left := c.h.Len() - c.c.N()
+	return c.c.Discard(left)
 }
 
 // TODO(bmizerany): https://www.postgresql.org/docs/current/errcodes-appendix.html

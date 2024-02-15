@@ -94,6 +94,65 @@ func TestRead(t *testing.T) {
 	})
 }
 
+func TestN(t *testing.T) {
+	var b bytes.Buffer
+	b.WriteString("H")
+	b.Write([]byte{0, 0, 0, 11})
+	b.Write([]byte{0, 0, 0, 1})
+	b.WriteString("ABC\x00")
+	b.WriteString("discard")
+
+	cn := NewConn(&b, nil)
+
+	checkN := func(want int) {
+		t.Helper()
+		if cn.N() != want {
+			t.Errorf("cn.N() = %v, want %v", cn.N(), want)
+		}
+	}
+
+	cn.ReadByte() // H
+	checkN(1)
+
+	cn.ReadByte() // 0
+	checkN(2)
+	cn.ReadByte() // 0
+	checkN(3)
+
+	i16, err := cn.ReadInt16()
+	if err != nil {
+		t.Errorf("cn.ReadInt16() = _, %v, want nil", err)
+	}
+	if i16 != 11 {
+		t.Errorf("cn.ReadInt16() = %v, want 11", i16)
+	}
+	checkN(5)
+
+	i32, err := cn.ReadInt32()
+	if err != nil {
+		t.Errorf("cn.ReadInt32() = _, %v, want nil", err)
+	}
+	if i32 != 1 {
+		t.Errorf("cn.ReadInt32() = %v, want 1", i16)
+	}
+	checkN(9)
+
+	s, err := cn.ReadString()
+	if err != nil {
+		t.Errorf("cn.ReadString() = _, %v, want nil", err)
+	}
+	if string(s) != "ABC" {
+		t.Errorf("cn.ReadString() = %v, want ABC", s)
+	}
+	checkN(13)
+
+	cn.Discard(8)
+	checkN(20)
+
+	cn.ResetN()
+	checkN(0)
+}
+
 func connReadString(c *Conn) (string, error) {
 	m, err := c.ReadString()
 	return string(m), err

@@ -152,9 +152,6 @@ func (c *Conn) discardUntilReady(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if err := c.fc.DiscardMessage(); err != nil {
-			return err
-		}
 		if h.Type() == 'Z' {
 			return nil
 		}
