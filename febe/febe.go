@@ -687,9 +687,14 @@ type DataRowValueResponse struct {
 	Data []byte
 }
 
-func (c *Conn) ReadDataRow() (DataRowResponse, error) {
+func (c *Conn) ReadDataRow(discardBinaryHeader bool) (DataRowResponse, error) {
 	if err := c.checkMessageHeader('D', 'd'); err != nil {
 		return DataRowResponse{}, err
+	}
+	if discardBinaryHeader {
+		if err := c.discardBinarySignatureFlagsAndExt(); err != nil {
+			return DataRowResponse{}, err
+		}
 	}
 	n, err := c.c.ReadInt16()
 	if err != nil {

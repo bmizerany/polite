@@ -369,12 +369,8 @@ func (rs *Rows) next() (*Row, error) {
 			if rs.row == nil {
 				rs.row = &Row{}
 			}
-			if rs.processed == 0 && h.Type() == 'd' {
-				if err := rs.c.fc.DiscardBinarySignatureFlagsAndExt(); err != nil {
-					return nil, err
-				}
-			}
-			m, err := c.ReadDataRow()
+			discardBinaryHeader := rs.processed == 0 && h.Type() == 'd'
+			m, err := c.ReadDataRow(discardBinaryHeader)
 			if err != nil {
 				return nil, err
 			}
