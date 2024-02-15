@@ -29,7 +29,7 @@ func BenchmarkQuery(b *testing.B) {
 		dsn := mainDSN
 		name, q := query("PQL", n)
 		b.Run(name, func(b *testing.B) {
-			cn, err := Dial(ctx, dsn, nil)
+			cn, err := Open(ctx, dsn, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
