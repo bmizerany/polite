@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func TestDialAuthNone(t *testing.T) {
+func TestOpenAuthNone(t *testing.T) {
 	dsn := startPG(t)
 	cn, err := Open(context.Background(), dsn, nil)
 	if err != nil {
@@ -26,7 +26,7 @@ func TestDialAuthNone(t *testing.T) {
 	}
 }
 
-func TestDialAuthMD5(t *testing.T) {
+func TestOpenAuthMD5(t *testing.T) {
 	// hba postgres that will accept md5 passwords for md5only db, and
 	// trust non-md5only database names using regexp
 	mainDSN := startPG(t, withHBA(t, []string{
@@ -82,7 +82,7 @@ func TestDialAuthMD5(t *testing.T) {
 	}
 }
 
-func TestDialAuthSCRAM(t *testing.T) {
+func TestOpenAuthSCRAM(t *testing.T) {
 	mainDSN := startPG(t, withHBA(t, []string{
 		"-c", "password_encryption=scram-sha-256",
 		"-c", "listen_addresses=127.0.0.1",
@@ -144,7 +144,7 @@ func TestDialAuthSCRAM(t *testing.T) {
 	}
 }
 
-func TestDialTLS(t *testing.T) {
+func TestOpenTLS(t *testing.T) {
 	sslrootcert, tlsargs := configureTLSOnly(t)
 	dsn := startPG(t, tlsargs...)
 
