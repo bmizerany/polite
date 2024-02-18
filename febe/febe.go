@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -19,11 +20,11 @@ import (
 var (
 	// ErrTerminate is returned when the server has terminated a
 	// connection.
-	ErrTerminated = fmt.Errorf("febe: terminated")
+	ErrTerminated = errors.New("febe: connection terminated by backend")
 
 	// ErrEmptyQuery is returned when the server has terminated a
 	// query because it was empty.
-	ErrEmptyQuery = (&Notice{Message: "empty query"}).AsError()
+	ErrEmptyQuery = errors.New("febe: empty query")
 )
 
 // RequestTLS sends the frontend message to request TLS to the server. If
@@ -97,13 +98,6 @@ func (c *Conn) Err() error {
 
 func (c *Conn) Flush() error {
 	return c.c.Flush()
-}
-
-func maybeWrapWithBadConn(err error) error {
-	if err == io.EOF {
-		return io.ErrUnexpectedEOF
-	}
-	return err
 }
 
 type Message interface {

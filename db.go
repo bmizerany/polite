@@ -13,9 +13,10 @@ import (
 
 // Errors
 var (
-	ErrDone         = errors.New("pqlite: done")
-	ErrOutOfColumns = errors.New("pqlite: out of columns")
-	ErrTLSRefused   = errors.New("pqlite: TLS refused by backend")
+	ErrDone                  = errors.New("pqlite: done")
+	ErrOutOfColumns          = errors.New("pqlite: out of columns")
+	ErrTLSRefused            = errors.New("pqlite: TLS refused by backend")
+	ErrUnsupportedCopyFormat = errors.New("pqlite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 )
 
 type statement struct {
@@ -31,17 +32,14 @@ type Conn struct {
 	nstmt int
 	cache map[string]*statement
 
-	rows *rows
+	rowsAffected int
 }
 
 var errPingFailed = errors.New("pqlite: ping failed")
 
-func Ping(ctx context.Context, cn *Conn) error {
-	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+func (c *Conn) Ping(ctx context.Context) error {
+	if err := c.Exec(ctx, "SELECT 1"); err != nil {
 		return err
-	}
-	if cn.LastResult().RowsAffected != 1 {
-		return errPingFailed
 	}
 	return nil
 }
@@ -59,32 +57,17 @@ type Result struct {
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
 // number of rows matched) in a [Result] or any error encountered.
 func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
-	rows, err := c.query(ctx, sql, args...)
-	if err != nil {
-		return err
+	for row, err := range c.Query(ctx, sql, args...) {
+		if err != nil {
+			return err
+		}
+		return row.Close()
 	}
-	return rows.Close()
+	return nil
 }
 
 func (c *Conn) LastResult() Result {
-	if c.rows == nil {
-		return Result{}
-	}
-	return c.rows.Result()
-}
-
-func (c *Conn) query(ctx context.Context, sql string, args ...string) (*rows, error) {
-	if err := c.prepare(ctx, "", sql, args...); err != nil {
-		return nil, err
-	}
-	if err := c.execAndSync(""); err != nil {
-		return nil, err
-	}
-	if c.rows == nil {
-		c.rows = &rows{}
-	}
-	*c.rows = rows{ctx: ctx, c: c, row: c.rows.row}
-	return c.rows, nil
+	return Result{RowsAffected: int(c.rowsAffected)}
 }
 
 var allBinary = []int16{1}
@@ -92,6 +75,7 @@ var allBinary = []int16{1}
 func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) (err error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
+		err = c.maybeRecoverFrom(ctx, err)
 		return err
 	}
 	fp := &febe.FormatParams{
@@ -101,10 +85,10 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) 
 	return c.fc.WriteBind(portal, stmt.name, args, fp)
 }
 
-func (c *Conn) newStmtName() (string, error) {
+func (c *Conn) newStmtName() string {
 	stmt := strconv.Itoa(c.nstmt)
 	c.nstmt++
-	return stmt, nil
+	return stmt
 }
 
 func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
@@ -117,15 +101,10 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 		return stmt, nil
 	}
 
-	name, err := c.newStmtName()
-	if err != nil {
-		return nil, err
-	}
+	stmt = &statement{name: c.newStmtName()}
 
-	stmt = &statement{name: name}
-
-	c.fc.WriteParse(name, sql)
-	c.fc.WriteDescribe('S', name)
+	c.fc.WriteParse(stmt.name, sql)
+	c.fc.WriteDescribe('S', stmt.name)
 	c.fc.WriteSync()
 	if err := c.fc.Flush(); err != nil {
 		return nil, err
@@ -134,7 +113,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	for {
 		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
-			return nil, c.maybeRecoverFrom(ctx, err)
+			return nil, err
 		}
 		switch h.Type() {
 		case '1':
@@ -163,7 +142,6 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 			// for now.
 			continue
 		case 'Z':
-			// TODO(bmizerany): track transaction status
 			_, err := c.fc.ReadReadyForQuery()
 			if err != nil {
 				return nil, err
@@ -176,24 +154,53 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	}
 }
 
-func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
+func errRowsSeq(err error) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
-		rs, err := c.query(ctx, sql, args...)
-		if err != nil {
-			yield(nil, err)
-			return
-		}
-		defer rs.Close()
-		for row, err := range rs.All {
-			if !yield(row, err) {
+		yield(nil, err)
+	}
+}
+
+func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
+	if err := c.prepare(ctx, "", sql, args...); err != nil {
+		return errRowsSeq(err)
+	}
+	if err := c.execAndSync(""); err != nil {
+		return errRowsSeq(err)
+	}
+	return func(yield func(*Row, error) bool) {
+		var processed int
+		ok := true
+		for {
+			row, err := c.nextRow(ctx, processed)
+			processed++
+			if err != nil {
+				if !errors.Is(err, ErrDone) {
+					err = c.maybeRecoverFrom(ctx, err)
+					yield(nil, err)
+					return
+				}
 				return
+			}
+
+			// continue to yield rows until the user says stop, and then
+			// discard the remaining rows.
+			if ok {
+				ok = yield(row, nil)
+			} else {
+				if err := row.Close(); err != nil {
+					yield(nil, err)
+					return
+				}
+			}
+			if row.rem != 0 {
+				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.rem))
 			}
 		}
 	}
 }
 
 func (c *Conn) execAndSync(portal string) error {
-	c.fc.WriteExecute("", 0)
+	c.fc.WriteExecute(portal, 0)
 	c.fc.WriteSync()
 	return c.fc.Flush()
 }
@@ -207,12 +214,6 @@ type Row struct {
 // Columns returns the number of columns in a row.
 func (r *Row) Columns() int {
 	return int(r.numCols)
-}
-
-// Unprocessed returns the number of columns that have not been
-// processed.
-func (r *Row) Unprocessed() int {
-	return r.rem
 }
 
 func (r *Row) View() ([]byte, error) {
@@ -232,6 +233,7 @@ func (r *Row) ParseInt() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// TODO(bmizerany): test coverage for all cases
 	switch len(v) {
 	case 1:
 		return int(v[0]), nil
@@ -260,7 +262,6 @@ func (r *Row) ParseString() (string, error) {
 // automatically after each yield.
 func (r *Row) Close() error {
 	if r.rem == 0 {
-		// nothing to discard; carry on
 		return nil
 	}
 	for {
@@ -274,104 +275,53 @@ func (r *Row) Close() error {
 	}
 }
 
-type rows struct {
-	ctx context.Context
-	c   *Conn
-	err error
-
-	rowsAffected int64
-	processed    int
-
-	row *Row // owned by next()
-}
-
-func (rs *rows) Result() Result {
-	return Result{RowsAffected: int(rs.rowsAffected)}
-}
-
-func (rs *rows) All(yield func(*Row, error) bool) {
-	if rs.err != nil {
-		yield(nil, rs.err)
-		return
-	}
+func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 	for {
-		row, err := rs.next()
+		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
-			rs.err = err
-			if !errors.Is(err, ErrDone) {
-				yield(nil, err)
-				return
-			}
-			return
-		}
-
-		ok := yield(row, nil)
-		if row.Unprocessed() > 0 {
-			// TODO(bmizerany): do not panic; consider 'SELECT *' which will panic if the table schema changes
-			panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.Unprocessed()))
-		}
-		if !ok {
-			// panic("TODO")
-			return
-		}
-	}
-}
-
-func (rs *rows) next() (*Row, error) {
-	c := rs.c.fc
-	for {
-		h, err := c.ReadHeader(rs.ctx)
-		if err != nil {
-			return nil, rs.c.maybeRecoverFrom(rs.ctx, err)
+			return nil, err
 		}
 		switch h.Type() {
 		case '2':
-			// Headers only; No discard needed
+			// Headeonly; No discard needed
 			continue
 		case 'C':
-			m, err := c.ReadCommandComplete()
+			m, err := c.fc.ReadCommandComplete()
 			if err != nil {
 				return nil, err
 			}
-			rs.rowsAffected = m.RowsAffected
+			c.rowsAffected = int(m.RowsAffected)
 		case 'H':
-			// TODO(bmizerany): maybe sage NumCols for comparing against 'd' messages?
-			m, err := c.ReadCopyOut()
+			// TODO(bmizerany): maybe save NumCols for comparing against 'd' messages?
+			m, err := c.fc.ReadCopyOut()
 			if err != nil {
 				return nil, err
 			}
 			if m.Format != febe.CopyFormatBinary {
-				if err := rs.c.discardUntilReady(rs.ctx); err != nil {
-					return nil, err
-				}
-				return nil, fmt.Errorf("pqlite: unsupported COPY format (must use '... WITH (FORMAT binary)') %v", m.Format)
+				return nil, ErrUnsupportedCopyFormat
 			}
 		case 'D', 'd':
-			if rs.row == nil {
-				rs.row = &Row{}
-			}
-			discardBinaryHeader := rs.processed == 0 && h.Type() == 'd'
-			m, err := c.ReadDataRow(discardBinaryHeader)
+			discardBinaryHeader := processed == 0 && h.Type() == 'd'
+			m, err := c.fc.ReadDataRow(discardBinaryHeader)
 			if err != nil {
 				return nil, err
 			}
 			if m.NumCols == -1 {
 				continue
 			}
-			rs.processed++
-			*rs.row = Row{
-				c:       rs.c,
+			row := &Row{
+				c:       c,
 				numCols: int(m.NumCols),
 				rem:     int(m.NumCols),
 			}
-			return rs.row, nil
+			return row, nil
 		case 'c':
-			_, err := c.ReadCopyDone()
+			_, err := c.fc.ReadCopyDone()
 			if err != nil {
 				return nil, err
 			}
 		case 'Z':
-			_, err := c.ReadReadyForQuery()
+			_, err := c.fc.ReadReadyForQuery()
 			if err != nil {
 				return nil, err
 			}
@@ -383,18 +333,38 @@ func (rs *rows) next() (*Row, error) {
 	}
 }
 
-func (rs *rows) Close() error {
-	for row, err := range rs.All {
-		if err != nil {
-			return err
-		}
-		if err := row.Close(); err != nil {
+func unexpectedMessage(h febe.MessageHeader) error {
+	return fmt.Errorf("pqlite: unexpected message type: %q", h.Type())
+}
+
+var errsWeCanRecoverFrom = errors.Join(
+	ErrUnsupportedCopyFormat,
+	ErrOutOfColumns,
+	febe.ErrEmptyQuery,
+)
+
+func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
+	if initErr == nil {
+		return nil
+	}
+	// TODO(bmizerany): add "IsRecovering" to trace
+	var fe *febe.Error
+	if errors.As(initErr, &fe) || errors.Is(errsWeCanRecoverFrom, initErr) {
+		if err := c.discardUntilReady(ctx); err != nil {
 			return err
 		}
 	}
-	return nil
+	return initErr
 }
 
-func unexpectedMessage(h febe.MessageHeader) error {
-	return fmt.Errorf("pqlite: unknown message type: %q", h.Type())
+func (c *Conn) discardUntilReady(ctx context.Context) error {
+	for {
+		h, err := c.fc.ReadHeader(ctx)
+		if err != nil {
+			return err
+		}
+		if h.Type() == 'Z' {
+			return nil
+		}
+	}
 }

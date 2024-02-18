@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"iter"
 	"strings"
-
-	"blake.io/postgres/febe"
 )
 
 // CopyFailError is an error that can be returned by an iter passed into
@@ -126,34 +124,12 @@ func (c *Conn) copyFrom(ctx context.Context, table string, columns []string, fro
 			if err != nil {
 				return err
 			}
-			c.rows.rowsAffected = m.RowsAffected
+			c.rowsAffected = int(m.RowsAffected)
 		case 'Z':
 			_, err := c.fc.ReadReadyForQuery()
 			return err
 		default:
 			return fmt.Errorf("unexpected message after copy: %q", h.Type())
-		}
-	}
-}
-
-func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
-	var fe *febe.Error
-	if errors.As(initErr, &fe) {
-		if err := c.discardUntilReady(ctx); err != nil {
-			return err
-		}
-	}
-	return initErr
-}
-
-func (c *Conn) discardUntilReady(ctx context.Context) error {
-	for {
-		h, err := c.fc.ReadHeader(ctx)
-		if err != nil {
-			return err
-		}
-		if h.Type() == 'Z' {
-			return nil
 		}
 	}
 }

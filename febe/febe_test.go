@@ -264,9 +264,6 @@ func TestParseCommandTag(t *testing.T) {
 		})
 
 		t.Run(tt.in+" (allocs)", func(t *testing.T) {
-			if testing.Short() {
-				t.Skip("skipping allocs check in short mode")
-			}
 			allocs := testing.AllocsPerRun(1000, func() {
 				ParseCommandTag([]byte(tt.in))
 			})
