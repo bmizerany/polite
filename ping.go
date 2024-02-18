@@ -37,7 +37,7 @@ func main() {
 		},
 	}
 
-	cn, err := postgres.Dial(ctx, os.Getenv("DATABASE_URL"), cfg)
+	cn, err := postgres.Open(ctx, os.Getenv("DATABASE_URL"), cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func main() {
 
 	fmt.Println("PING")
 	defer fmt.Println("PONG")
-	if err := postgres.Ping(ctx, cn); err != nil {
+	if err := cn.Ping(ctx); err != nil {
 		log.Fatal(err)
 	}
 }
