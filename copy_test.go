@@ -2,8 +2,8 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 	"testing"
 
 	"kr.dev/diff"
@@ -15,7 +15,7 @@ func TestCopyFreestyle(t *testing.T) {
 
 	defer func() {
 		// Make sure the connection is still alive and in a good state.
-		if err := Ping(ctx, cn); err != nil {
+		if err := cn.Ping(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -42,8 +42,8 @@ func TestCopyNonBinary(t *testing.T) {
 	cn := newSession(t)
 
 	defer func() {
-		// Make sure the connection is still alive and in a good state.
-		if err := Ping(ctx, cn); err != nil {
+		// ensure recovery
+		if err := cn.Ping(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -61,9 +61,8 @@ func TestCopyNonBinary(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %v, want 1 error", len(got))
 	}
-	const want = "unsupported COPY format"
-	if g := got[0]; !strings.Contains(g.Error(), want) {
-		t.Fatalf("got %q, want %q", g, want)
+	if g := got[0]; !errors.Is(g, ErrUnsupportedCopyFormat) {
+		t.Errorf("got %q, want %q", g, ErrUnsupportedCopyFormat)
 	}
 }
 
