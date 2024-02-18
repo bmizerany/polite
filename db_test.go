@@ -14,6 +14,27 @@ import (
 	"kr.dev/diff"
 )
 
+// This is added for tests that need to check error handling. It comes
+// standard with all sessions created with newSession.
+const (
+	sqlCreateRaiseNotice = `
+		CREATE OR REPLACE FUNCTION raise_notice() RETURNS integer
+		   LANGUAGE plpgsql AS
+		$$BEGIN
+		   RAISE NOTICE 'boom notice';
+		   RETURN 42;
+		END;$$;
+	`
+	sqlCreateRaiseError = `
+		CREATE OR REPLACE FUNCTION raise_error() RETURNS integer
+		   LANGUAGE plpgsql AS
+		$$BEGIN
+		   RAISE EXCEPTION 'boom error';
+		   RETURN 42;
+		END;$$;
+	`
+)
+
 func createDB(t testing.TB) string {
 	tname := strings.Replace(t.Name(), "/", "_", -1)
 	dbname := fmt.Sprintf("test_%s_%s", tname, randomString())
@@ -60,11 +81,20 @@ func newSession(t testing.TB) *Conn {
 			t.Fatal(err)
 		}
 	})
+
+	for _, sql := range []string{
+		sqlCreateRaiseNotice,
+		sqlCreateRaiseError,
+	} {
+		if err := cn.Exec(context.Background(), sql); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return cn
 }
 
 func TestQuery(t *testing.T) {
-	cn := newSessionDB(t)
+	cn := newSession(t)
 
 	const q = `SELECT 1, 2, 'three'`
 	var got [][]any
@@ -82,8 +112,40 @@ func TestQuery(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestRowClose(t *testing.T) {
+	const q = `SELECT 1`
+
+	cn := newSession(t)
+
+	t.Run("with remaining values", func(t *testing.T) {
+		for row, err := range cn.Query(context.Background(), q) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := row.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+
+	t.Run("without remaining values", func(t *testing.T) {
+		for row, err := range cn.Query(context.Background(), q) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err := row.View()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := row.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+}
+
 func TestQueryExtended(t *testing.T) {
-	cn := newSessionDB(t)
+	cn := newSession(t)
 	const q = `
 		SELECT $1
 		UNION ALL
@@ -121,7 +183,7 @@ func collectValues(t testing.TB, row *Row) []string {
 }
 
 func TestQueryAll(t *testing.T) {
-	cn := newSessionDB(t)
+	cn := newSession(t)
 	var got [][]string
 	for row, err := range cn.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
@@ -140,7 +202,7 @@ func TestQueryAll(t *testing.T) {
 }
 
 func TestQueryBreakInAll(t *testing.T) {
-	cn := newSessionDB(t)
+	cn := newSession(t)
 	var got [][]string
 	for row, err := range cn.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
@@ -156,8 +218,6 @@ func TestQueryBreakInAll(t *testing.T) {
 }
 
 func TestQueryUnprocceedColumnsPanic(t *testing.T) {
-	t.Skip("TODO: decide if this is the correct behavior and unskip or delete this test")
-
 	defer func() {
 		r := recover()
 		if r == nil || !strings.Contains(fmt.Sprint(r), "unprocessed columns") {
@@ -165,7 +225,7 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 		}
 	}()
 
-	cn := newSessionDB(t)
+	cn := newSession(t)
 	var n int
 	for row, err := range cn.Query(context.Background(), "SELECT generate_series(1, 3)") {
 		if err != nil {
@@ -201,7 +261,7 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 }
 
 func TestExecSelectTag(t *testing.T) {
-	cn := newSessionDB(t)
+	cn := newSession(t)
 	if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +272,7 @@ func TestExecSelectTag(t *testing.T) {
 }
 
 func TestExecLimit1(t *testing.T) {
-	cn := newSessionDB(t)
+	cn := newSession(t)
 	var got []byte
 	ctx := febe.WithTrace(context.Background(), &febe.Trace{
 		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
@@ -228,7 +288,7 @@ func TestExecLimit1(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	cn := newSessionDB(t)
+	cn := newSession(t)
 	if err := cn.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)"); err != nil {
 		t.Fatal(err)
 	}
@@ -243,40 +303,51 @@ func TestExec(t *testing.T) {
 
 func TestErrors(t *testing.T) {
 	ctx := context.Background()
-	cn := newSession(t)
 
-	err := cn.Exec(ctx, "SELECT !")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	var fe *febe.Error
-	if !errors.As(err, &fe) {
-		t.Fatalf("got %T, want *febe.Error", err)
-	}
-	if !strings.Contains(fe.Message, "syntax error") {
-		t.Fatalf("got %v, want syntax error", err)
-	}
+	t.Run("prepare error", func(t *testing.T) {
+		cn := newSession(t)
+		err := cn.Exec(ctx, "SELECT !")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		var fe *febe.Error
+		if !errors.As(err, &fe) {
+			t.Fatalf("got %T, want *febe.Error", err)
+		}
+		if !strings.Contains(fe.Message, "syntax error") {
+			t.Fatalf("got %v, want syntax error", err)
+		}
 
-	// ensure we leave in a good state
-	if err = Ping(ctx, cn); err != nil {
-		t.Fatalf("ping failed: %v", err)
-	}
+		// ensure we recover
+		if err := cn.Ping(ctx); err != nil {
+			t.Fatalf("ping failed: %v", err)
+		}
+	})
+
+	t.Run("exec error", func(t *testing.T) {
+		cn := newSession(t)
+		err := cn.Exec(ctx, "SELECT raise_error()")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		var fe *febe.Error
+		if !errors.As(err, &fe) {
+			t.Fatalf("got %T, want *febe.Error", err)
+		}
+		if !strings.Contains(fe.Message, "boom error") {
+			t.Fatalf("got %v, want boom", err)
+		}
+
+		// ensure we recover
+		if err := cn.Ping(ctx); err != nil {
+			t.Fatalf("ping failed: %v", err)
+		}
+	})
 }
 
 func TestNotice(t *testing.T) {
-	cn := newSessionDB(t)
+	cn := newSession(t)
 	defer checkPing(t, cn) // ensure we leave in a good state
-
-	if err := cn.Exec(context.Background(), `
-		CREATE FUNCTION raise_notice() RETURNS integer
-		   LANGUAGE plpgsql AS
-		$$BEGIN
-		   RAISE NOTICE 'boom';
-		   RETURN 42;
-		END;$$;
-	`); err != nil {
-		t.Fatal(err)
-	}
 
 	notice := func(ctx context.Context) {
 		t.Helper()
@@ -303,7 +374,7 @@ func TestNotice(t *testing.T) {
 		{
 			Severity:  "NOTICE",
 			Verbosity: "NOTICE",
-			Message:   "boom",
+			Message:   "boom notice",
 		},
 	}
 	keep := diff.KeepFields[febe.Notice]("Severity", "Verbosity", "Message")
@@ -334,7 +405,7 @@ func TestParameterStatus(t *testing.T) {
 }
 
 func TestByteaString(t *testing.T) {
-	cn := newSessionDB(t)
+	cn := newSession(t)
 	defer checkPing(t, cn) // ensure we leave in a good state
 
 	ctx := context.Background()
@@ -361,7 +432,7 @@ func checkPing(t *testing.T, c *Conn) {
 	if t.Failed() {
 		return
 	}
-	if err := Ping(context.Background(), c); err != nil {
+	if err := c.Ping(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }

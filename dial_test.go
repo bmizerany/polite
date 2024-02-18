@@ -21,7 +21,7 @@ func TestOpenAuthNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cn.Close()
-	if err := Ping(context.Background(), cn); err != nil {
+	if err := cn.Ping(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -75,7 +75,7 @@ func TestOpenAuthMD5(t *testing.T) {
 			}
 			defer cn.Close()
 
-			if err := Ping(context.Background(), cn); err != nil {
+			if err := cn.Ping(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -137,7 +137,7 @@ func TestOpenAuthSCRAM(t *testing.T) {
 				t.Fatal("expected error")
 			}
 
-			if err := Ping(context.Background(), cn); err != nil {
+			if err := cn.Ping(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -189,7 +189,7 @@ func TestOpenTLS(t *testing.T) {
 			}
 			defer cn.Close()
 
-			if err := Ping(context.Background(), cn); err != nil {
+			if err := cn.Ping(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 		})
