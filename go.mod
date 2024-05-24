@@ -1,6 +1,6 @@
 module blake.io/postgres
 
-go 1.22rc2
+go 1.23
 
 require (
 	github.com/jackc/pgx/v5 v5.5.0

@@ -35,8 +35,6 @@ type Conn struct {
 	rowsAffected int
 }
 
-var errPingFailed = errors.New("pqlite: ping failed")
-
 func (c *Conn) Ping(ctx context.Context) error {
 	if err := c.Exec(ctx, "SELECT 1"); err != nil {
 		return err

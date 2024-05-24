@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-var fullBuffer = strings.Repeat("F", postgresBufferSize)
-
 type readCase[I comparable] struct {
 	in                    string
 	want                  I

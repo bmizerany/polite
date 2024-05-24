@@ -1,12 +1,7 @@
 package febe
 
 import (
-	"errors"
 	"io"
-)
-
-var (
-	CopyDone = errors.New("copy done")
 )
 
 type CopyFormat byte
