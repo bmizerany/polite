@@ -665,14 +665,3 @@ func (c *Conn) checkDone(t *testing.T) {
 		t.Errorf("expected io.UnexpectedEOF, got %v", err)
 	}
 }
-
-func limitReaders(ss ...string) []*io.LimitedReader {
-	lrs := make([]*io.LimitedReader, len(ss))
-	for i, s := range ss {
-		lrs[i] = &io.LimitedReader{
-			N: int64(len(s)),
-			R: strings.NewReader(s),
-		}
-	}
-	return lrs
-}

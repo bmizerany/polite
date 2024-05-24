@@ -428,6 +428,8 @@ type FieldDescription struct {
 // values of FieldDescription are comparable (e.g. the underlying memory
 // cannot be changed (without unsafe) by anymore once it is returned from a
 // Read call).
+//
+//lint:ignore SA4000 We're ensuring that FieldDescription is comparable
 var _ = (FieldDescription{}) == (FieldDescription{})
 
 type RowDescriptionResponse struct {

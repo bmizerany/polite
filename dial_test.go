@@ -217,6 +217,7 @@ func startPG(t *testing.T, settings ...string) string {
 	dir := t.TempDir()
 
 	ctx, cancel := withTestDeadline(context.Background(), t)
+	defer cancel()
 	ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
