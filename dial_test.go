@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -15,6 +17,8 @@ import (
 )
 
 func TestOpenAuthNone(t *testing.T) {
+	t.Parallel()
+
 	dsn := startPG(t)
 	cn, err := Open(context.Background(), dsn, nil)
 	if err != nil {
@@ -27,6 +31,8 @@ func TestOpenAuthNone(t *testing.T) {
 }
 
 func TestOpenAuthMD5(t *testing.T) {
+	t.Parallel()
+
 	// hba postgres that will accept md5 passwords for md5only db, and
 	// trust non-md5only database names using regexp
 	mainDSN := startPG(t, withHBA(t, []string{
@@ -145,6 +151,8 @@ func TestOpenAuthSCRAM(t *testing.T) {
 }
 
 func TestOpenTLS(t *testing.T) {
+	t.Parallel()
+
 	sslrootcert, tlsargs := configureTLSOnly(t)
 	dsn := startPG(t, tlsargs...)
 
@@ -213,7 +221,11 @@ func TestMain(m *testing.M) {
 func startPG(t *testing.T, settings ...string) string {
 	t.Helper()
 
-	port := "9999"
+	port, err := getFreePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	dir := t.TempDir()
 
 	ctx, cancel := withTestDeadline(context.Background(), t)
@@ -446,4 +458,13 @@ func withHBA(t *testing.T, args []string, content string) []string {
 		t.Fatal(err)
 	}
 	return append(args, "-c", "hba_file="+file)
+}
+
+func getFreePort() (string, error) {
+	l, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		return "", err
+	}
+	defer l.Close()
+	return strconv.Itoa(l.Addr().(*net.TCPAddr).Port), nil
 }
