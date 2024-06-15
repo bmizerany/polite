@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"blake.io/postgres/febe"
+	"blake.io/pqlite/febe"
 	"kr.dev/diff"
 )
 

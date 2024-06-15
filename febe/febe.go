@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"blake.io/postgres/febe/febeio"
+	"blake.io/pqlite/febe/febeio"
 )
 
 // Errors
