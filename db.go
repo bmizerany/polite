@@ -8,7 +8,7 @@ import (
 	"iter"
 	"strconv"
 
-	"blake.io/postgres/febe"
+	"blake.io/pqlite/febe"
 )
 
 // Errors

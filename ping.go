@@ -10,8 +10,7 @@ import (
 	"os"
 	"time"
 
-	"blake.io/postgres"
-	"blake.io/postgres/febe"
+	"blake.io/pqlite/febe"
 )
 
 func main() {

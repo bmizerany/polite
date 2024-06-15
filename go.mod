@@ -1,4 +1,4 @@
-module blake.io/postgres
+module blake.io/pqlite
 
 go 1.23
 

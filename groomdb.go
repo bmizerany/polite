@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-
-	"blake.io/postgres"
 )
 
 func main() {

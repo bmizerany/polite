@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"blake.io/postgres/dsn"
-	"blake.io/postgres/febe"
+	"blake.io/pqlite/dsn"
+	"blake.io/pqlite/febe"
 	"github.com/lib/pq/scram"
 )
 
