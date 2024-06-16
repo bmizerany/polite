@@ -89,6 +89,8 @@ func TestOpenAuthMD5(t *testing.T) {
 }
 
 func TestOpenAuthSCRAM(t *testing.T) {
+	t.Parallel()
+
 	mainDSN := startPG(t, withHBA(t, []string{
 		"-c", "password_encryption=scram-sha-256",
 		"-c", "listen_addresses=127.0.0.1",
