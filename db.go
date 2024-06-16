@@ -159,13 +159,15 @@ func errRowsSeq(err error) iter.Seq2[*Row, error] {
 }
 
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
-	if err := c.prepare(ctx, "", sql, args...); err != nil {
-		return errRowsSeq(err)
-	}
-	if err := c.execAndSync(""); err != nil {
-		return errRowsSeq(err)
-	}
 	return func(yield func(*Row, error) bool) {
+		if err := c.prepare(ctx, "", sql, args...); err != nil {
+			yield(nil, err)
+			return
+		}
+		if err := c.execAndSync(""); err != nil {
+			yield(nil, err)
+			return
+		}
 		var processed int
 		ok := true
 		for {
