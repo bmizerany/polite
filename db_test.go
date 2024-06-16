@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"iter"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"testing"
 
 	"blake.io/pqlite/febe"
@@ -36,11 +36,17 @@ const (
 )
 
 func createDB(t testing.TB) string {
+	t.Helper()
+
+	cn, err := Open(context.Background(), mainDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	tname := strings.Replace(t.Name(), "/", "_", -1)
 	dbname := fmt.Sprintf("test_%s_%s", tname, randomString())
 	dbname = strings.ToLower(dbname)
-	err := mc().Exec(context.Background(), "CREATE DATABASE "+dbname)
-	if err != nil {
+	if err := cn.Exec(context.Background(), "CREATE DATABASE "+dbname); err != nil {
 		t.Fatal(err)
 	}
 	dsn := mainDSN + " dbname=" + dbname
@@ -70,6 +76,8 @@ func newSessionDB(t testing.TB) *Conn {
 	return cn
 }
 
+var funcsCreated atomic.Bool
+
 func newSession(t testing.TB) *Conn {
 	ctx := context.Background()
 	cn, err := Open(ctx, mainDSN, nil)
@@ -81,6 +89,10 @@ func newSession(t testing.TB) *Conn {
 			t.Fatal(err)
 		}
 	})
+
+	if funcsCreated.Swap(true) == true {
+		return cn
+	}
 
 	for _, sql := range []string{
 		sqlCreateRaiseNotice,
@@ -94,6 +106,8 @@ func newSession(t testing.TB) *Conn {
 }
 
 func TestQuery(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 
 	const q = `SELECT 1, 2, 'three'`
@@ -113,6 +127,8 @@ func TestQuery(t *testing.T) {
 }
 
 func TestQueryAllocations(t *testing.T) {
+	// If t.Parallel is set, this test will fail.
+
 	cn := newSession(t)
 
 	allocs := testing.AllocsPerRun(1000, func() {
@@ -140,6 +156,8 @@ func TestQueryAllocations(t *testing.T) {
 }
 
 func TestRowClose(t *testing.T) {
+	t.Parallel()
+
 	const q = `SELECT 1`
 
 	cn := newSession(t)
@@ -172,6 +190,8 @@ func TestRowClose(t *testing.T) {
 }
 
 func TestQueryExtended(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 	const q = `
 		SELECT $1
@@ -210,6 +230,8 @@ func collectValues(row *Row) []string {
 }
 
 func TestQueryAll(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 	var got [][]string
 	for row, err := range cn.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
@@ -229,6 +251,8 @@ func TestQueryAll(t *testing.T) {
 }
 
 func TestQueryBreakInAll(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 	var got [][]string
 	for row, err := range cn.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
@@ -245,6 +269,8 @@ func TestQueryBreakInAll(t *testing.T) {
 }
 
 func TestQueryUnprocceedColumnsPanic(t *testing.T) {
+	t.Parallel()
+
 	defer func() {
 		r := recover()
 		if r == nil || !strings.Contains(fmt.Sprint(r), "unprocessed columns") {
@@ -268,6 +294,8 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 }
 
 func TestQueryEmptyQueryResponse(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 	t.Cleanup(func() {
 		checkPing(t, cn)
@@ -288,6 +316,8 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 }
 
 func TestExecSelectTag(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 	if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatal(err)
@@ -299,6 +329,8 @@ func TestExecSelectTag(t *testing.T) {
 }
 
 func TestExecLimit1(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 	var got []byte
 	ctx := febe.WithTrace(context.Background(), &febe.Trace{
@@ -315,6 +347,8 @@ func TestExecLimit1(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 	if err := cn.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)"); err != nil {
 		t.Fatal(err)
@@ -329,6 +363,8 @@ func TestExec(t *testing.T) {
 }
 
 func TestErrors(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	t.Run("prepare error", func(t *testing.T) {
@@ -373,6 +409,8 @@ func TestErrors(t *testing.T) {
 }
 
 func TestNotice(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 	defer checkPing(t, cn) // ensure we leave in a good state
 
@@ -410,6 +448,8 @@ func TestNotice(t *testing.T) {
 }
 
 func TestParameterStatus(t *testing.T) {
+	t.Parallel()
+
 	cn := newSessionDB(t)
 	defer checkPing(t, cn) // ensure we leave in a good state
 
@@ -432,6 +472,8 @@ func TestParameterStatus(t *testing.T) {
 }
 
 func TestByteaString(t *testing.T) {
+	t.Parallel()
+
 	cn := newSession(t)
 	defer checkPing(t, cn) // ensure we leave in a good state
 
@@ -466,13 +508,6 @@ func checkPing(t *testing.T, c *Conn) {
 
 var (
 	mainDSN = "dbname=postgres port=5433 host=localhost sslmode=disable user=postgres password=postgres"
-	mc      = sync.OnceValue(func() *Conn {
-		cn, err := Open(context.Background(), mainDSN, nil)
-		if err != nil {
-			panic(err)
-		}
-		return cn
-	})
 )
 
 // randomString uses math/rand to generate a random string of 8 printable

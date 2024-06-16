@@ -10,6 +10,8 @@ import (
 )
 
 func TestCopyFreestyle(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	cn := newSession(t)
 
@@ -38,6 +40,8 @@ func TestCopyFreestyle(t *testing.T) {
 }
 
 func TestCopyNonBinary(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	cn := newSession(t)
 
@@ -67,6 +71,8 @@ func TestCopyNonBinary(t *testing.T) {
 }
 
 func TestCopyTo(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	cn := newSession(t)
 
@@ -130,6 +136,8 @@ func TestCopyTo(t *testing.T) {
 }
 
 func TestCopyToReset(t *testing.T) {
+	t.Parallel()
+
 	const q = `
 		COPY (SELECT 1) TO STDOUT WITH (FORMAT binary)
 	`
@@ -146,6 +154,8 @@ func TestCopyToReset(t *testing.T) {
 }
 
 func TestCopyFrom(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	cn := newSession(t)
 
