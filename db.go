@@ -174,11 +174,11 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[
 			row, err := c.nextRow(ctx, processed)
 			processed++
 			if err != nil {
-				if !errors.Is(err, ErrDone) {
-					err = c.maybeRecoverFrom(ctx, err)
-					yield(nil, err)
+				if errors.Is(err, ErrDone) {
 					return
 				}
+				err = c.maybeRecoverFrom(ctx, err)
+				yield(nil, err)
 				return
 			}
 
