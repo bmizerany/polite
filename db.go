@@ -33,6 +33,9 @@ type Conn struct {
 	cache map[string]*statement
 
 	rowsAffected int
+
+	// current row
+	row *Row
 }
 
 func (c *Conn) Ping(ctx context.Context) error {
@@ -309,12 +312,15 @@ func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 			if m.NumCols == -1 {
 				continue
 			}
-			row := &Row{
+			if c.row == nil {
+				c.row = &Row{}
+			}
+			*c.row = Row{
 				c:       c,
 				numCols: int(m.NumCols),
 				rem:     int(m.NumCols),
 			}
-			return row, nil
+			return c.row, nil
 		case 'c':
 			_, err := c.fc.ReadCopyDone()
 			if err != nil {

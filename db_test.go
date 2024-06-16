@@ -112,6 +112,33 @@ func TestQuery(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestQueryAllocations(t *testing.T) {
+	cn := newSession(t)
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		const q = `SELECT 1, 'two'`
+		for row, err := range cn.Query(context.Background(), q) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err := row.ParseInt()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// We use View because ParseString will allocate by
+			// allocate by design.
+			_, err = row.View()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	if allocs > 0 {
+		t.Errorf("expected 0 allocations; got %v", allocs)
+	}
+}
+
 func TestRowClose(t *testing.T) {
 	const q = `SELECT 1`
 
@@ -169,12 +196,12 @@ func collectRows(t testing.TB, rows iter.Seq2[*Row, error]) [][]string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, collectValues(t, row))
+		got = append(got, collectValues(row))
 	}
 	return got
 }
 
-func collectValues(t testing.TB, row *Row) []string {
+func collectValues(row *Row) []string {
 	var got []string
 	for range row.Columns() {
 		got = append(got, must(row.ParseString()))
@@ -189,7 +216,7 @@ func TestQueryAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, collectValues(t, row))
+		got = append(got, collectValues(row))
 	}
 	want := [][]string{
 		{"\x00\x00\x00\x01"},
@@ -208,7 +235,7 @@ func TestQueryBreakInAll(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, collectValues(t, row))
+		got = append(got, collectValues(row))
 		break
 	}
 	want := [][]string{
