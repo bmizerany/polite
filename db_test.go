@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"blake.io/pqlite/febe"
 	"kr.dev/diff"
@@ -493,6 +494,28 @@ func TestByteaString(t *testing.T) {
 		got = append(got, must(row.ParseString()))
 	}
 	want := []string{"\x12\x345"}
+	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestRowParseTime(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkPing(t, cn) // ensure we leave in a good state
+
+	ctx := context.Background()
+	var got []time.Time
+	for row, err := range cn.Query(ctx, `SELECT '2021-01-01 00:00:00'::timestamp`) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts, err := row.ParseTime()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, ts)
+	}
+	want := []time.Time{time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)}
 	diff.Test(t, t.Errorf, got, want)
 }
 
