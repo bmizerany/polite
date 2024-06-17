@@ -479,15 +479,8 @@ func TestByteaString(t *testing.T) {
 	defer checkPing(t, cn) // ensure we leave in a good state
 
 	ctx := context.Background()
-	if err := cn.Exec(ctx, "CREATE TEMP TABLE foo (bar BYTEA)"); err != nil {
-		t.Fatal(err)
-	}
-	if err := cn.Exec(ctx, `INSERT INTO foo VALUES ($1)`, "\x12\x345"); err != nil {
-		t.Fatal(err)
-	}
-
 	var got []string
-	for row, err := range cn.Query(ctx, "SELECT bar FROM foo") {
+	for row, err := range cn.Query(ctx, "SELECT '\x12\x345'::bytea") {
 		if err != nil {
 			t.Fatal(err)
 		}
