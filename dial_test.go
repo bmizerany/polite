@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -281,7 +282,11 @@ func startPG(t *testing.T, settings ...string) string {
 			t.Log("-- postgres:", sc.Text())
 		}
 		if err := sc.Err(); err != nil {
-			t.Error(err)
+			var pe *fs.PathError
+			if errors.As(err, &pe) && pe.Op == "read" {
+				return // pg was closed
+			}
+			t.Errorf("postgres log scanner failed: %#v", err)
 		}
 	}()
 

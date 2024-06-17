@@ -7,6 +7,7 @@ import (
 	"io"
 	"iter"
 	"strconv"
+	"time"
 
 	"blake.io/pqlite/febe"
 )
@@ -249,6 +250,16 @@ func (r *Row) ParseInt() (int, error) {
 	default:
 		return 0, fmt.Errorf("ParseInt: invalid length: %d", len(v))
 	}
+}
+
+var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+
+func (r *Row) ParseTime() (time.Time, error) {
+	microseconds, err := r.ParseInt()
+	if err != nil {
+		return time.Time{}, err
+	}
+	return pgEpoch.Add(time.Duration(microseconds) * time.Microsecond), nil
 }
 
 func (r *Row) ParseString() (string, error) {
