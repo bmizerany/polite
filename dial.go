@@ -22,7 +22,8 @@ import (
 )
 
 type Config struct {
-	TLSConfig *tls.Config
+	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
+	TLSConfig   *tls.Config
 }
 
 // Open opens a connection to postgres using the parameters in dsnOrURL,
@@ -54,9 +55,11 @@ func Open(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	}
 
 	// TODO(bmizerany): check info is a valid file and socket
+	if cfg.DialContext == nil {
+		cfg.DialContext = (&net.Dialer{}).DialContext
+	}
 
-	var d net.Dialer
-	cn, err := d.DialContext(ctx, network, addr)
+	cn, err := cfg.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}

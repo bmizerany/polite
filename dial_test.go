@@ -348,7 +348,11 @@ func withTestDeadline(ctx context.Context, t *testing.T) (context.Context, conte
 type logf func(format string, args ...interface{})
 
 func waitForPGReady(ctx context.Context, logf logf, host, port string) error {
-	for {
+	for err := range backoff(ctx, 5*time.Second) {
+		if err != nil {
+			return err
+		}
+
 		// Avoid bootstrapping problems and use pg_isready to wait for
 		// postgres to be ready, instead of our driver. Using our
 		// driver can lead to confusing and hard to debug errors
@@ -370,14 +374,8 @@ func waitForPGReady(ctx context.Context, logf logf, host, port string) error {
 			return nil
 		}
 		logf("pg_isready failed: %v; trying again", err)
-		tt := time.NewTimer(200 * time.Millisecond)
-		select {
-		case <-tt.C:
-		case <-ctx.Done():
-			tt.Stop()
-			return err
-		}
 	}
+	return nil
 }
 
 // generated with `go run $GOPATH/src/crypto/tls/generate_cert.go --host localhost`

@@ -127,6 +127,13 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	var zero MessageHeader
 	t := traceFromContext(ctx)
 	for {
+		// TODO(bmizerany): We need to thread ctx through to the
+		// febeio so we can cancel the read if the user cancels the
+		// context. This works for now:
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
+		}
+
 		if err := c.discardRemainingMessageBytes(); err != nil {
 			return zero, err
 		}
@@ -242,6 +249,12 @@ func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 		c.c.WriteString(v)
 	}
 	c.c.WriteString("")
+	return c.Err()
+}
+
+func (c *Conn) WriteTerminate() error {
+	c.c.WriteByte('X')
+	c.c.WriteInt32(4)
 	return c.Err()
 }
 
