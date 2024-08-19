@@ -167,6 +167,63 @@ func TestPoolPutClosedPool(t *testing.T) {
 	}
 }
 
+func TestPoolGetCloseWithWaiter(t *testing.T) {
+	waiting := make(chan struct{})
+	next := func(ctx context.Context) (*Conn, error) {
+		// Next is never called until by a client until their waiting
+		// chan is already in line, so we know now that someone is
+		// waiting, so signal that.
+		close(waiting)
+
+		// For the waiter to block until the pool is closed, and then
+		// only return an error.
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	p := &Pool{
+		MaxOpen: 1,
+		Next:    next,
+		Logger:  slogt.New(t),
+	}
+	defer p.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var got [3]error
+	var wg sync.WaitGroup
+	for i := range got {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cn, err := p.Get(ctx)
+			if err != nil {
+				got[i] = err
+				return
+			}
+			p.Put(cn)
+		}()
+	}
+
+	select {
+	case <-waiting:
+		// Close the pool while someone is waiting.
+		if err := p.Close(); err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected waiting to be closed")
+	}
+
+	wg.Wait()
+
+	want := [...]error{ErrPoolClosed, ErrPoolClosed, ErrPoolClosed}
+	if got != want {
+		t.Fatalf("got = %v; want %v", got, want)
+	}
+}
+
 func BenchmarkPool(b *testing.B) {
 	b.Run("driver=pqlite/open=1", func(b *testing.B) { benchmarkPool(b, 1) })
 	b.Run("driver=pqlite/open=2", func(b *testing.B) { benchmarkPool(b, 2) })

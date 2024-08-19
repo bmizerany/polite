@@ -177,12 +177,18 @@ func (p *Pool) startNewConn() {
 			// after tests are done, which is an error.
 			return
 		}
-		err = cmp.Or(context.Cause(p.cancelCtx), err)
-		p.log().Debug("pqlite: pool: error opening new connection; retrying", "err", err)
+		p.log().Debug("pqlite: pool: error opening new connection; retrying", "err",
+			cmp.Or(context.Cause(p.cancelCtx), err))
 	}
 }
 
 func (p *Pool) Get(ctx context.Context) (*Conn, error) {
+	if ctx.Err() != nil {
+		// avoid tiying up resources and delaying a connection from
+		// reaching a truly ready waiter if the context is already
+		// done.
+		return nil, ctx.Err()
+	}
 	cn, ch, err := func() (*Conn, chan *Conn, error) {
 		p.readyMu.Lock()
 		if p.cancelCtx == nil {
@@ -239,7 +245,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 			chanPool.Put(ch)
 		}
 		if cn == nil {
-			return nil, errors.New("pqlite: pool: closed")
+			return nil, ErrPoolClosed
 		}
 		if cn == makeNewConn {
 			return p.next(ctx)
