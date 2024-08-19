@@ -224,6 +224,62 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 	}
 }
 
+func TestPoolGetMaxWaiters(t *testing.T) {
+	const maxWaiters = 3
+
+	var shouldOpenConn atomic.Bool
+
+	var waiters sync.WaitGroup
+	waiters.Add(maxWaiters)
+	next := func(ctx context.Context) (*Conn, error) {
+		if shouldOpenConn.Load() {
+			return Opener(testDSN, nil)(ctx)
+		}
+
+		// Next is never called until by a client until their waiting
+		// chan is already in line, so we know now that someone is
+		// waiting, so signal that.
+		waiters.Done()
+
+		// For the waiter to block until the pool is closed, and then
+		// only return an error.
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	p := &Pool{
+		MaxWaiting: maxWaiters,
+		Next:       next,
+		Logger:     slogt.New(t),
+	}
+	defer p.Close()
+
+	var unblocked sync.WaitGroup
+	unblocked.Add(maxWaiters)
+	for range maxWaiters {
+		go func() {
+			defer unblocked.Done()
+			_, err := p.Get(ctx)
+			if !errors.Is(err, ErrPoolClosed) {
+				panic(err)
+			}
+		}()
+	}
+
+	waiters.Wait()
+
+	// Make the next Next call open a connection instead of block.
+	shouldOpenConn.Store(true)
+
+	_, err := p.Get(ctx)
+	if !errors.Is(err, ErrPoolFull) {
+		t.Fatalf("Get() = %v; want %v", err, ErrPoolFull)
+	}
+}
+
 func BenchmarkPool(b *testing.B) {
 	b.Run("driver=pqlite/open=1", func(b *testing.B) { benchmarkPool(b, 1) })
 	b.Run("driver=pqlite/open=2", func(b *testing.B) { benchmarkPool(b, 2) })

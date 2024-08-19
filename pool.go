@@ -25,7 +25,7 @@ const (
 
 // Errors
 var (
-	ErrFull = errors.New("pqlite: pool: too many waiting")
+	ErrPoolFull = errors.New("pqlite: pool: too many waiting")
 
 	// ErrPoolClosed is returned when the pool closed.
 	ErrPoolClosed = errors.New("pqlite: pool: closed")
@@ -205,10 +205,10 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		}
 
 		p.waitingMu.Lock()
-		if p.waiting.Len() > p.maxWaiting() {
+		if p.waiting.Len() >= p.maxWaiting() {
 			p.waitingMu.Unlock()
 			p.readyMu.Unlock()
-			return nil, nil, ErrFull
+			return nil, nil, ErrPoolFull
 		}
 
 		// Get in line and wait for another goroutine to put a
