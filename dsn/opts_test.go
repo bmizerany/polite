@@ -1,6 +1,7 @@
 package dsn
 
 import (
+	"strings"
 	"testing"
 
 	"golang.org/x/exp/slices"
@@ -98,6 +99,25 @@ func TestParseOptions(t *testing.T) {
 			Database: "postgres",
 			Extra:    []string{"quote='foo bar'", "user=" + defaultUser, "database=postgres"},
 		}},
+		{"postgres://foo:bar@localhost:5432/test?sslmode=disable", &Options{
+			Host:     "localhost",
+			Port:     "5432",
+			User:     "foo",
+			Password: "bar",
+			Database: "test",
+			SSLMode:  "disable",
+			Extra:    []string{"database=test", "user=foo"},
+		}},
+
+		// make sure we acknowledge the scheme "postgresql" too.
+		{"postgresql://u:p@localhost", &Options{
+			Host:     "localhost",
+			Port:     "5432",
+			User:     "u",
+			Password: "p",
+			Database: "postgres",
+			Extra:    []string{"user=u", "database=postgres"},
+		}},
 	}
 
 	for _, tt := range cases {
@@ -113,6 +133,25 @@ func TestParseOptions(t *testing.T) {
 			slices.Sort(got.Extra)
 			slices.Sort(tt.want.Extra)
 			diff.Test(t, t.Errorf, got, tt.want)
+		})
+	}
+}
+
+func TestURIUnsupportedScheme(t *testing.T) {
+	cases := []string{
+		"mysql://foo:bar@localhost:5432/test",
+		"f://foo:bar@localhost:5432/test",
+		"file:///tmp",
+	}
+	for _, dsn := range cases {
+		t.Run(dsn, func(t *testing.T) {
+			_, err := ParseOptions(dsn)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), "unsupported scheme") {
+				t.Fatalf("er = %v; want unsupported scheme", err)
+			}
 		})
 	}
 }

@@ -3,6 +3,7 @@ package febe
 import (
 	"fmt"
 	"strings"
+	"unsafe"
 )
 
 type Notice struct {
@@ -85,6 +86,23 @@ func (c *Conn) readNoticeResponse() (NoticeResponse, error) {
 		MessageHeader: c.h,
 		Notice:        &Notice{},
 	}
+
+	// Preallocate enough space for the fields in one shot. This
+	// prevents an allocation per field. We have to generate some
+	// egarbage here, and this is more than we need because it includes
+	// the field keys and null terminators, but it's a reasonable
+	// approximation and we can avoid allocating for each field.
+	buf := make([]byte, 0, c.h.BodyLen())
+
+	// Keep appending to a pre-allocated buffer to avoid a single
+	// allocation per field.
+	copyToString := func(v []byte) string {
+		buf = append(buf[:0], v...)
+		s := unsafe.String(unsafe.SliceData(buf), len(buf))
+		buf = buf[len(v):]
+		return s
+	}
+
 	for {
 		k, err := c.c.ReadByte()
 		if err != nil {
@@ -99,39 +117,39 @@ func (c *Conn) readNoticeResponse() (NoticeResponse, error) {
 		}
 		switch k {
 		case 'S':
-			n.Severity = string(v)
+			n.Severity = copyToString(v)
 		case 'C':
-			n.Code = string(v)
+			n.Code = copyToString(v)
 		case 'M':
-			n.Message = string(v)
+			n.Message = copyToString(v)
 		case 'D':
-			n.Detail = string(v)
+			n.Detail = copyToString(v)
 		case 'H':
-			n.Hint = string(v)
+			n.Hint = copyToString(v)
 		case 'P':
-			n.Position = string(v)
+			n.Position = copyToString(v)
 		case 'p':
-			n.Internal = string(v)
+			n.Internal = copyToString(v)
 		case 'W':
-			n.Where = string(v)
+			n.Where = copyToString(v)
 		case 's':
-			n.Schema = string(v)
+			n.Schema = copyToString(v)
 		case 't':
-			n.Table = string(v)
+			n.Table = copyToString(v)
 		case 'c':
-			n.Column = string(v)
+			n.Column = copyToString(v)
 		case 'd':
-			n.DataType = string(v)
+			n.DataType = copyToString(v)
 		case 'n':
-			n.Constraint = string(v)
+			n.Constraint = copyToString(v)
 		case 'F':
-			n.File = string(v)
+			n.File = copyToString(v)
 		case 'L':
-			n.Line = string(v)
+			n.Line = copyToString(v)
 		case 'R':
-			n.Routine = string(v)
+			n.Routine = copyToString(v)
 		case 'V':
-			n.Verbosity = string(v)
+			n.Verbosity = copyToString(v)
 		default:
 			return zero, fmt.Errorf("pqlite: unexpected error response key %q", k)
 		}

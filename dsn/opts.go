@@ -6,7 +6,7 @@ import (
 	"iter"
 	"net/url"
 	"os/user"
-	"strings"
+	"slices"
 )
 
 type Options struct {
@@ -57,10 +57,10 @@ func ParseOptions(dsn string) (*Options, error) {
 	o := &Options{}
 	defer setDefaults(o)
 
-	if strings.HasPrefix(dsn, "postgres://") {
-		u, err := url.Parse(dsn)
-		if err != nil {
-			return o, err
+	u, err := url.Parse(dsn)
+	if err == nil && u.Scheme != "" {
+		if !slices.Contains([]string{"postgres", "postgresql"}, u.Scheme) {
+			return nil, fmt.Errorf("unsupported scheme: %q", u.Scheme)
 		}
 
 		o.Host = cmp.Or(u.Hostname(), o.Host)
@@ -72,7 +72,7 @@ func ParseOptions(dsn string) (*Options, error) {
 		// Password is parsed from the URL directly
 		o.Password, _ = u.User.Password()
 
-		// Database is the path of the URL
+		// Database is the path of the URL without the leading slash
 		if database := u.Path; len(database) > 1 {
 			o.Database = database[1:]
 		}
