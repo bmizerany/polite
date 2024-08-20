@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"blake.io/pqlite/febe"
 )
 
 func TestOpenAuthNone(t *testing.T) {
@@ -207,6 +209,61 @@ func TestOpenTLS(t *testing.T) {
 	}
 }
 
+func TestOpenReadDeadline(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	ctx = febe.WithTrace(ctx, &febe.Trace{
+		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
+			cancel()
+		},
+	})
+
+	var gotConn net.Conn
+	cfg := &Config{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			cn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			gotConn = cn
+			return cn, nil
+		},
+	}
+
+	db, err := Open(ctx, testDSN, cfg)
+	if err == nil {
+		db.Close()
+		t.Fatalf("Open expected to fail")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v; want %v", err, context.DeadlineExceeded)
+	}
+	if gotConn == nil {
+		t.Fatal("expected connection to be dialed")
+	}
+	if !errors.Is(gotConn.Close(), net.ErrClosed) {
+		t.Errorf("gotConn.Close() = %v; want %v", err, net.ErrClosed)
+	}
+}
+
+func TestOpenDialError(t *testing.T) {
+	// prove that Open uses the DialContext function from the Config if
+	// present
+	errBoom := errors.New("boom")
+	cfg := &Config{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return nil, errBoom
+		},
+	}
+	_, err := Open(context.Background(), "", cfg)
+	if !errors.Is(err, errBoom) {
+		t.Fatalf("err = %v; want %v", err, errBoom)
+	}
+}
+
 func TestMain(m *testing.M) {
 	maybeBecomeSupervisor()
 	os.Exit(m.Run())
@@ -348,7 +405,11 @@ func withTestDeadline(ctx context.Context, t *testing.T) (context.Context, conte
 type logf func(format string, args ...interface{})
 
 func waitForPGReady(ctx context.Context, logf logf, host, port string) error {
-	for {
+	for err := range backoff(ctx, 5*time.Second) {
+		if err != nil {
+			return err
+		}
+
 		// Avoid bootstrapping problems and use pg_isready to wait for
 		// postgres to be ready, instead of our driver. Using our
 		// driver can lead to confusing and hard to debug errors
@@ -370,14 +431,8 @@ func waitForPGReady(ctx context.Context, logf logf, host, port string) error {
 			return nil
 		}
 		logf("pg_isready failed: %v; trying again", err)
-		tt := time.NewTimer(200 * time.Millisecond)
-		select {
-		case <-tt.C:
-		case <-ctx.Done():
-			tt.Stop()
-			return err
-		}
 	}
+	return nil
 }
 
 // generated with `go run $GOPATH/src/crypto/tls/generate_cert.go --host localhost`

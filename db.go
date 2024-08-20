@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"iter"
+	"net"
 	"strconv"
 	"time"
 
@@ -27,7 +27,7 @@ type statement struct {
 }
 
 type Conn struct {
-	cn io.Closer
+	cn net.Conn
 	fc *febe.Conn
 
 	nstmt int
@@ -37,6 +37,10 @@ type Conn struct {
 
 	// current row
 	row *Row
+
+	closed bool
+
+	uses int
 }
 
 func (c *Conn) Ping(ctx context.Context) error {
@@ -47,7 +51,16 @@ func (c *Conn) Ping(ctx context.Context) error {
 }
 
 func (c *Conn) Close() error {
-	// TODO(bmizerany): send Terminate message
+	if c.closed {
+		return net.ErrClosed
+	}
+	if err := c.fc.WriteTerminate(); err != nil {
+		return err
+	}
+	if err := c.fc.Flush(); err != nil {
+		return err
+	}
+	c.closed = true
 	return c.cn.Close()
 }
 

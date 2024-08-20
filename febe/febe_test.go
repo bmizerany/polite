@@ -51,7 +51,7 @@ var testNotice = &Notice{
 	Verbosity:  "VERBOSITY",
 }
 
-func writeNoticeResponse(t *testing.T, EorN byte, c *Conn) {
+func writeNoticeResponse(t testing.TB, EorN byte, c *Conn) {
 	t.Helper()
 
 	var s sizer
@@ -148,6 +148,9 @@ func TestNoticeResponse(t *testing.T) {
 		},
 		ReceivedNotice: func(ctx context.Context, n *Notice) {
 			t.Logf("got notice: %v", n)
+			if got != nil {
+				t.Fatalf("got already set to: %v", got)
+			}
 			got = n
 		},
 	})
@@ -181,6 +184,27 @@ func TestWriteStartupMessage(t *testing.T) {
 		'u', 's', 'e', 'r', 0,
 		't', 'e', 's', 't', 0,
 		0,
+	}
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+}
+
+func TestWriteTerminate(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	if err := cn.WriteTerminate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{
+		// message type
+		'X',
+		// length of message
+		0, 0, 0, 4,
 	}
 	diff.Test(t, t.Errorf, b.Bytes(), want)
 }

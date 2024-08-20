@@ -2,7 +2,7 @@ package pqlite
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -12,7 +12,7 @@ import (
 func BenchmarkQuery(b *testing.B) {
 	ctx := context.Background()
 
-	query := func(driver string, n int) (string, string) {
+	query := func(n int) string {
 		var sb strings.Builder
 		sb.WriteString("SELECT")
 		for n := range n {
@@ -21,14 +21,13 @@ func BenchmarkQuery(b *testing.B) {
 			}
 			sb.WriteString(" 12345")
 		}
-		name := fmt.Sprintf("QueryParams_%s_%d", driver, n)
-		return name, sb.String()
+		return sb.String()
 	}
 
 	for n := range 5 {
-		dsn := mainDSN
-		name, q := query("PQL", n)
-		b.Run(name, func(b *testing.B) {
+		dsn := testDSN
+		q := query(n)
+		b.Run("driver=pqlite/n="+strconv.Itoa(n), func(b *testing.B) {
 			cn, err := Open(ctx, dsn, nil)
 			if err != nil {
 				b.Fatal(err)
@@ -53,9 +52,9 @@ func BenchmarkQuery(b *testing.B) {
 	}
 
 	for n := range 5 {
-		dsn := mainDSN
-		name, q := query("PGX", n)
-		b.Run(name, func(b *testing.B) {
+		dsn := testDSN
+		q := query(n)
+		b.Run("driver=pgx/n="+strconv.Itoa(n), func(b *testing.B) {
 			conn, err := pgx.Connect(context.Background(), dsn)
 			if err != nil {
 				b.Fatal(err)

@@ -1,11 +1,14 @@
 package pqlite
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"iter"
+	"net"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -36,10 +39,12 @@ const (
 	`
 )
 
+// createDB creates a new database for the test using its name as the
+// prefix. It returns the DSN for the new database.
 func createDB(t testing.TB) string {
 	t.Helper()
 
-	cn, err := Open(context.Background(), mainDSN, nil)
+	cn, err := Open(context.Background(), testDSN, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,11 +55,14 @@ func createDB(t testing.TB) string {
 	if err := cn.Exec(context.Background(), "CREATE DATABASE "+dbname); err != nil {
 		t.Fatal(err)
 	}
-	dsn := mainDSN + " dbname=" + dbname
+	dsn := testDSN + " dbname=" + dbname
 	t.Logf("newConn: dsn: %q", dsn)
 	return dsn
 }
 
+// newSessionDB opens and returns a database connection to mainDSN.
+//
+// Users that need a clean database should use createDB instead.
 func newSessionDB(t testing.TB) *Conn {
 	ctx := context.Background()
 	dsn := createDB(t)
@@ -81,12 +89,15 @@ var funcsCreated atomic.Bool
 
 func newSession(t testing.TB) *Conn {
 	ctx := context.Background()
-	cn, err := Open(ctx, mainDSN, nil)
+	cn, err := Open(ctx, testDSN, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		if err := cn.Close(); err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
 			t.Fatal(err)
 		}
 	})
@@ -111,20 +122,22 @@ func TestQuery(t *testing.T) {
 
 	cn := newSession(t)
 
-	const q = `SELECT 1, 2, 'three'`
-	var got [][]any
-	for row, err := range cn.Query(context.Background(), q) {
-		if err != nil {
-			t.Fatal(err)
+	for range 3 {
+		const q = `SELECT 1, 2, 'three'`
+		var got [][]any
+		for row, err := range cn.Query(context.Background(), q) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, []any{
+				must(row.ParseInt()),
+				must(row.ParseInt()),
+				must(row.ParseString()),
+			})
 		}
-		got = append(got, []any{
-			must(row.ParseInt()),
-			must(row.ParseInt()),
-			must(row.ParseString()),
-		})
+		want := [][]any{{1, 2, "three"}}
+		diff.Test(t, t.Errorf, got, want)
 	}
-	want := [][]any{{1, 2, "three"}}
-	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestQueryAllocations(t *testing.T) {
@@ -153,6 +166,23 @@ func TestQueryAllocations(t *testing.T) {
 	})
 	if allocs > 0 {
 		t.Errorf("expected 0 allocations; got %v", allocs)
+	}
+}
+
+func TestConnClose(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	if err := cn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Close(); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Close() = %v; want %v", err, ErrPoolClosed)
+	}
+
+	// Ensure we can't use the connection after closing.
+	if err := cn.Ping(context.Background()); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Ping() = %v; want %v", err, ErrPoolClosed)
 	}
 }
 
@@ -523,7 +553,8 @@ func checkPing(t *testing.T, c *Conn) {
 }
 
 var (
-	mainDSN = "dbname=postgres port=5433 host=localhost sslmode=disable user=postgres password=postgres"
+	testDSN = cmp.Or(os.Getenv("DATABASE_URL"),
+		"dbname=postgres host=/tmp port=5411 sslmode=disable user=postgres password=postgres")
 )
 
 // randomString uses math/rand to generate a random string of 8 printable

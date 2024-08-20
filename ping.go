@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"blake.io/pqlite"
 	"blake.io/pqlite/febe"
 )
 
@@ -30,13 +31,17 @@ func main() {
 	defer f.Close()
 
 	// TLS keylog recroding
-	cfg := &postgres.Config{
+	cfg := &pqlite.Config{
 		TLSConfig: &tls.Config{
 			KeyLogWriter: f,
 		},
 	}
 
-	cn, err := postgres.Open(ctx, os.Getenv("DATABASE_URL"), cfg)
+	pool := &pqlite.Pool{
+		Next: pqlite.Opener(os.Getenv("DATABASE_URL"), cfg),
+	}
+
+	cn, err := pool.Get(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
