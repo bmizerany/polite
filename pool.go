@@ -96,10 +96,6 @@ type Pool struct {
 	waiting   queues.Fifo[chan *Conn]
 }
 
-// makeNewConn is a sentinel value for waiters in the waiting queue to
-// indicate that they should stop waiting and make a new connection.
-var makeNewConn = new(Conn)
-
 // caller must hold p.readyMu and p.waitingMu
 func (p *Pool) putLocked(cn *Conn) {
 	handoff := func(cn *Conn) bool {
@@ -116,8 +112,8 @@ func (p *Pool) putLocked(cn *Conn) {
 
 	cn.uses++
 	if p.maxUses() > 0 && cn.uses > p.maxUses() {
-		defer cn.Close()
-		handoff(makeNewConn)
+		go p.startNewConn()
+		cn.Close()
 		return
 	}
 
@@ -246,9 +242,6 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		}
 		if cn == nil {
 			return nil, ErrPoolClosed
-		}
-		if cn == makeNewConn {
-			return p.next(ctx)
 		}
 		return cn, nil
 	case <-ctx.Done():

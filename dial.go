@@ -113,7 +113,7 @@ func Open(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	}()
 	if !stop() {
 		<-stopc
-		cn.SetReadDeadline(time.Time{})
+		cn.Close()
 		return nil, ctx.Err()
 	}
 	if err != nil {

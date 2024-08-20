@@ -219,7 +219,19 @@ func TestOpenReadDeadline(t *testing.T) {
 		},
 	})
 
-	db, err := Open(ctx, testDSN, nil)
+	var gotConn net.Conn
+	cfg := &Config{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			cn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			gotConn = cn
+			return cn, nil
+		},
+	}
+
+	db, err := Open(ctx, testDSN, cfg)
 	if err == nil {
 		db.Close()
 		t.Fatalf("Open expected to fail")
@@ -227,9 +239,15 @@ func TestOpenReadDeadline(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v; want %v", err, context.DeadlineExceeded)
 	}
+	if gotConn == nil {
+		t.Fatal("expected connection to be dialed")
+	}
+	if !errors.Is(gotConn.Close(), net.ErrClosed) {
+		t.Errorf("gotConn.Close() = %v; want %v", err, net.ErrClosed)
+	}
 }
 
-func TestOpenDialContext(t *testing.T) {
+func TestOpenDialError(t *testing.T) {
 	// prove that Open uses the DialContext function from the Config if
 	// present
 	errBoom := errors.New("boom")
