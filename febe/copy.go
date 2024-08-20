@@ -73,18 +73,18 @@ func (c *Conn) readCopy() (CopyResponse, error) {
 }
 
 const (
-	BinarySignature = "PGCOPY\n\377\r\n\000"
-	BinaryFlags     = "\x00\x00\x00\x00"
-	BinaryExtLength = "\x00\x00\x00\x00"
+	binarySignature = "PGCOPY\n\377\r\n\000"
+	binaryFlags     = "\x00\x00\x00\x00"
+	binaryExtLength = "\x00\x00\x00\x00"
 )
 
 func (c *Conn) WriteCopyDataRow(values [][]byte, includeHeader bool) error {
 	var s sizer
 	s.addInt32() // length
 	if includeHeader {
-		s.addBytes(len(BinarySignature))
-		s.addBytes(len(BinaryFlags))
-		s.addBytes(len(BinaryExtLength))
+		s.addBytes(len(binarySignature))
+		s.addBytes(len(binaryFlags))
+		s.addBytes(len(binaryExtLength))
 	}
 	s.addInt16() // column count
 	for _, v := range values {
@@ -96,9 +96,9 @@ func (c *Conn) WriteCopyDataRow(values [][]byte, includeHeader bool) error {
 	c.c.WriteInt32(s.size())
 
 	if includeHeader {
-		io.WriteString(c.c, BinarySignature)
-		io.WriteString(c.c, BinaryFlags)
-		io.WriteString(c.c, BinaryExtLength)
+		io.WriteString(c.c, binarySignature)
+		io.WriteString(c.c, binaryFlags)
+		io.WriteString(c.c, binaryExtLength)
 	}
 
 	if len(values) == 0 {
@@ -116,7 +116,7 @@ func (c *Conn) WriteCopyDataRow(values [][]byte, includeHeader bool) error {
 }
 
 func (c *Conn) discardBinarySignatureFlagsAndExt() error {
-	if err := c.c.Discard(len(BinarySignature) + len(BinaryFlags)); err != nil {
+	if err := c.c.Discard(len(binarySignature) + len(binaryFlags)); err != nil {
 		return err
 	}
 	n, err := c.c.ReadInt32() // length of the extension area
