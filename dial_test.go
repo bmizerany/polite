@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"blake.io/pqlite/febe"
 )
 
 func TestOpenAuthNone(t *testing.T) {
@@ -204,6 +206,26 @@ func TestOpenTLS(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestOpenReadDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	ctx = febe.WithTrace(ctx, &febe.Trace{
+		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
+			cancel()
+		},
+	})
+
+	db, err := Open(ctx, testDSN, nil)
+	if err == nil {
+		db.Close()
+		t.Fatalf("Open expected to fail")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v; want %v", err, context.DeadlineExceeded)
 	}
 }
 
