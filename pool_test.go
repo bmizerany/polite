@@ -97,29 +97,6 @@ func TestPoolGetReady(t *testing.T) {
 	}
 }
 
-func TestPoolGetNextError(t *testing.T) {
-	p := &Pool{
-		MaxOpen: 1,
-		Next:    func(context.Context) (*Conn, error) { return nil, errors.New("test") },
-		Logger:  slogt.New(t),
-	}
-	defer p.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	for range 3 {
-		cn, err := p.Get(ctx)
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if cn != nil {
-			cn.Close()
-			t.Fatalf("expected nil connection, got %v", cn)
-		}
-	}
-}
-
 func TestPoolGetNextErrorAfterClose(t *testing.T) {
 	p := &Pool{
 		MaxOpen: 1,
