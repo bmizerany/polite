@@ -394,11 +394,9 @@ func TestExec(t *testing.T) {
 }
 
 func TestErrors(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
-
 	t.Run("prepare error", func(t *testing.T) {
+		t.Parallel()
 		cn := newSession(t)
 		err := cn.Exec(ctx, "SELECT !")
 		if err == nil {
@@ -419,6 +417,7 @@ func TestErrors(t *testing.T) {
 	})
 
 	t.Run("exec error", func(t *testing.T) {
+		t.Parallel()
 		cn := newSession(t)
 		err := cn.Exec(ctx, "SELECT raise_error()")
 		if err == nil {
