@@ -229,6 +229,21 @@ func TestOpenReadDeadline(t *testing.T) {
 	}
 }
 
+func TestOpenDialContext(t *testing.T) {
+	// prove that Open uses the DialContext function from the Config if
+	// present
+	errBoom := errors.New("boom")
+	cfg := &Config{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return nil, errBoom
+		},
+	}
+	_, err := Open(context.Background(), "", cfg)
+	if !errors.Is(err, errBoom) {
+		t.Fatalf("err = %v; want %v", err, errBoom)
+	}
+}
+
 func TestMain(m *testing.M) {
 	maybeBecomeSupervisor()
 	os.Exit(m.Run())
