@@ -18,6 +18,8 @@ import (
 )
 
 func TestPoolMaxUseWithWaiter(t *testing.T) {
+	t.Parallel()
+
 	p := &Pool{
 		MaxOpen: 1,
 		MaxUses: 1,
@@ -50,6 +52,8 @@ func TestPoolMaxUseWithWaiter(t *testing.T) {
 }
 
 func TestPoolClose(t *testing.T) {
+	t.Parallel()
+
 	p := &Pool{
 		Next:   Opener(testDSN, nil),
 		Logger: slogt.New(t),
@@ -73,6 +77,8 @@ func TestPoolClose(t *testing.T) {
 }
 
 func TestPoolGetReady(t *testing.T) {
+	t.Parallel()
+
 	p := &Pool{
 		Next:   Opener(testDSN, nil),
 		Logger: slogt.New(t),
@@ -98,6 +104,8 @@ func TestPoolGetReady(t *testing.T) {
 }
 
 func TestPoolGetNextErrorAfterClose(t *testing.T) {
+	t.Parallel()
+
 	p := &Pool{
 		MaxOpen: 1,
 		Next:    func(context.Context) (*Conn, error) { return nil, errors.New("test") },
@@ -123,6 +131,8 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 }
 
 func TestPoolPutClosedPool(t *testing.T) {
+	t.Parallel()
+
 	p := &Pool{Logger: slogt.New(t)}
 	defer p.Close()
 
@@ -202,6 +212,8 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 }
 
 func TestPoolGetMaxWaiters(t *testing.T) {
+	t.Parallel()
+
 	const maxWaiters = 3
 
 	var shouldOpenConn atomic.Bool

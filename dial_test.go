@@ -210,6 +210,8 @@ func TestOpenTLS(t *testing.T) {
 }
 
 func TestOpenReadDeadline(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
