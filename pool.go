@@ -82,6 +82,11 @@ type Pool struct {
 	// error. If MaxWaiting is zero, then DefaultPoolMaxWaiters is used.
 	MaxWaiting int
 
+	// MaxLifetime is the maximum amount of time a connection can be
+	// idle before it is closed. If MaxLifetime is zero, then
+	// DefaultPoolMaxLifetime is used.
+	MaxLifetime time.Duration
+
 	Logger *slog.Logger // default is slog.Default()
 
 	// TODO(bmizerany): MaxLifetime time.Duration
@@ -250,6 +255,38 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		p.log().Error("pqlite: pool: TODO: handle context cancelation")
 		return nil, ctx.Err()
 	}
+}
+
+// CloseExpiredConns closes any connections that have been idle for more than
+// MaxLifetime.
+//
+// It retuens all errors encountered while closing connections wrapped into
+// one.
+func (p *Pool) CloseExpiredConns() error {
+	maxLifetime := p.MaxLifetime
+	if maxLifetime == 0 {
+		maxLifetime = DefaultPoolMaxLifetime
+	}
+
+	var errs []error
+	var marked []*Conn
+
+	p.readyMu.Lock()
+	p.ready.DeleteFunc(func(cn *Conn) bool {
+		if time.Since(cn.created) > p.MaxLifetime {
+			marked = append(marked, cn)
+			return true
+		}
+		return false
+	})
+	p.readyMu.Unlock()
+
+	for _, cn := range marked {
+		if err := cn.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (p *Pool) Close() error {

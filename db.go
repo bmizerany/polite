@@ -30,6 +30,8 @@ type Conn struct {
 	cn net.Conn
 	fc *febe.Conn
 
+	created time.Time
+
 	nstmt int
 	cache map[string]*statement
 

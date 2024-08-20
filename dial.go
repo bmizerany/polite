@@ -76,8 +76,9 @@ func Open(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	})
 
 	c := &Conn{
-		cn: cn,
-		fc: febe.New(cn, cn),
+		cn:      cn,
+		fc:      febe.New(cn, cn),
+		created: time.Now(),
 	}
 
 	err = func() error {
