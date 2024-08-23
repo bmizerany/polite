@@ -290,9 +290,6 @@ func (r *Row) ParseString() (string, error) {
 // Most users will not need to call this method, since Rows.All will call it
 // automatically after each yield.
 func (r *Row) Close() error {
-	if r.rem == 0 {
-		return nil
-	}
 	for {
 		_, err := r.View()
 		if err != nil {
