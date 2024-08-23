@@ -117,8 +117,7 @@ func (p *Pool) putLocked(cn *Conn) {
 
 	cn.uses++
 	if p.maxUses() > 0 && cn.uses > p.maxUses() {
-		go p.startNewConn()
-		cn.Close()
+		go p.startNewConn(cn)
 		return
 	}
 
@@ -161,7 +160,18 @@ var chanPool = sync.Pool{
 	},
 }
 
-func (p *Pool) startNewConn() {
+func (p *Pool) startNewConn(retire *Conn) {
+	if retire != nil {
+		// Retire the connection so that it is not used again, and
+		// before we open a new one as to not exceed the max open
+		// connections.
+		//
+		// This is done in a goroutine to avoid blocking callers of Put
+		// that would otherwise unjustly pay the penalty of the
+		// connection being retired.
+		retire.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
+		retire.Close()
+	}
 	for err := range backoff(p.cancelCtx, 5*time.Second) {
 		if err != nil {
 			p.readyMu.Lock()
@@ -221,7 +231,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 
 		if p.openConns < p.maxOpen() || p.maxOpen() < 0 {
 			p.openConns++
-			go p.startNewConn()
+			go p.startNewConn(nil)
 		}
 		p.readyMu.Unlock()
 		return nil, ch, nil
