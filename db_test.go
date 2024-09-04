@@ -50,7 +50,7 @@ func createDB(t testing.TB) string {
 	}
 
 	tname := strings.Replace(t.Name(), "/", "_", -1)
-	dbname := fmt.Sprintf("test_%s_%s", tname, randomString())
+	dbname := fmt.Sprintf("gotest_%s_%s", tname, randomString())
 	dbname = strings.ToLower(dbname)
 	if err := cn.Exec(context.Background(), "CREATE DATABASE "+dbname); err != nil {
 		t.Fatal(err)

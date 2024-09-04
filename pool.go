@@ -115,8 +115,9 @@ func (p *Pool) putLocked(cn *Conn) {
 		return false
 	}
 
+	expired := p.MaxLifetime > 0 && time.Since(cn.created) >= p.MaxLifetime
 	cn.uses++
-	if p.maxUses() > 0 && cn.uses > p.maxUses() {
+	if expired || p.maxUses() > 0 && cn.uses > p.maxUses() {
 		go p.startNewConn(cn)
 		return
 	}
@@ -180,6 +181,7 @@ func (p *Pool) startNewConn(retire *Conn) {
 		}
 		cn, err := p.next(p.cancelCtx)
 		if err == nil {
+			cn.created = time.Now()
 			p.Put(cn)
 			return
 		}

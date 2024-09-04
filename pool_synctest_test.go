@@ -1,4 +1,4 @@
-//Xgo:build synctest
+//go:build synctest
 
 package pqlite
 
@@ -13,6 +13,55 @@ import (
 
 	"github.com/neilotoole/slogt"
 )
+
+func TestPoolExpired(t *testing.T) {
+	synctest.Run(func() {
+		p := &Pool{
+			MaxLifetime: 3 * time.Second,
+			Logger:      slogt.New(t),
+			Next:        Opener(testDSN, nil),
+		}
+		defer p.Close()
+
+		ctx := context.Background()
+
+		cn0, err := p.Get(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		sleepPutGet := func() *Conn {
+			t.Helper()
+			time.Sleep(1 * time.Second)
+			p.Put(cn0)
+			got, err := p.Get(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return got
+		}
+
+		for range 2 {
+			if sleepPutGet() != cn0 {
+				t.Fatal("expected starting *Conn")
+			}
+		}
+
+		if sleepPutGet() == cn0 {
+			t.Fatal("expected new conn")
+		}
+
+		// Recycle current Conn
+		cc := sleepPutGet()
+		p.Put(cc)
+
+		time.Sleep(3 * time.Second)
+		p.CloseExpiredConns()
+		if sleepPutGet() == cc {
+			t.Fatal("expected new conn")
+		}
+	})
+}
 
 func TestPoolGetNextError(t *testing.T) {
 	synctest.Run(func() {
