@@ -1,4 +1,4 @@
-//go:build synctest
+//Xgo:build synctest
 
 package pqlite
 
@@ -48,7 +48,7 @@ func TestPoolGetNextError(t *testing.T) {
 			}()
 		}
 
-		time.Sleep(4 * time.Second) // beyond the context timeout
+		sleepUntilDeadline(ctx)
 
 		g.Wait()
 
@@ -62,4 +62,12 @@ func TestPoolGetNextError(t *testing.T) {
 			t.Fatalf("retries = %d; want > 3", retries.Load())
 		}
 	})
+}
+
+func sleepUntilDeadline(ctx context.Context) {
+	d, ok := ctx.Deadline()
+	if !ok {
+		panic("no deadline")
+	}
+	time.Sleep(time.Until(d))
 }
