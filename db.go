@@ -171,12 +171,6 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	}
 }
 
-func errRowsSeq(err error) iter.Seq2[*Row, error] {
-	return func(yield func(*Row, error) bool) {
-		yield(nil, err)
-	}
-}
-
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
 		if err := c.prepare(ctx, "", sql, args...); err != nil {
