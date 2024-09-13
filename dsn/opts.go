@@ -162,7 +162,7 @@ var isWhitespace = [256]bool{
 //	"5432"
 //	"="
 //	"verify"
-//	"some quoted string"
+//	"some 'quoted' string"
 //	"k"
 //	"="
 //	"v"
