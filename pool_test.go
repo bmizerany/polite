@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"blake.io/pqlite/internal/testutil"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/neilotoole/slogt"
 )
 
 func TestPoolMaxUseWithWaiter(t *testing.T) {
@@ -24,7 +24,7 @@ func TestPoolMaxUseWithWaiter(t *testing.T) {
 		MaxOpen: 1,
 		MaxUses: 1,
 		Next:    Opener(testDSN, nil),
-		Logger:  slogt.New(t),
+		Logger:  testutil.Slogger(t),
 	}
 	defer p.Close()
 
@@ -56,7 +56,7 @@ func TestPoolClose(t *testing.T) {
 
 	p := &Pool{
 		Next:   Opener(testDSN, nil),
-		Logger: slogt.New(t),
+		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
 
@@ -81,7 +81,7 @@ func TestPoolGetReady(t *testing.T) {
 
 	p := &Pool{
 		Next:   Opener(testDSN, nil),
-		Logger: slogt.New(t),
+		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
 
@@ -109,7 +109,7 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 	p := &Pool{
 		MaxOpen: 1,
 		Next:    func(context.Context) (*Conn, error) { return nil, errors.New("test") },
-		Logger:  slogt.New(t),
+		Logger:  testutil.Slogger(t),
 	}
 	defer p.Close()
 
@@ -133,7 +133,7 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 func TestPoolPutClosedPool(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{Logger: slogt.New(t)}
+	p := &Pool{Logger: testutil.Slogger(t)}
 	defer p.Close()
 
 	cn, err := p.Get(context.Background())
@@ -171,7 +171,7 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 	p := &Pool{
 		MaxOpen: 1,
 		Next:    next,
-		Logger:  slogt.New(t),
+		Logger:  testutil.Slogger(t),
 	}
 	defer p.Close()
 
@@ -242,7 +242,7 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 	p := &Pool{
 		MaxWaiting: maxWaiters,
 		Next:       next,
-		Logger:     slogt.New(t),
+		Logger:     testutil.Slogger(t),
 	}
 	defer p.Close()
 
@@ -289,7 +289,7 @@ func benchmarkPool(b *testing.B, maxOpen int) {
 	p := &Pool{
 		MaxOpen: maxOpen,
 		Next:    Opener(testDSN, nil),
-		Logger:  slogt.New(b),
+		Logger:  testutil.Slogger(b),
 	}
 	defer p.Close()
 

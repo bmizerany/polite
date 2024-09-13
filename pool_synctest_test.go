@@ -11,14 +11,14 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/neilotoole/slogt"
+	"blake.io/pqlite/internal/testutil"
 )
 
 func TestPoolExpired(t *testing.T) {
 	synctest.Run(func() {
 		p := &Pool{
 			MaxLifetime: 3 * time.Second,
-			Logger:      slogt.New(t),
+			Logger:      testutil.Slogger(t),
 			Next:        Opener(testDSN, nil),
 		}
 		defer p.Close()
@@ -68,7 +68,7 @@ func TestPoolGetNextError(t *testing.T) {
 		var retries atomic.Int64
 
 		p := &Pool{
-			Logger: slogt.New(t),
+			Logger: testutil.Slogger(t),
 			Next: func(context.Context) (*Conn, error) {
 				retries.Add(1)
 				return nil, errors.New("test")
