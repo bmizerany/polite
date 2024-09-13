@@ -5,7 +5,6 @@ go 1.23
 require (
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/lib/pq v1.10.9
-	github.com/neilotoole/slogt v1.1.0
 	golang.org/x/exp v0.0.0-20220218215828-6cf2b201936e
 	kr.dev/diff v0.3.0
 )
