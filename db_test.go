@@ -141,10 +141,10 @@ func TestQuery(t *testing.T) {
 }
 
 func TestQueryAllocations(t *testing.T) {
-	// If t.Parallel is set, this test will fail.
+	// NOTE: We cannot use t.Parallel() because it seems to interfere with
+	// AllocsPerRun.
 
 	cn := newSession(t)
-
 	allocs := testing.AllocsPerRun(1000, func() {
 		const q = `SELECT 1, 'two'`
 		for row, err := range cn.Query(context.Background(), q) {
