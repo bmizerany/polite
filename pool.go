@@ -62,11 +62,11 @@ func DefaultOpener(context.Context) (*Conn, error) {
 // goroutines. The zero value is a pool with no limit on the number of
 // waiters, ready for use.
 type Pool struct {
-	// Next is a function that is called to open a new connection when
+	// Opener is a function that is called to open a new connection when
 	// the pool is empty.
 	//
-	// If Next is nil then DefaultOpener is used.
-	Next func(ctx context.Context) (*Conn, error)
+	// If Opener is nil then DefaultOpener is used.
+	Opener func(ctx context.Context) (*Conn, error)
 
 	// MaxConns is the maximum number of connections that can be open at
 	// once. If MaxConns is zero, then DefaultPoolMaxConns is used.
@@ -350,10 +350,10 @@ func (p *Pool) Close() error {
 }
 
 func (p *Pool) next(ctx context.Context) (*Conn, error) {
-	if p.Next == nil {
+	if p.Opener == nil {
 		return DefaultOpener(ctx)
 	}
-	return p.Next(ctx)
+	return p.Opener(ctx)
 }
 
 func (p *Pool) maxOpen() int {
