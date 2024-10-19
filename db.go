@@ -73,7 +73,7 @@ type Result struct {
 // Exec executes a query that is not intended to return rows, such as an
 // INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
 // number of rows matched) in a [Result] or any error encountered.
-func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
+func (c *Conn) Exec(ctx context.Context, sql string, args ...any) error {
 	for row, err := range c.Query(ctx, sql, args...) {
 		if err != nil {
 			return err
@@ -89,7 +89,7 @@ func (c *Conn) LastResult() Result {
 
 var allBinary = []int16{1}
 
-func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) (err error) {
+func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (err error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		err = c.maybeRecoverFrom(ctx, err)
@@ -99,7 +99,16 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) 
 		In:  allBinary,
 		Out: allBinary,
 	}
-	return c.fc.WriteBind(portal, stmt.name, args, fp)
+
+	params := make([][]byte, len(args))
+	for i := range args {
+		switch v := args[i]; v.(type) {
+		case string:
+			params[i] = []byte(v.(string))
+		}
+	}
+
+	return c.fc.WriteBind(portal, stmt.name, params, fp)
 }
 
 func (c *Conn) newStmtName() string {
@@ -148,15 +157,13 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 			}
 			stmt.out = rd
 		case 'n':
-			// NoData signals the query is guranateed to return
-			// no rows. There may be value in using this
-			// information, but it is not clearn ATM, since we
-			// know we can infer there is no data if there are
-			// no columns in the row description since it we
-			// an empty row description.
+			// NoData signals the query is guaranteed to return no
+			// rows. This information may be valuable, but its
+			// utility is not clear at the moment. We can infer
+			// there is no data if the row description is empty.
 			//
-			// We can safely swallow this header-only message
-			// for now.
+			// For now, we can safely ignore this header-only
+			// message.
 			continue
 		case 'Z':
 			_, err := c.fc.ReadReadyForQuery()
@@ -171,7 +178,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	}
 }
 
-func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
+func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
 		if err := c.prepare(ctx, "", sql, args...); err != nil {
 			yield(nil, err)

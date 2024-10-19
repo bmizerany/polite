@@ -551,7 +551,7 @@ type FormatParams struct {
 
 var emptyFormatParams = &FormatParams{}
 
-func (c *Conn) WriteBind(portal, statement string, args []string, p *FormatParams) error {
+func (c *Conn) WriteBind(portal, statement string, args [][]byte, p *FormatParams) error {
 	p = cmp.Or(p, emptyFormatParams)
 
 	var s sizer
@@ -592,7 +592,7 @@ func (c *Conn) WriteBind(portal, statement string, args []string, p *FormatParam
 		if err := c.c.WriteInt32(int32(len(arg))); err != nil {
 			return err
 		}
-		_, err := io.WriteString(c.c, arg)
+		_, err := c.c.Write(arg)
 		if err != nil {
 			return err
 		}

@@ -102,7 +102,7 @@ func newSession(t testing.TB) *Conn {
 		}
 	})
 
-	if funcsCreated.Swap(true) == true {
+	if funcsCreated.Swap(true) {
 		return cn
 	}
 
