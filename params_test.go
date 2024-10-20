@@ -1,0 +1,42 @@
+package pqlite
+
+import (
+	"iter"
+	"testing"
+)
+
+func TestEncodeParams(t *testing.T) {
+	params := []any{
+		nil,
+		// pgEpoch.Add(10 * time.Hour),
+		// []byte("hello"),
+		// "world",
+		// uint8(1),
+		// float32(2),
+	}
+
+	got, err := collect(EncodeParams(params))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Errorf("got: %v", got)
+
+	_, err = collect(EncodeParams(struct{}{}))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func collect[T any](seq iter.Seq2[T, error]) ([]T, error) {
+	var vv []T
+	for v, err := range seq {
+		if err != nil {
+			// return vv even if error so we can check it if
+			// desired
+			return vv, err
+		}
+		vv = append(vv, v)
+	}
+	return vv, nil
+}

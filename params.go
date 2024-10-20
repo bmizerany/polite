@@ -1,6 +1,9 @@
 package pqlite
 
-import "iter"
+import (
+	"fmt"
+	"iter"
+)
 
 // EncodeParams encodes all args based on their types and appends, in order
 // seen, to buf.
@@ -25,6 +28,12 @@ func EncodeParams(args ...any) iter.Seq2[[]byte, error] {
 			case string:
 				// TODO(bmizerany): do not allocate
 				b = []byte(v)
+			default:
+				yield(nil, fmt.Errorf("unsupported parameter type at %d: %T", i, args[i]))
+				return
+			}
+			if !yield(b, nil) {
+				return
 			}
 		}
 	}

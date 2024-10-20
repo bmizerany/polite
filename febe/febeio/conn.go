@@ -3,7 +3,6 @@ package febeio
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"io"
 )
 
@@ -140,15 +139,19 @@ func (c *Conn) Write(b []byte) (int, error) {
 	return c.w.Write(b)
 }
 
-func (c *Conn) ReadBytes() ([]byte, error) {
+func (c *Conn) ReadBytes() (data []byte, null bool, _ error) {
 	n, err := c.ReadInt32()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	if n < 0 {
-		return nil, errors.New("invalid message length")
+	if n < 0 { // NULL
+		return nil, true, nil
 	}
-	return c.ReadByteN(int(n))
+	data, err = c.ReadByteN(int(n))
+	if err != nil {
+		return nil, false, err
+	}
+	return data, false, nil
 }
 
 // ReadString reads a null terminated string from the stream. The byte slice is

@@ -140,6 +140,19 @@ func TestQuery(t *testing.T) {
 	}
 }
 
+func TestQueryNull(t *testing.T) {
+	cn := newSession(t)
+	const q = "SELECT NULL::text"
+	for row, err := range cn.Query(context.Background(), q) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g := must(row.ParseString()); g != "" {
+			t.Errorf("got = %q, want %q", g, "")
+		}
+	}
+}
+
 func TestQueryAllocations(t *testing.T) {
 	// NOTE: We cannot use t.Parallel() because it seems to interfere with
 	// AllocsPerRun.

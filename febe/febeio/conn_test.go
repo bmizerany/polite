@@ -330,9 +330,12 @@ func TestWriteBytes(t *testing.T) {
 	if err := cn.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	got, err := cn.ReadBytes()
+	got, null, err := cn.ReadBytes()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if null {
+		t.Fatalf("unexpected null: %v", got)
 	}
 	if string(got) != "FEBE" {
 		t.Errorf("got = %q, want %q", got, "FEBE")

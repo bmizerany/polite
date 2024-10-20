@@ -88,7 +88,7 @@ func TestCopyTo(t *testing.T) {
 
 	cases := []struct {
 		columns []string
-		want    [][]string // values in binary
+		want    [][]string
 	}{
 		{
 			columns: nil,

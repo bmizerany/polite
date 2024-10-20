@@ -691,9 +691,14 @@ type DataRowResponse struct {
 	NumCols int16
 }
 
+type Value struct {
+	Null bool
+	Data []byte
+}
+
 type DataRowValueResponse struct {
 	MessageHeader
-	Data []byte
+	Value
 }
 
 func (c *Conn) ReadDataRow(discardBinaryHeader bool) (DataRowResponse, error) {
@@ -719,9 +724,9 @@ func (c *Conn) ReadDataRowValue() (DataRowValueResponse, error) {
 	if err := c.checkMessageHeader('D', 'd'); err != nil {
 		return DataRowValueResponse{}, err
 	}
-	data, err := c.c.ReadBytes()
+	data, null, err := c.c.ReadBytes()
 	if err != nil {
 		return DataRowValueResponse{}, err
 	}
-	return DataRowValueResponse{Data: data}, nil
+	return DataRowValueResponse{Value: Value{Data: data, Null: null}}, nil
 }
