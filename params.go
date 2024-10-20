@@ -15,8 +15,17 @@ import "iter"
 // - A float32 or float64 is converted to its binary form
 //
 // An error is returned if a type is unsupported.
-func EncodeParams(buf [][]byte, args ...any) iter.Seq2[[]byte, error] {
+func EncodeParams(args ...any) iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
-		panic("TODO")
+		for i := range args {
+			var b []byte
+			switch v := args[i].(type) {
+			case []byte:
+				b = v
+			case string:
+				// TODO(bmizerany): do not allocate
+				b = []byte(v)
+			}
+		}
 	}
 }
