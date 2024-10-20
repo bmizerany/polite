@@ -3,7 +3,11 @@ package pqlite
 import (
 	"fmt"
 	"iter"
+
+	"blake.io/pqlite/febe"
 )
+
+type Value = febe.Value
 
 // EncodeParams encodes all args based on their types and appends, in order
 // seen, to buf.
@@ -18,21 +22,25 @@ import (
 // - A float32 or float64 is converted to its binary form
 //
 // An error is returned if a type is unsupported.
-func EncodeParams(args ...any) iter.Seq2[[]byte, error] {
-	return func(yield func([]byte, error) bool) {
+func EncodeParams(args ...any) iter.Seq2[Value, error] {
+	return func(yield func(Value, error) bool) {
 		for i := range args {
-			var b []byte
-			switch v := args[i].(type) {
+			var v Value
+			switch a := args[i].(type) {
+			case nil:
+				v.Null = true
 			case []byte:
-				b = v
+				v.Data = a
 			case string:
 				// TODO(bmizerany): do not allocate
-				b = []byte(v)
+				v.Data = []byte(a)
+			case Value:
+				v = a
 			default:
-				yield(nil, fmt.Errorf("unsupported parameter type at %d: %T", i, args[i]))
+				yield(Value{}, fmt.Errorf("unsupported parameter type at %d: %T", i, args[i]))
 				return
 			}
-			if !yield(b, nil) {
+			if !yield(v, nil) {
 				return
 			}
 		}

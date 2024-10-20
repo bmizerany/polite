@@ -8,6 +8,9 @@ import (
 func TestEncodeParams(t *testing.T) {
 	params := []any{
 		nil,
+		Value{Null: true},
+		Value{Data: []byte{'a'}},
+		[]byte(nil), // considered valie (not null)
 		// pgEpoch.Add(10 * time.Hour),
 		// []byte("hello"),
 		// "world",
@@ -15,7 +18,7 @@ func TestEncodeParams(t *testing.T) {
 		// float32(2),
 	}
 
-	got, err := collect(EncodeParams(params))
+	got, err := collect(EncodeParams(params...))
 	if err != nil {
 		t.Fatal(err)
 	}
