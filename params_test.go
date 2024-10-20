@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kr/pretty"
+	"kr.dev/diff"
 )
 
 func TestEncodeParams(t *testing.T) {
@@ -15,8 +16,8 @@ func TestEncodeParams(t *testing.T) {
 		Value{Data: []byte{'a'}},
 		[]byte(nil), // considered valie (not null)
 		[]byte("hello"),
-		pgEpoch.Add(10 * time.Hour),
 		"world",
+		pgEpoch.Add(10 * time.Hour),
 		uint8(1),
 		float32(2),
 	}
@@ -26,7 +27,20 @@ func TestEncodeParams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Errorf("got:\n% #v", pretty.Formatter(got))
+	t.Logf("got:\n% #v", pretty.Formatter(got))
+
+	n := make([]byte, 8)
+	want := []Value{
+		{Null: true},
+		{Null: true},
+		{Data: []byte{'a'}},
+		{Data: nil},
+		{Data: []byte("hello")},
+		{Data: []byte("world")},
+		{Data: putUint64(n, uint64((10*time.Hour)/time.Microsecond))},
+		{Data: []byte{1}},
+	}
+	diff.Test(t, t.Errorf, got, want)
 
 	type Unsupported struct{}
 	_, err = collect(EncodeParams(Unsupported{}))

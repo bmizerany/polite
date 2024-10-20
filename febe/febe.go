@@ -593,19 +593,18 @@ func (c *Conn) WriteBind(portal, statement string, args []Value, p *FormatParams
 
 	c.c.WriteInt16(int16(len(args)))
 	for _, arg := range args {
-		var err error
+		size := int32(len(arg.Data))
 		if arg.Null {
-			if err = c.c.WriteInt32(0); err != nil {
-				return err
-			}
-		} else {
-			if err = c.c.WriteInt32(int32(len(arg.Data))); err != nil {
-				return err
-			}
-			_, err := c.c.Write(arg.Data)
-			if err != nil {
-				return err
-			}
+			// Ignore Data if NULL
+			size = -1
+			arg.Data = nil
+		}
+		if err := c.c.WriteInt32(size); err != nil {
+			return err
+		}
+		_, err := c.c.Write(arg.Data)
+		if err != nil {
+			return err
 		}
 	}
 

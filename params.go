@@ -42,7 +42,7 @@ func EncodeParams(args ...any) iter.Seq2[Value, error] {
 				// TODO(bmizerany): do not allocate
 				p.Data = []byte(v)
 			case time.Time:
-				ms := v.Sub(pgEpoch) / time.Millisecond
+				ms := v.Sub(pgEpoch) / time.Microsecond
 				p.Data = putUint64(n[:], uint64(ms))
 			case bool:
 				if v {
