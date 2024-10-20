@@ -102,6 +102,9 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (er
 
 	params := make([]Value, 0, len(args))
 	for v, err := range EncodeParams(args...) {
+		if err != nil {
+			return err
+		}
 		params = append(params, v)
 	}
 

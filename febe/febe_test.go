@@ -535,9 +535,9 @@ func TestWriteBind(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
 
-	args := [][]byte{
-		[]byte("hello"),
-		[]byte("world"),
+	args := []Value{
+		{Data: []byte("hello")},
+		{Data: []byte("world")},
 	}
 	if err := cn.WriteBind("portal", "stmt", args, &FormatParams{
 		In:  []int16{1},
