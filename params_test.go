@@ -3,6 +3,7 @@ package pqlite
 import (
 	"iter"
 	"testing"
+	"time"
 
 	"github.com/kr/pretty"
 )
@@ -14,7 +15,7 @@ func TestEncodeParams(t *testing.T) {
 		Value{Data: []byte{'a'}},
 		[]byte(nil), // considered valie (not null)
 		[]byte("hello"),
-		// pgEpoch.Add(10 * time.Hour),
+		pgEpoch.Add(10 * time.Hour),
 		// "world",
 		// uint8(1),
 		// float32(2),

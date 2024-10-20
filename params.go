@@ -3,6 +3,7 @@ package pqlite
 import (
 	"fmt"
 	"iter"
+	"time"
 
 	"blake.io/pqlite/febe"
 )
@@ -25,22 +26,34 @@ type Value = febe.Value
 func EncodeParams(args ...any) iter.Seq2[Value, error] {
 	return func(yield func(Value, error) bool) {
 		for i := range args {
-			var v Value
-			switch a := args[i].(type) {
+			var p Value
+			switch v := args[i].(type) {
 			case nil:
-				v.Null = true
+				p.Null = true
 			case []byte:
-				v.Data = a
+				p.Data = v
 			case string:
 				// TODO(bmizerany): do not allocate
-				v.Data = []byte(a)
+				p.Data = []byte(v)
 			case Value:
-				v = a
+				p = v
+			case time.Time:
+				ms := v.Sub(pgEpoch) / time.Millisecond
+				p.Data = []byte{
+					byte(ms >> 56),
+					byte(ms >> 48),
+					byte(ms >> 40),
+					byte(ms >> 32),
+					byte(ms >> 24),
+					byte(ms >> 16),
+					byte(ms >> 8),
+					byte(ms),
+				}
 			default:
 				yield(Value{}, fmt.Errorf("unsupported parameter type at %d: %T", i, args[i]))
 				return
 			}
-			if !yield(v, nil) {
+			if !yield(p, nil) {
 				return
 			}
 		}
