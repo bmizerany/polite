@@ -3,6 +3,8 @@ package pqlite
 import (
 	"iter"
 	"testing"
+
+	"github.com/kr/pretty"
 )
 
 func TestEncodeParams(t *testing.T) {
@@ -11,8 +13,8 @@ func TestEncodeParams(t *testing.T) {
 		Value{Null: true},
 		Value{Data: []byte{'a'}},
 		[]byte(nil), // considered valie (not null)
+		[]byte("hello"),
 		// pgEpoch.Add(10 * time.Hour),
-		// []byte("hello"),
 		// "world",
 		// uint8(1),
 		// float32(2),
@@ -23,9 +25,10 @@ func TestEncodeParams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Errorf("got: %v", got)
+	t.Errorf("got:\n% #v", pretty.Formatter(got))
 
-	_, err = collect(EncodeParams(struct{}{}))
+	type Unsupported struct{}
+	_, err = collect(EncodeParams(Unsupported{}))
 	if err == nil {
 		t.Fatal("expected error")
 	}
