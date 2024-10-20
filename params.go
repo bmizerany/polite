@@ -34,6 +34,8 @@ func EncodeParams(args ...any) iter.Seq2[Value, error] {
 			switch v := args[i].(type) {
 			case nil:
 				p.Null = true
+			case Value:
+				p = v
 			case []byte:
 				p.Data = v
 			case string:
@@ -42,8 +44,6 @@ func EncodeParams(args ...any) iter.Seq2[Value, error] {
 			case time.Time:
 				ms := v.Sub(pgEpoch) / time.Millisecond
 				p.Data = putUint64(n[:], uint64(ms))
-			case Value:
-				p = v
 			case bool:
 				if v {
 					p.Data = putUint8(n[:], 1)
