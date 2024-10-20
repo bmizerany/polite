@@ -16,9 +16,9 @@ func TestEncodeParams(t *testing.T) {
 		[]byte(nil), // considered valie (not null)
 		[]byte("hello"),
 		pgEpoch.Add(10 * time.Hour),
-		// "world",
-		// uint8(1),
-		// float32(2),
+		"world",
+		uint8(1),
+		float32(2),
 	}
 
 	got, err := collect(EncodeParams(params...))
