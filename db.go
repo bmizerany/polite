@@ -100,12 +100,9 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (er
 		Out: allBinary,
 	}
 
-	params := make([][]byte, len(args))
-	for i := range args {
-		switch v := args[i]; v.(type) {
-		case string:
-			params[i] = []byte(v.(string))
-		}
+	params := make([]Value, 0, len(args))
+	for v, err := range EncodeParams(args...) {
+		params = append(params, v)
 	}
 
 	return c.fc.WriteBind(portal, stmt.name, params, fp)
