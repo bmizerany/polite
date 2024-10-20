@@ -551,7 +551,7 @@ type FormatParams struct {
 
 var emptyFormatParams = &FormatParams{}
 
-func (c *Conn) WriteBind(portal, statement string, args [][]byte, p *FormatParams) error {
+func (c *Conn) WriteBind(portal, statement string, args []Value, p *FormatParams) error {
 	p = cmp.Or(p, emptyFormatParams)
 
 	var s sizer
@@ -568,7 +568,11 @@ func (c *Conn) WriteBind(portal, statement string, args [][]byte, p *FormatParam
 	// parameter values
 	s.addInt16()
 	for _, arg := range args {
-		s.addSizedBytes(len(arg))
+		if arg.Null {
+			s.addSizedBytes(0)
+		} else {
+			s.addSizedBytes(len(arg.Data))
+		}
 	}
 
 	// result format codes
@@ -589,13 +593,20 @@ func (c *Conn) WriteBind(portal, statement string, args [][]byte, p *FormatParam
 
 	c.c.WriteInt16(int16(len(args)))
 	for _, arg := range args {
-		if err := c.c.WriteInt32(int32(len(arg))); err != nil {
+		l := int32(len(arg.Data))
+		if arg.Null {
+			l = -1
+		}
+		if err := c.c.WriteInt32(l); err != nil {
 			return err
 		}
-		_, err := c.c.Write(arg)
-		if err != nil {
-			return err
+		if !arg.Null {
+			_, err := c.c.Write(arg.Data)
+			if err != nil {
+				return err
+			}
 		}
+		return nil
 	}
 
 	c.c.WriteInt16(int16(len(p.Out)))
