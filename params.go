@@ -53,7 +53,7 @@ func EncodeParams(args ...any) iter.Seq2[Value, error] {
 			case int8:
 				p.Data = putUint8(n[:], uint8(v))
 			case uint8:
-				n[0] = v
+				p.Data = putUint8(n[:], v)
 			case int16:
 				p.Data = putUint16(n[:], uint16(v))
 			case uint16:
@@ -67,6 +67,7 @@ func EncodeParams(args ...any) iter.Seq2[Value, error] {
 			case uint64:
 				p.Data = putUint64(n[:], v)
 			case float32:
+				println("float32:", v)
 				p.Data = putUint32(n[:], math.Float32bits(v))
 			case float64:
 				p.Data = putUint64(n[:], math.Float64bits(v))
