@@ -2,82 +2,43 @@ package pqlite
 
 import (
 	"iter"
-	"math"
-	"slices"
+	"reflect"
 	"testing"
 	"time"
-
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestEncodeParams(t *testing.T) {
-	cases := []struct {
-		v        any
-		wantNull bool
-		want     []byte
-	}{
-		{v: nil, wantNull: true},
-
-		{v: Value{Null: true}, wantNull: true},
-		{v: Value{}, wantNull: false},
-		{v: Value{Data: []byte{'v'}}, want: []byte{'v'}},
-	}
-
-	params := []any{
-		nil,
-
-		Value{Null: true},
-		Value{Data: []byte{'a'}},
-
-		[]byte(nil), // considered valie (not null)
-		[]byte("hello"),
-		"world",
-
-		true,
-		false,
-
-		uint8(1),
-		float32(2),
-		float64(3),
-
-		pgEpoch.Add(10 * time.Hour),
-	}
-
 	n := make([]byte, 8)
-	want := []Value{
-		{Null: true},
-
-		{Null: true},
-		{Data: []byte{'a'}},
-
-		{Data: nil},
-		{Data: []byte("hello")},
-		{Data: []byte("world")},
-
-		{Data: []byte{1}},
-		{Data: []byte{0}},
-
-		{Data: []byte{1}},
-		{Data: putUint32(n, math.Float32bits(2))},
-		{Data: putUint64(n, math.Float64bits(3))},
-
-		{Data: putUint64(n, uint64((10*time.Hour)/time.Microsecond))},
+	cases := []struct {
+		p    any
+		want Value
+	}{
+		{nil, Value{Null: true}},
+		{Value{Null: true}, Value{Null: true}},
+		{[]byte{'a'}, Value{Data: []byte{'a'}}},
+		{[]byte(nil), Value{Data: nil}},
+		{[]byte("hello"), Value{Data: []byte("hello")}},
+		{"world", Value{Data: []byte("world")}},
+		{true, Value{Data: []byte{1}}},
+		{false, Value{Data: []byte{0}}},
+		{uint8(1), Value{Data: []byte{1}}},
+		{float32(2), Value{Data: []byte{0x40, 0, 0, 0}}},
+		{float64(3), Value{Data: []byte{0x40, 8, 0, 0, 0, 0, 0, 0}}},
+		{pgEpoch.Add(4 * time.Hour), Value{Data: putUint64(n, uint64((4*time.Hour)/time.Microsecond))}},
 	}
 
-	var got []Value
-	for v, err := range EncodeParams(params...) {
+	for i, tt := range cases {
+		got, err := EncodeParam(nil, tt.p)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("[%02d] unexpected error: %v", i, err)
 		}
-		v.Data = slices.Clone(v.Data)
-		got = append(got, v)
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Error(diff)
+		if !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("[%02d] got = %v, want %v", i, got, tt.want)
+		}
 	}
 
 	type Unsupported struct{}
-	_, err := collect(EncodeParams(Unsupported{}))
+	_, err := EncodeParam(nil, Unsupported{})
 	if err == nil {
 		t.Fatal("expected error")
 	}

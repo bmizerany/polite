@@ -2,7 +2,6 @@ package pqlite
 
 import (
 	"fmt"
-	"iter"
 	"math"
 	"time"
 
@@ -11,75 +10,58 @@ import (
 
 type Value = febe.Value
 
-// EncodeParams encodes all args based on their types and appends, in order
-// seen, to buf.
+// EncodeParam converts a parameter to a Value, setting [Value.Null] to true
+// if the parameter is nil, otherwise encoding the parameter as a byte slice.
 //
-// The below type conversions are made:
-//
-// - A string is converted to its []byte equivalent
-// - A []byte is appended as-is
-// - A time.Time is converted to its binary form
-// - A bool is converted to its binary form
-// - A constraint.Number is converted to its binary form
-// - A float32 or float64 is converted to its binary form
-//
-// The each Value and its data are value only until the next call to yield.
+// https://pkg.go.dev/golang.org/x/exp/constraints
+// The each [Value] and its data are value only until the next call to yield.
 //
 // An error is returned if a type is unsupported.
-func EncodeParams(args ...any) iter.Seq2[Value, error] {
-	return func(yield func(Value, error) bool) {
-		var n [8]byte
-		for i := range args {
-			var p Value
-			switch v := args[i].(type) {
-			case nil:
-				p.Null = true
-			case Value:
-				p = v
-			case []byte:
-				p.Data = v
-			case string:
-				// TODO(bmizerany): do not allocate
-				p.Data = []byte(v)
-			case time.Time:
-				ms := v.Sub(pgEpoch) / time.Microsecond
-				p.Data = putUint64(n[:], uint64(ms))
-			case bool:
-				if v {
-					p.Data = putUint8(n[:], 1)
-				} else {
-					p.Data = putUint8(n[:], 0)
-				}
-			case int8:
-				p.Data = putUint8(n[:], uint8(v))
-			case uint8:
-				p.Data = putUint8(n[:], v)
-			case int16:
-				p.Data = putUint16(n[:], uint16(v))
-			case uint16:
-				p.Data = putUint16(n[:], v)
-			case int32:
-				p.Data = putUint32(n[:], uint32(v))
-			case uint32:
-				p.Data = putUint32(n[:], v)
-			case int64:
-				p.Data = putUint64(n[:], uint64(v))
-			case uint64:
-				p.Data = putUint64(n[:], v)
-			case float32:
-				println("float32:", v)
-				p.Data = putUint32(n[:], math.Float32bits(v))
-			case float64:
-				p.Data = putUint64(n[:], math.Float64bits(v))
-			default:
-				yield(Value{}, fmt.Errorf("unsupported parameter type at %d: %T", i, args[i]))
-				return
-			}
-			if !yield(p, nil) {
-				return
-			}
+func EncodeParam(buf []byte, arg any) (Value, error) {
+	var n [8]byte
+	var p Value
+	switch v := arg.(type) {
+	case nil:
+		p.Null = true
+	case Value:
+		p = v
+	case []byte:
+		p.Data = append(buf, v...)
+	case string:
+		p.Data = append(buf, v...)
+	case time.Time:
+		ms := v.Sub(pgEpoch) / time.Microsecond
+		p.Data = putUint64(n[:], uint64(ms))
+	case bool:
+		if v {
+			p.Data = putUint8(n[:], 1)
+		} else {
+			p.Data = putUint8(n[:], 0)
 		}
+	case int8:
+		p.Data = putUint8(n[:], uint8(v))
+	case uint8:
+		p.Data = putUint8(n[:], v)
+	case int16:
+		p.Data = putUint16(n[:], uint16(v))
+	case uint16:
+		p.Data = putUint16(n[:], v)
+	case int32:
+		p.Data = putUint32(n[:], uint32(v))
+	case uint32:
+		p.Data = putUint32(n[:], v)
+	case int64:
+		p.Data = putUint64(n[:], uint64(v))
+	case uint64:
+		p.Data = putUint64(n[:], v)
+	case float32:
+		p.Data = putUint32(n[:], math.Float32bits(v))
+	case float64:
+		p.Data = putUint64(n[:], math.Float64bits(v))
+	default:
+		return Value{}, fmt.Errorf("unsupported parameter type: %T", arg)
 	}
+	return p, nil
 }
 
 func putUint64(b []byte, v uint64) []byte {

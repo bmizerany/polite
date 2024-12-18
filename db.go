@@ -89,7 +89,7 @@ func (c *Conn) LastResult() Result {
 
 var allBinary = []int16{1}
 
-func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (err error) {
+func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) error {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		err = c.maybeRecoverFrom(ctx, err)
@@ -101,9 +101,10 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (er
 	}
 
 	params := make([]Value, 0, len(args))
-	for v, err := range EncodeParams(args...) {
+	for i, arg := range args {
+		v, err := EncodeParam(nil, arg)
 		if err != nil {
-			return err
+			return fmt.Errorf("febe: error encoding param %d: %w", i, err)
 		}
 		params = append(params, v)
 	}
