@@ -1,5 +1,3 @@
-//go:build synctest
-
 package pqlite
 
 import (
@@ -19,7 +17,7 @@ func TestPoolExpired(t *testing.T) {
 		p := &Pool{
 			MaxLifetime: 3 * time.Second,
 			Logger:      testutil.Slogger(t),
-			Next:        Opener(testDSN, nil),
+			Opener:      Opener(testDSN, nil),
 		}
 		defer p.Close()
 
@@ -69,7 +67,7 @@ func TestPoolGetNextError(t *testing.T) {
 
 		p := &Pool{
 			Logger: testutil.Slogger(t),
-			Next: func(context.Context) (*Conn, error) {
+			Opener: func(context.Context) (*Conn, error) {
 				retries.Add(1)
 				return nil, errors.New("test")
 			},
@@ -101,13 +99,13 @@ func TestPoolGetNextError(t *testing.T) {
 
 		g.Wait()
 
-		for i := range 3 {
+		for i := range len(got) {
 			if got[i] == nil {
 				t.Fatalf("[%d]: unexpected nil error", i)
 			}
 		}
 
-		if retries.Load() <= 3 {
+		if retries.Load() <= int64(len(got)) {
 			t.Fatalf("retries = %d; want > 3", retries.Load())
 		}
 	})
