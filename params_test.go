@@ -1,7 +1,6 @@
 package pqlite
 
 import (
-	"iter"
 	"reflect"
 	"testing"
 	"time"
@@ -42,17 +41,4 @@ func TestEncodeParams(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-}
-
-func collect[T any](seq iter.Seq2[T, error]) ([]T, error) {
-	var vv []T
-	for v, err := range seq {
-		if err != nil {
-			// return vv even if error so we can check it if
-			// desired
-			return vv, err
-		}
-		vv = append(vv, v)
-	}
-	return vv, nil
 }
