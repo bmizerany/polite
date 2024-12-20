@@ -19,7 +19,7 @@ func TestPoolSyncExpired(t *testing.T) {
 		p := &Pool{
 			MaxLifetime: 3 * time.Second,
 			Logger:      testutil.Slogger(t),
-			Opener:      Opener(testDSN, nil),
+			Open:        Opener(testDSN, nil),
 		}
 		defer p.Close()
 
@@ -69,7 +69,7 @@ func TestPoolSyncGetNextError(t *testing.T) {
 
 		p := &Pool{
 			Logger: testutil.Slogger(t),
-			Opener: func(context.Context) (*Conn, error) {
+			Open: func(context.Context) (*Conn, error) {
 				retries.Add(1)
 				return nil, errors.New("test")
 			},
