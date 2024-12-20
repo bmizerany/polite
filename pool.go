@@ -33,7 +33,7 @@ var (
 
 // Opener returns a function that opens a connection to the database with
 // the provided DSN and configuration. The returned function can be assigned
-// to the Next field of a Pool.
+// to the [Pool.Open] field of a Pool.
 func Opener(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 	return func(ctx context.Context) (*Conn, error) {
 		cn, err := Open(ctx, dsn, cfg)
@@ -55,18 +55,18 @@ func DefaultOpener(context.Context) (*Conn, error) {
 }
 
 // TODO(bmizerany): Support multiple hosts. We can keep the DSN on the Conn
-// so that on Put, it can pass the DSN to Next, which can take a DSN.
+// so that on Put, it can pass the DSN to [Pool.Open], which can take a DSN.
 // https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-TARGET-SESSION-ATTRS
 
 // Pool is a pool of connections. It is safe for concurrent use by multiple
 // goroutines. The zero value is a pool with no limit on the number of
 // waiters, ready for use.
 type Pool struct {
-	// Opener is a function that is called to open a new connection when
+	// Open is a function that is called to open a new connection when
 	// the pool is empty.
 	//
-	// If Opener is nil then DefaultOpener is used.
-	Opener func(ctx context.Context) (*Conn, error)
+	// If Open is nil then DefaultOpener is used.
+	Open func(ctx context.Context) (*Conn, error)
 
 	// MaxConns is the maximum number of connections that can be open at
 	// once. If MaxConns is zero, then DefaultPoolMaxConns is used.
@@ -344,10 +344,10 @@ func (p *Pool) Close() error {
 }
 
 func (p *Pool) next(ctx context.Context) (*Conn, error) {
-	if p.Opener == nil {
+	if p.Open == nil {
 		return DefaultOpener(ctx)
 	}
-	return p.Opener(ctx)
+	return p.Open(ctx)
 }
 
 func (p *Pool) maxOpen() int {

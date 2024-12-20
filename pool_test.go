@@ -23,7 +23,7 @@ func TestPoolMaxUseWithWaiter(t *testing.T) {
 	p := &Pool{
 		MaxOpen: 1,
 		MaxUses: 1,
-		Opener:  Opener(testDSN, nil),
+		Open:    Opener(testDSN, nil),
 		Logger:  testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -55,7 +55,7 @@ func TestPoolClose(t *testing.T) {
 	t.Parallel()
 
 	p := &Pool{
-		Opener: Opener(testDSN, nil),
+		Open:   Opener(testDSN, nil),
 		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -80,7 +80,7 @@ func TestPoolGetReady(t *testing.T) {
 	t.Parallel()
 
 	p := &Pool{
-		Opener: Opener(testDSN, nil),
+		Open:   Opener(testDSN, nil),
 		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -108,7 +108,7 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 
 	p := &Pool{
 		MaxOpen: 1,
-		Opener:  func(context.Context) (*Conn, error) { return nil, errors.New("test") },
+		Open:    func(context.Context) (*Conn, error) { return nil, errors.New("test") },
 		Logger:  testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -170,7 +170,7 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 
 	p := &Pool{
 		MaxOpen: 1,
-		Opener:  next,
+		Open:    next,
 		Logger:  testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -241,7 +241,7 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 
 	p := &Pool{
 		MaxWaiting: maxWaiters,
-		Opener:     next,
+		Open:       next,
 		Logger:     testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -288,7 +288,7 @@ func BenchmarkPool(b *testing.B) {
 func benchmarkPool(b *testing.B, maxOpen int) {
 	p := &Pool{
 		MaxOpen: maxOpen,
-		Opener:  Opener(testDSN, nil),
+		Open:    Opener(testDSN, nil),
 		Logger:  testutil.Slogger(b),
 	}
 	defer p.Close()
