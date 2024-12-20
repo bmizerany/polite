@@ -155,12 +155,6 @@ func (p *Pool) Put(cn *Conn) {
 	p.readyMu.Unlock()
 }
 
-var chanPool = sync.Pool{
-	New: func() interface{} {
-		return make(chan *Conn, 1)
-	},
-}
-
 func (p *Pool) startNewConn(retire *Conn) {
 	if retire != nil {
 		// Retire the connection so that it is not used again, and
@@ -227,7 +221,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		// Get in line and wait for another goroutine to put a
 		// connection in the pool or for any new connection being
 		// opened to be handed off to us.
-		ch := chanPool.Get().(chan *Conn)
+		ch := make(chan *Conn, 1)
 		p.waiting.Unshift(ch)
 		p.waitingMu.Unlock()
 
@@ -255,7 +249,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 			// Only put the channel back in the pool if it is empty.
 			// If we do this for the case of context cancelation, we
 			// then a call to Put may pull our chann
-			chanPool.Put(ch)
+			// chanPool.Put(ch)
 		}
 		if cn == nil {
 			return nil, ErrPoolClosed
