@@ -56,6 +56,8 @@ func (c *Conn) Close() error {
 	if c.closed {
 		return net.ErrClosed
 	}
+
+	c.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
 	if err := c.fc.WriteTerminate(); err != nil {
 		return err
 	}

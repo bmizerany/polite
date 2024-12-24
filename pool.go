@@ -4,12 +4,11 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"iter"
 	"log/slog"
-	"math/rand/v2"
 	"sync"
 	"time"
 
+	"blake.io/pqlite/backoff"
 	"blake.io/pqlite/queues"
 )
 
@@ -73,13 +72,13 @@ type Pool struct {
 	MaxOpen int
 
 	// MaxUses is the maximum number of times a connection can be used
-	// before it is closed. If MaxUses is zero, then DefaultPoolMaxUses is
+	// before it is closed. If MaxUses is zero, then [DefaultPoolMaxUses] is
 	// used.
 	MaxUses int
 
 	// MaxWaiting is the maximum number of waiters that can be waiting
 	// for a connection. If this number is exceeded, Get will return an
-	// error. If MaxWaiting is zero, then DefaultPoolMaxWaiters is used.
+	// error. If MaxWaiting is zero, then [DefaultPoolMaxWaiters] is used.
 	MaxWaiting int
 
 	// MaxLifetime is the maximum amount of time a connection can be
@@ -97,8 +96,20 @@ type Pool struct {
 	cancelCtx context.Context
 	cancel    context.CancelCauseFunc
 
+	connChanPool sync.Pool
+
 	waitingMu sync.Mutex
 	waiting   queues.Fifo[chan *Conn]
+
+	// testHookWaitCanceled, if set, is called from Get when the wait is
+	// canceled. It is not used by pqlite code itself - it is only here for use
+	// in tests.
+	//
+	// The channel passed to testHookWaitCanceled is the channel for the waiter.
+	//
+	// It is called before ch is removed from the wait queue and before it is
+	// checked for a near miss.
+	testHookWaitCanceled func(ch chan *Conn)
 }
 
 // caller must hold p.readyMu and p.waitingMu
@@ -107,19 +118,12 @@ func (p *Pool) putLocked(cn *Conn) {
 		ch, ok := p.waiting.Shift()
 		if ok {
 			// Hand the connection to the first waiter in line. We
-			// gurantee nothing is added to the waiting queue that does
+			// guarantee nothing is added to the waiting queue that does
 			// not immediately start waiting.
 			ch <- cn
 			return true
 		}
 		return false
-	}
-
-	expired := p.MaxLifetime > 0 && time.Since(cn.created) >= p.MaxLifetime
-	cn.uses++
-	if expired || p.maxUses() > 0 && cn.uses > p.maxUses() {
-		go p.startNewConn(cn)
-		return
 	}
 
 	if handoff(cn) {
@@ -136,13 +140,7 @@ func (p *Pool) putLocked(cn *Conn) {
 	p.ready.Push(cn)
 }
 
-// Put adds a connection back to the pool. Put should be called when
-// finished with a connection to return it to the pool. If the Conn is
-// closed, nothing happens. If the pool is closed, the connection is also
-// closed.
-//
-// Put conn is a non-blocking operation.
-func (p *Pool) Put(cn *Conn) {
+func (p *Pool) put(cn *Conn) {
 	p.readyMu.Lock()
 	if p.cancelCtx.Err() != nil {
 		p.readyMu.Unlock()
@@ -155,6 +153,22 @@ func (p *Pool) Put(cn *Conn) {
 	p.readyMu.Unlock()
 }
 
+// Put adds a connection back to the pool. Put should be called when
+// finished with a connection to return it to the pool. If the Conn is
+// closed, nothing happens. If the pool is closed, the connection is also
+// closed.
+//
+// Put is a non-blocking operation.
+func (p *Pool) Put(cn *Conn) {
+	expired := p.MaxLifetime > 0 && time.Since(cn.created) >= p.MaxLifetime
+	cn.uses++
+	if expired || p.maxUses() > 0 && cn.uses >= p.maxUses() {
+		go p.startNewConn(cn)
+	} else {
+		p.put(cn)
+	}
+}
+
 func (p *Pool) startNewConn(retire *Conn) {
 	if retire != nil {
 		// Retire the connection so that it is not used again, and
@@ -164,19 +178,18 @@ func (p *Pool) startNewConn(retire *Conn) {
 		// This is done in a goroutine to avoid blocking callers of Put
 		// that would otherwise unjustly pay the penalty of the
 		// connection being retired.
-		retire.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
 		retire.Close()
 	}
-	for err := range backoff(p.cancelCtx, 5*time.Second) {
+	for _, err := range backoff.Loop(p.cancelCtx, 5*time.Second) {
 		if err != nil {
 			p.readyMu.Lock()
 			p.openConns--
 			p.readyMu.Unlock()
 		}
-		cn, err := p.next(p.cancelCtx)
+		cn, err := p.open(p.cancelCtx)
 		if err == nil {
 			cn.created = time.Now()
-			p.Put(cn)
+			p.put(cn)
 			return
 		}
 		if p.cancelCtx.Err() != nil {
@@ -191,7 +204,7 @@ func (p *Pool) startNewConn(retire *Conn) {
 
 func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	if ctx.Err() != nil {
-		// avoid tiying up resources and delaying a connection from
+		// avoid tying up resources and delaying a connection from
 		// reaching a truly ready waiter if the context is already
 		// done.
 		return nil, ctx.Err()
@@ -221,7 +234,10 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		// Get in line and wait for another goroutine to put a
 		// connection in the pool or for any new connection being
 		// opened to be handed off to us.
-		ch := make(chan *Conn, 1)
+		ch, _ := p.connChanPool.Get().(chan *Conn)
+		if ch == nil {
+			ch = make(chan *Conn, 1)
+		}
 		p.waiting.Unshift(ch)
 		p.waitingMu.Unlock()
 
@@ -243,30 +259,89 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 
 	// We're in line and waiting for a connection to be handed off to us,
 	// so wait.
+
 	select {
 	case cn, ok := <-ch:
-		if ok {
-			// Only put the channel back in the pool if it is empty.
-			// If we do this for the case of context cancelation, we
-			// then a call to Put may pull our chann
-			// chanPool.Put(ch)
-		}
-		if cn == nil {
+		if !ok {
 			return nil, ErrPoolClosed
 		}
+		p.connChanPool.Put(ch)
 		return cn, nil
 	case <-ctx.Done():
-		// TODO: remove the channel from the waiting queue
-		// TODO: take any connection sent to the channel and put it back in the pool
-		p.log().Error("pqlite: pool: TODO: handle context cancelation")
-		return nil, ctx.Err()
+		if p.testHookWaitCanceled != nil {
+			p.testHookWaitCanceled(ch)
+		}
+
+		p.readyMu.Lock()
+		p.waitingMu.Lock()
+		p.waiting.DeleteFunc(func(dch chan *Conn) bool {
+			return ch == dch
+		})
+		p.waitingMu.Unlock()
+		p.readyMu.Unlock()
+
+		select {
+		case cn, ok := <-ch:
+			if !ok {
+				// Prefer context cancellation over pool
+				// closure errors.
+				//
+				// A context error suggests a temporary
+				// condition - perhaps a deadline or timeout -
+				// from which the client can recover. By
+				// contrast, a closed pool signals a more
+				// fundamental issue that might discourage the
+				// client from attempting further work.
+				//
+				// We choose to preserve opportunities for
+				// recovery by surfacing the context error,
+				// letting clients make informed decisions
+				// about retrying operations.
+				return nil, ctx.Err()
+			}
+
+			// Handle successful connection acquisition despite
+			// context cancellation
+			//
+			// If we obtain a connection just as the context
+			// expires, we treat this as a "soft cancellation" -
+			// returning the connection instead of an error.
+			//
+			// This approach:
+			//
+			//   1. Preserves work already done in acquiring the connection
+			//   2. Lets callers implement local timeout boundaries
+			//
+			// Example of local timeout boundary:
+			//
+			//     cn, err := func() {
+			//         ctx, _ := context.WithTimeout(context.Background(), 10*time.Millisecond)
+			//         return pool.Get(ctx)
+			//     }()
+			//     ... use cn ...
+			//
+			// The timeout above only constrains connection
+			// acquisition, not the connection's subsequent usage.
+			// This pattern gives callers fine-grained control over
+			// timeout behaviors.
+			//
+			// We delegate connection cleanup to the caller rather
+			// than handling it here, as they can best determine
+			// whether to treat the cancellation as hard (requiring
+			// cleanup) or soft (allowing continued use).
+			p.connChanPool.Put(ch)
+			return cn, nil
+		default:
+			p.connChanPool.Put(ch)
+			return nil, ctx.Err()
+		}
 	}
 }
 
 // CloseExpiredConns closes any connections that have been idle for more than
 // MaxLifetime.
 //
-// It retuens all errors encountered while closing connections wrapped into
+// It returns all errors encountered while closing connections wrapped into
 // one.
 func (p *Pool) CloseExpiredConns() error {
 	maxLifetime := p.MaxLifetime
@@ -298,7 +373,10 @@ func (p *Pool) CloseExpiredConns() error {
 func (p *Pool) Close() error {
 	p.readyMu.Lock()
 	defer p.readyMu.Unlock()
+	return p.closeReadyLocked()
+}
 
+func (p *Pool) closeReadyLocked() error {
 	if p.cancelCtx == nil {
 		p.cancelCtx, p.cancel = context.WithCancelCause(context.Background())
 	}
@@ -315,10 +393,9 @@ func (p *Pool) Close() error {
 	defer p.waitingMu.Unlock()
 
 	// Start with everyone waiting so they are not blocked by the ready
-	// connections being closed, since closing a channel is (most
-	// likely) faster than closing a connection since the conection play
-	// nice with postgres and send termination packets which can take
-	// time.
+	// connections being closed, since closing a channel is (most likely)
+	// faster than closing a connection since the connection play nice with
+	// postgres and send termination packets which can take time.
 	for {
 		ch, ok := p.waiting.Shift()
 		if !ok {
@@ -335,15 +412,15 @@ func (p *Pool) Close() error {
 		cn.Close()
 	}
 
-	// TODO(bmizerany): wait for all connections to be returned? We
-	// should consider taking a context if so, we don't want to block
-	// foever if someone is holding a connection or accidentally forgets
-	// to return theirs back to the pool.
+	// TODO(bmizerany): wait for all connections to be returned? We should
+	// consider taking a context if so, we don't want to block forever if
+	// someone is holding a connection or accidentally forgets to return
+	// theirs back to the pool.
 
 	return nil
 }
 
-func (p *Pool) next(ctx context.Context) (*Conn, error) {
+func (p *Pool) open(ctx context.Context) (*Conn, error) {
 	if p.Open == nil {
 		return DefaultOpener(ctx)
 	}
@@ -376,37 +453,4 @@ func (p *Pool) log() *slog.Logger {
 		return slog.Default()
 	}
 	return p.Logger
-}
-
-func backoff(ctx context.Context, maxBackoff time.Duration) iter.Seq[error] {
-	var n int
-	return func(yield func(error) bool) {
-		for {
-			if ctx.Err() != nil {
-				yield(ctx.Err())
-				return
-			}
-
-			n++
-
-			// n^2 backoff timer is a little smoother than the
-			// common choice of 2^n.
-			d := time.Duration(n*n) * 10 * time.Millisecond
-			if d > maxBackoff {
-				d = maxBackoff
-			}
-			// Randomize the delay between 0.5-1.5 x msec, in order
-			// to prevent accidental "thundering herd" problems.
-			d = time.Duration(float64(d) * (rand.Float64() + 0.5))
-			t := time.NewTimer(d)
-			select {
-			case <-ctx.Done():
-				t.Stop()
-			case <-t.C:
-				if !yield(nil) {
-					return
-				}
-			}
-		}
-	}
 }

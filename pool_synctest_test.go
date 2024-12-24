@@ -5,6 +5,7 @@ package pqlite
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -63,7 +64,7 @@ func TestPoolSyncExpired(t *testing.T) {
 	})
 }
 
-func TestPoolSyncGetNextError(t *testing.T) {
+func TestPoolSyncGetOpenError(t *testing.T) {
 	synctest.Run(func() {
 		var retries atomic.Int64
 
@@ -111,6 +112,142 @@ func TestPoolSyncGetNextError(t *testing.T) {
 			t.Fatalf("retries = %d; want > 3", retries.Load())
 		}
 	})
+}
+
+func (p *Pool) checkAndDrainPool() {
+	for {
+		v := p.connChanPool.Get()
+		if v == nil {
+			break
+		}
+		ch := v.(chan *Conn) // panic if wrong type
+		if len(ch) > 0 {
+			panic(fmt.Errorf("non-empty Conn in pool: len = %d!", len(ch)))
+		}
+	}
+}
+
+func TestPoolSyncGetNearMissContextCancel(t *testing.T) {
+	check := checker(t)
+
+	synctest.Run(func() {
+		p := &Pool{
+			Logger:  testutil.Slogger(t),
+			Open:    closedConnOpener,
+			MaxOpen: 1,
+		}
+		defer p.Close()
+		defer p.checkAndDrainPool()
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		// Acquire the only allowed Conn in the pool
+		want, err := p.Get(ctx)
+		check(err)
+
+		p.testHookWaitCanceled = func(ch chan *Conn) {
+			// Induce a near miss. Send the Conn on the wait
+			// channel after the context is canceled, but before
+			// Get checks the wait chan for a near miss after
+			// removing itself from line, but before returning.
+			ch <- want
+		}
+
+		ch := make(chan *Conn, 1)
+		go func() {
+			cn, err := p.Get(ctx)
+			check(err)
+			ch <- cn
+		}()
+
+		// Run until Get reaches the select; without this we risk
+		// getting a false positive if the initial context error check
+		// in Get is scheduled after we cancel the context.
+		synctest.Wait()
+
+		// cancel the context causing it to fall into the <-ctx.Done() case
+		cancel()
+
+		got := <-ch
+		if got != want {
+			t.Fatal("expected near miss recovery")
+		}
+
+		p.Put(got)
+
+		// A canceled context should not be able to acquire the Conn
+		_, err = p.Get(ctx)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v; want %v", err, context.Canceled)
+		}
+	})
+}
+
+func TestPoolSyncGetNearMissPoolClosed(t *testing.T) {
+	check := checker(t)
+
+	synctest.Run(func() {
+		p := &Pool{
+			Logger:  testutil.Slogger(t),
+			Open:    closedConnOpener,
+			MaxOpen: 1,
+		}
+		defer p.Close()
+		defer p.checkAndDrainPool()
+
+		// Acquire the only allowed Conn in the pool
+		_, err := p.Get(t.Context())
+		check(err)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		p.testHookWaitCanceled = func(ch chan *Conn) {
+			p.Close()
+		}
+
+		ch := make(chan error, 1)
+		go func() {
+			cn, err := p.Get(ctx)
+			if cn != nil {
+				t.Error("expected nil *Conn")
+			}
+			ch <- err
+		}()
+
+		// Run until Get reaches the select; without this we risk
+		// getting a false positive if the initial context error check
+		// in Get is scheduled after we cancel the context.
+		synctest.Wait()
+
+		// cancel the context causing it to fall into the <-ctx.Done() case
+		cancel()
+
+		got := <-ch
+		if errors.Is(got, ErrPoolClosed) {
+			// special case check to callout this test is to ensure
+			// we never get ErrPoolClosed in particular.
+			t.Fatal("unexpected pool closed error")
+		}
+		if !errors.Is(got, context.Canceled) {
+			t.Fatalf("err = %v; want %v", got, context.Canceled)
+		}
+	})
+}
+
+func checker(t *testing.T) func(err error) {
+	t.Helper()
+	return func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func closedConnOpener(context.Context) (*Conn, error) {
+	return &Conn{closed: true}, nil
 }
 
 func sleepUntilDeadline(ctx context.Context) {
