@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"blake.io/pqlite/backoff"
 	"blake.io/pqlite/febe"
 )
 
@@ -405,7 +406,7 @@ func withTestDeadline(ctx context.Context, t *testing.T) (context.Context, conte
 type logf func(format string, args ...interface{})
 
 func waitForPGReady(ctx context.Context, logf logf, host, port string) error {
-	for err := range backoff(ctx, 5*time.Second) {
+	for _, err := range backoff.Loop(ctx, 200*time.Millisecond) {
 		if err != nil {
 			return err
 		}

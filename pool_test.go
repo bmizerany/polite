@@ -269,6 +269,84 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 	}
 }
 
+func TestPoolGetAllocations(t *testing.T) {
+	t.Skip("TODO: unskip and fix after synctest problems are fixed")
+
+	p := &Pool{
+		Open: func(context.Context) (*Conn, error) {
+			return &Conn{closed: true}, nil
+		},
+
+		// Ensure each Get results in a new connection.
+		MaxOpen: 1,
+		MaxUses: 1,
+	}
+	defer p.Close()
+
+	got := testing.AllocsPerRun(1000, func() {
+		cn, err := p.Get(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.Put(cn)
+	})
+	if got > 0 {
+		t.Fatalf("unexpected allocations: %v", got)
+	}
+}
+
+func BenchmarkPoolGetPut(b *testing.B) {
+	b.ReportAllocs()
+
+	closedConn := &Conn{closed: true}
+
+	p := &Pool{
+		Open: func(context.Context) (*Conn, error) {
+			return closedConn, nil
+		},
+
+		MaxOpen:     1<<63 - 1,
+		MaxUses:     1<<63 - 1,
+		MaxWaiting:  1<<63 - 1,
+		MaxLifetime: 1<<63 - 1,
+	}
+	defer p.Close()
+
+	for b.Loop() {
+		ctx := context.Background()
+		_, err := p.Get(ctx)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkPoolStartNewConn(b *testing.B) {
+	b.ReportAllocs()
+
+	p := &Pool{
+		Open: func(context.Context) (*Conn, error) {
+			return &Conn{closed: true}, nil
+		},
+
+		MaxOpen:     1<<63 - 1,
+		MaxUses:     1<<63 - 1,
+		MaxWaiting:  1<<63 - 1,
+		MaxLifetime: 1<<63 - 1,
+	}
+	defer p.Close()
+
+	// Get a conn for setup side effects.
+	_, err := p.Get(context.Background())
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	for b.Loop() {
+		p.startNewConn(nil)
+	}
+}
+
 func BenchmarkPool(b *testing.B) {
 	b.Run("driver=pqlite/open=1", func(b *testing.B) { benchmarkPool(b, 1) })
 	b.Run("driver=pqlite/open=2", func(b *testing.B) { benchmarkPool(b, 2) })
@@ -276,6 +354,8 @@ func BenchmarkPool(b *testing.B) {
 	b.Run("driver=pqlite/open=8", func(b *testing.B) { benchmarkPool(b, 8) })
 	b.Run("driver=pqlite/open=16", func(b *testing.B) { benchmarkPool(b, 16) })
 	b.Run("driver=pqlite/open=32", func(b *testing.B) { benchmarkPool(b, 32) })
+	b.Run("driver=pqlite/open=48", func(b *testing.B) { benchmarkPool(b, 48) })
+	b.Run("driver=pqlite/open=64", func(b *testing.B) { benchmarkPool(b, 64) })
 
 	b.Run("driver=pgx/open=1", func(b *testing.B) { benchmarkPoolPGX(b, 1) })
 	b.Run("driver=pgx/open=2", func(b *testing.B) { benchmarkPoolPGX(b, 2) })
@@ -283,6 +363,8 @@ func BenchmarkPool(b *testing.B) {
 	b.Run("driver=pgx/open=8", func(b *testing.B) { benchmarkPoolPGX(b, 8) })
 	b.Run("driver=pgx/open=16", func(b *testing.B) { benchmarkPoolPGX(b, 16) })
 	b.Run("driver=pgx/open=32", func(b *testing.B) { benchmarkPoolPGX(b, 32) })
+	b.Run("driver=pgx/open=48", func(b *testing.B) { benchmarkPoolPGX(b, 48) })
+	b.Run("driver=pgx/open=64", func(b *testing.B) { benchmarkPoolPGX(b, 64) })
 }
 
 func benchmarkPool(b *testing.B, maxOpen int) {
