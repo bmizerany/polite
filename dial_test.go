@@ -289,22 +289,14 @@ func startPG(t *testing.T, settings ...string) string {
 
 	dir := t.TempDir()
 
-	ctx, cancel := withTestDeadline(context.Background(), t)
-	defer cancel()
-	ctx, cancel = context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "initdb", dir)
+	cmd := exec.CommandContext(t.Context(), "initdb", dir)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Logf("initdb failed:\n%s", out)
+		t.Logf("initdb %s", dir)
+		t.Logf("failed:\n%s", out)
 		t.Fatal(err)
 	}
-
-	// detached context to prevent timeout above
-	ctx, cancel = withTestDeadline(context.Background(), t)
-	t.Cleanup(cancel)
 
 	args := append([]string{
 		"-D", dir,
@@ -316,7 +308,7 @@ func startPG(t *testing.T, settings ...string) string {
 
 	t.Logf("postgres %s", strings.Join(args, " "))
 
-	cmd = exec.CommandContext(ctx, "postgres", args...)
+	cmd = exec.CommandContext(t.Context(), "postgres", args...)
 	cmd.Dir = dir
 	cmd.WaitDelay = 1 * time.Second
 	cmd.Cancel = func() error {
@@ -332,9 +324,7 @@ func startPG(t *testing.T, settings ...string) string {
 
 	shutThisDownAfterMyDeath(cmd.Process)
 
-	done := make(chan struct{})
 	go func() {
-		defer close(done)
 		sc := bufio.NewScanner(stdout)
 		for sc.Scan() {
 			t.Log("-- postgres:", sc.Text())
@@ -344,21 +334,12 @@ func startPG(t *testing.T, settings ...string) string {
 			if errors.As(err, &pe) && pe.Op == "read" {
 				return // pg was closed
 			}
-			t.Errorf("postgres log scanner failed: %#v", err)
+			panic(fmt.Errorf("postgres log scanner: %v", err))
 		}
 	}()
 
 	t.Cleanup(func() {
 		t.Helper()
-		defer func() {
-			// Be paranoid and prevent illegal calls to
-			// t.{Log,Error,...} funcs from being called after this test
-			// is done by waiting until the logging goroutine has
-			// exited.
-			<-done
-		}()
-
-		cancel()
 		if err := cmd.Wait(); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -375,11 +356,10 @@ func startPG(t *testing.T, settings ...string) string {
 				return
 			}
 			t.Errorf("postgres exited with error: %v", err)
-			return
 		}
 	})
 
-	waitForPGReady(ctx, t.Logf, dir, port)
+	waitForPGReady(t.Context(), t.Logf, dir, port)
 
 	return strings.Join([]string{
 		"host=" + dir,
@@ -387,20 +367,6 @@ func startPG(t *testing.T, settings ...string) string {
 		"port=" + port,
 		"sslmode=disable",
 	}, " ")
-}
-
-// withTestDeadline returns a context that will be canceled when the test
-// deadline is reached. The returned cancel func should be called when the test
-// is done.
-func withTestDeadline(ctx context.Context, t *testing.T) (context.Context, context.CancelFunc) {
-	deadline, hasDeadline := t.Deadline()
-	if !hasDeadline {
-		return ctx, func() {}
-	}
-
-	// subtract 200ms to give the test time to cleanup before the actual
-	// deadline
-	return context.WithDeadline(ctx, deadline.Add(-200*time.Millisecond))
 }
 
 type logf func(format string, args ...interface{})
