@@ -50,7 +50,7 @@ func createDB(t testing.TB) string {
 	}
 
 	tname := strings.Replace(t.Name(), "/", "_", -1)
-	dbname := fmt.Sprintf("gotest_%s_%s", tname, randomString())
+	dbname := fmt.Sprintf("gotest_%s_%s", tname, rand.Text()[:6])
 	dbname = strings.ToLower(dbname)
 	if err := cn.Exec(context.Background(), "CREATE DATABASE "+dbname); err != nil {
 		t.Fatal(err)
@@ -555,17 +555,3 @@ var (
 	testDSN = cmp.Or(os.Getenv("DATABASE_URL"),
 		"dbname=postgres host=/tmp port=5411 sslmode=disable user=postgres password=postgres")
 )
-
-// randomString uses math/rand to generate a random string of 8 printable
-// characters.
-func randomString() string {
-	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	for i := range b {
-		b[i] = chars[b[i]%byte(len(chars))]
-	}
-	return string(b)
-}
