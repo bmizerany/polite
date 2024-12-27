@@ -180,7 +180,8 @@ func (p *Pool) startNewConn(retire *Conn) {
 		// connection being retired.
 		retire.Close()
 	}
-	for _, err := range backoff.Loop(p.cancelCtx, 5*time.Second) {
+
+	for i, err := range backoff.Loop(p.cancelCtx, 5*time.Second) {
 		if err != nil {
 			p.readyMu.Lock()
 			p.openConns--
@@ -197,8 +198,10 @@ func (p *Pool) startNewConn(retire *Conn) {
 			// after tests are done, which is an error.
 			return
 		}
-		p.log().Debug("pqlite: pool: error opening new connection; retrying", "err",
-			cmp.Or(context.Cause(p.cancelCtx), err))
+		if i > 3 {
+			p.log().Info("pqlite: pool: error opening new connection; retrying", "err",
+				cmp.Or(context.Cause(p.cancelCtx), err))
+		}
 	}
 }
 

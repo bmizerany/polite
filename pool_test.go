@@ -133,10 +133,16 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 func TestPoolPutClosedPool(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{Logger: testutil.Slogger(t)}
+	p := &Pool{
+		Logger: testutil.Slogger(t),
+		Open:   Opener(testDSN, nil),
+	}
 	defer p.Close()
 
-	cn, err := p.Get(context.Background())
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+
+	cn, err := p.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,8 +151,8 @@ func TestPoolPutClosedPool(t *testing.T) {
 		t.Fatalf("unexpected error on close: %v", err)
 	}
 
-	if err := cn.Ping(context.Background()); err != nil {
-		t.Fatalf("unexpected error on ping: %v", err)
+	if err := cn.Ping(ctx); err != nil {
+		t.Fatalf("expected connection alive after pool close, got %v", err)
 	}
 	p.Put(cn)
 	if err := cn.Close(); !errors.Is(err, net.ErrClosed) {

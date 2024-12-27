@@ -22,24 +22,49 @@ jobs:
     test:
         runs-on: ubuntu-latest
         steps:
-          - uses: "ikalnytskyi/action-setup-postgres@v6"
-            id: postgres
+          - name: Install Postgres
+            run: |
+              # Configure
+              #
+              # version is the version of the embedded postgres to install.
+              # The format must be in <major>.<minor>.<patch> format.
+              version="17.2.0"
+
+              set -ueo pipefail
+
+              cd $HOME/.local
+
+              # Download the embedded postgres binaries
+              url="https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-linux-amd64/$version/embedded-postgres-binaries-linux-amd64-$version.jar"
+              curl -s -o /tmp/pg.jar -L $url
+              unzip -p /tmp/pg.jar postgres-linux-x86_64.txz | xz -d | tar xvf - 1>/dev/null
+
+              echo "PGBIN=$HOME/.local/bin" >> $GITHUB_ENV
+              echo "PGDATA=$HOME/.local/share/postgres/data" >> $GITHUB_ENV
+
+              echo "Postgres $version binaries installed to $HOME/.local/bin"
+              ./bin/postgres --version
+          - name: Postgres initdb
+            run: |
+              initdb -U postgres -D $PGDATA
+          - name: Postgres start
+            run: |
+              pg_ctl -D $PGDATA -l $PGDATA/logfile start
+              echo "DATABASE_URL=dbname=postgres user=postgres password=postgres host=/tmp sslmode=disable" >> $GITHUB_ENV
           - name: Checkout
             uses: actions/checkout@v4
           - name: Install Go
             uses: actions/setup-go@v5
             with:
-              go-version-file: go.mod
+              # TODO(bmizerany): use go.mod once go1.24 toolchain lands: go-version-file: go.mod
+              go-version: '1.24.0-rc.1'
           - name: go mod tidy
             run: go mod tidy -diff
           - name: Run tests
-            run: go test -count=1 ./...
             env:
-              # We need to use the key=value format in tests because we rely on
-              # being able to build upon the main DSN by appending settings to
-              # override those that came before them. This does not work with
-              # URIs.
-              #
-              # This is not a typical requirement. Most applications can use
-              # either DSN or URI interchangeably.
-              DATABASE_URL: "dbname=postgres host=localhost port=5432 user=postgres password=postgres sslmode=disable"
+              GOEXPERIMENT: "synctest"
+            run: go test -v -count=1 ./...
+          - name: Run staticcheck
+            env:
+              GOEXPERIMENT: "synctest"
+            run: go run honnef.co/go/tools/cmd/staticcheck ./...
