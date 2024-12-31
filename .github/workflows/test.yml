@@ -19,52 +19,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-    test:
-        runs-on: ubuntu-latest
-        steps:
-          - name: Install Postgres
-            run: |
-              # Configure
-              #
-              # version is the version of the embedded postgres to install.
-              # The format must be in <major>.<minor>.<patch> format.
-              version="17.2.0"
-
-              set -ueo pipefail
-
-              cd $HOME/.local
-
-              # Download the embedded postgres binaries
-              url="https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-linux-amd64/$version/embedded-postgres-binaries-linux-amd64-$version.jar"
-              curl -s -o /tmp/pg.jar -L $url
-              unzip -p /tmp/pg.jar postgres-linux-x86_64.txz | xz -d | tar xvf - 1>/dev/null
-
-              echo "PGBIN=$HOME/.local/bin" >> $GITHUB_ENV
-              echo "PGDATA=$HOME/.local/share/postgres/data" >> $GITHUB_ENV
-
-              echo "Postgres $version binaries installed to $HOME/.local/bin"
-              ./bin/postgres --version
-          - name: Postgres initdb
-            run: |
-              initdb -U postgres -D $PGDATA
-          - name: Postgres start
-            run: |
-              pg_ctl -D $PGDATA -l $PGDATA/logfile start
-              echo "DATABASE_URL=dbname=postgres user=postgres password=postgres host=/tmp sslmode=disable" >> $GITHUB_ENV
-          - name: Checkout
-            uses: actions/checkout@v4
-          - name: Install Go
-            uses: actions/setup-go@v5
-            with:
-              # TODO(bmizerany): use go.mod once go1.24 toolchain lands: go-version-file: go.mod
-              go-version: '1.24.0-rc.1'
-          - name: go mod tidy
-            run: go mod tidy -diff
-          - name: Run tests
-            env:
-              GOEXPERIMENT: "synctest"
-            run: go test -v -count=1 ./...
-          - name: Run staticcheck
-            env:
-              GOEXPERIMENT: "synctest"
-            run: go run honnef.co/go/tools/cmd/staticcheck ./...
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # 4.2.2
+      - name: restore cache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          # From: tailscale/tailscale
+          #
+          # Note: unlike the other setups, this is only grabbing the mod download
+          # cache, rather than the whole mod directory, as the download cache
+          # contains zips that can be unpacked in parallel faster than they can be
+          # fetched and extracted by tar
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod/cache
+            ~\AppData\Local\go-build
+          # NOTE: The -2- here should be incremented when the scheme of data to be
+          # cached changes (e.g. path above changes).
+          key: ${{ github.job }}-${{ runner.os }}-${{ matrix.goarch }}-${{ matrix.buildflags }}-go-2-${{ hashFiles('**/go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ github.job }}-${{ runner.os }}-${{ matrix.goarch }}-${{ matrix.buildflags }}-go-2-${{ hashFiles('**/go.sum') }}
+            ${{ github.job }}-${{ runner.os }}-${{ matrix.goarch }}-${{ matrix.buildflags }}-go-2-
+      - name: go mod tidy
+        run: go mod tidy -diff
+      - name: setup postgres
+        uses: bmizerany/setup-postgres@v3
+      - name: setup go
+        run: go env -w GOEXPERIMENT=synctest
+      - name: go test
+        run: go test -v -count=1 ./...
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck ./...
