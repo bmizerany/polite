@@ -8,6 +8,7 @@ type testT struct {
 }
 
 func (t *testT) Errorf(msg string, args ...interface{}) {
+	t.Helper()
 	t.n++
 	t.T.Logf(msg, args...) // Errors are expected, so just log, don't fail.
 }
