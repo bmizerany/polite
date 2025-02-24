@@ -1,5 +1,3 @@
-//go:build goexperiment.synctest
-
 package pqlite
 
 import (
