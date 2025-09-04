@@ -14,7 +14,7 @@ import (
 )
 
 func TestPoolSyncExpired(t *testing.T) {
-	synctest.Run(func() {
+	synctest.Test(t, func(t *testing.T) {
 		p := &Pool{
 			MaxLifetime: 3 * time.Second,
 			Logger:      testutil.Slogger(t),
@@ -63,7 +63,7 @@ func TestPoolSyncExpired(t *testing.T) {
 }
 
 func TestPoolSyncGetOpenError(t *testing.T) {
-	synctest.Run(func() {
+	synctest.Test(t, func(t *testing.T) {
 		var retries atomic.Int64
 
 		p := &Pool{
@@ -128,7 +128,7 @@ func (p *Pool) checkAndDrainPool() {
 func TestPoolSyncGetNearMissContextCancel(t *testing.T) {
 	check := checker(t)
 
-	synctest.Run(func() {
+	synctest.Test(t, func(t *testing.T) {
 		p := &Pool{
 			Logger:  testutil.Slogger(t),
 			Open:    closedConnOpener,
@@ -185,7 +185,7 @@ func TestPoolSyncGetNearMissContextCancel(t *testing.T) {
 func TestPoolSyncGetNearMissPoolClosed(t *testing.T) {
 	check := checker(t)
 
-	synctest.Run(func() {
+	synctest.Test(t, func(t *testing.T) {
 		p := &Pool{
 			Logger:  testutil.Slogger(t),
 			Open:    closedConnOpener,
