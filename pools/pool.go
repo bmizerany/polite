@@ -30,7 +30,7 @@ type Conn struct {
 	closed  atomic.Bool
 }
 
-func (c *Conn) Close() error {
+func (c T) Close() error {
 	if c.closed.Swap(true) {
 		return net.ErrClosed
 	}
@@ -53,7 +53,7 @@ type Pool[T any] struct {
 	// the pool is empty.
 	//
 	// If Open is nil then DefaultOpener is used.
-	Open func(ctx context.Context) (*Conn, error)
+	Open func(ctx context.Context) (T, error)
 
 	// MaxConns is the maximum number of cvalues that can be open at
 	// once. If MaxConns is zero, then DefaultPoolMaxConns is used.
@@ -79,7 +79,7 @@ type Pool[T any] struct {
 	// TODO(bmizerany): MaxLifetime time.Duration
 
 	readyMu   sync.Mutex // guards the following fields
-	ready     queues.Lifo[*Conn]
+	ready     queues.Lifo[T]
 	openConns int
 	cancelCtx context.Context
 	cancel    context.CancelCauseFunc
@@ -87,7 +87,7 @@ type Pool[T any] struct {
 	connChanPool sync.Pool
 
 	waitingMu sync.Mutex
-	waiting   queues.Fifo[chan *Conn]
+	waiting   queues.Fifo[chan T]
 
 	// testHookWaiterCanceled, if set, is called from Get when the wait is
 	// canceled. It is not used by pqlite code itself - it is only here for use
@@ -97,10 +97,10 @@ type Pool[T any] struct {
 	//
 	// It is called before ch is removed from the wait queue and before it is
 	// checked for a near miss.
-	testHookWaiterCanceled func(ch chan *Conn)
+	testHookWaiterCanceled func(ch chan T)
 }
 
-func (p *Pool[T]) putConnChan(ch chan *Conn) {
+func (p *Pool[T]) putConnChan(ch chan T) {
 	select {
 	case _, ok := <-ch:
 		if !ok {
@@ -113,8 +113,8 @@ func (p *Pool[T]) putConnChan(ch chan *Conn) {
 }
 
 // caller must hold p.readyMu and p.waitingMu
-func (p *Pool[T]) putLocked(cn *Conn) {
-	handoff := func(cn *Conn) bool {
+func (p *Pool[T]) putLocked(cn T) {
+	handoff := func(cn T) bool {
 		ch, ok := p.waiting.Shift()
 		if ok {
 			// Hand the connection to the first waiter in line. We
@@ -140,7 +140,7 @@ func (p *Pool[T]) putLocked(cn *Conn) {
 	p.ready.Push(cn)
 }
 
-func (p *Pool[T]) put(cn *Conn) {
+func (p *Pool[T]) put(cn T) {
 	p.readyMu.Lock()
 	if p.cancelCtx.Err() != nil {
 		p.readyMu.Unlock()
@@ -159,7 +159,7 @@ func (p *Pool[T]) put(cn *Conn) {
 // closed.
 //
 // Put is a non-blocking operation.
-func (p *Pool[T]) Put(cn *Conn) {
+func (p *Pool[T]) Put(cn T) {
 	expired := p.MaxLifetime > 0 && time.Since(cn.created) >= p.MaxLifetime
 	cn.uses++
 	if expired || p.maxUses() > 0 && cn.uses >= p.maxUses() {
@@ -169,7 +169,7 @@ func (p *Pool[T]) Put(cn *Conn) {
 	}
 }
 
-func (p *Pool[T]) startNewConn(retire *Conn) {
+func (p *Pool[T]) startNewConn(retire T) {
 	if retire != nil {
 		// Retire the connection so that it is not used again, and
 		// before we open a new one as to not exceed the max open
@@ -199,24 +199,24 @@ func (p *Pool[T]) startNewConn(retire *Conn) {
 	}
 }
 
-func (p *Pool[T]) dropWaiter(ch chan *Conn) {
+func (p *Pool[T]) dropWaiter(ch chan T) {
 	p.readyMu.Lock()
 	p.waitingMu.Lock()
-	p.waiting.DeleteFunc(func(dch chan *Conn) bool {
+	p.waiting.DeleteFunc(func(dch chan T) bool {
 		return ch == dch
 	})
 	p.waitingMu.Unlock()
 	p.readyMu.Unlock()
 }
 
-func (p *Pool[T]) Get(ctx context.Context) (*Conn, error) {
+func (p *Pool[T]) Get(ctx context.Context) (T, error) {
 	if ctx.Err() != nil {
 		// avoid tying up resources and delaying a connection from
 		// reaching a truly ready waiter if the context is already
 		// done.
 		return nil, ctx.Err()
 	}
-	cn, ch, err := func() (*Conn, chan *Conn, error) {
+	cn, ch, err := func() (T, chan T, error) {
 		p.readyMu.Lock()
 		if p.cancelCtx == nil {
 			p.cancelCtx, p.cancel = context.WithCancelCause(context.Background())
@@ -241,9 +241,9 @@ func (p *Pool[T]) Get(ctx context.Context) (*Conn, error) {
 		// Get in line and wait for another goroutine to put a
 		// connection in the pool or for any new connection being
 		// opened to be handed off to us.
-		ch, _ := p.connChanPool.Get().(chan *Conn)
+		ch, _ := p.connChanPool.Get().(chan T)
 		if ch == nil {
-			ch = make(chan *Conn, 1)
+			ch = make(chan T, 1)
 		}
 		p.waiting.Unshift(ch)
 		p.waitingMu.Unlock()
@@ -366,10 +366,10 @@ func (p *Pool[T]) CloseExpiredConns() error {
 	}
 
 	var errs []error
-	var marked []*Conn
+	var marked []T
 
 	p.readyMu.Lock()
-	p.ready.DeleteFunc(func(cn *Conn) bool {
+	p.ready.DeleteFunc(func(cn T) bool {
 		if time.Since(cn.created) > p.MaxLifetime {
 			marked = append(marked, cn)
 			return true
