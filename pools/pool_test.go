@@ -183,7 +183,6 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range got {
 		wg.Go(func() {
-			defer wg.Done()
 			cn, err := p.Get(ctx)
 			if err != nil {
 				got[i] = err

@@ -209,31 +209,27 @@ func TestPoolSyncGetNearMissPoolClosed(t *testing.T) {
 			p.Close()
 		}
 
-		ch := make(chan error, 1)
+		var getErr error
 		go func() {
 			cn, err := p.Get(ctx)
 			if cn != nil {
 				t.Error("expected nil *Conn")
 			}
-			ch <- err
+			getErr = err
 		}()
 
-		// Run until Get reaches the select; without this we risk
-		// getting a false positive if the initial context error check
-		// in Get is scheduled after we cancel the context.
+		// Run until Get reaches the select,
+		// cancel the context,
+		// and then wait for the Get goroutine to exit.
+		synctest.Wait()
+		cancel()
 		synctest.Wait()
 
-		// cancel the context causing it to fall into the <-ctx.Done() case
-		cancel()
-
-		got := <-ch
-		if errors.Is(got, ErrPoolClosed) {
-			// special case check to callout this test is to ensure
-			// we never get ErrPoolClosed in particular.
-			t.Fatal("unexpected pool closed error")
+		if errors.Is(getErr, ErrPoolClosed) {
+			t.Fatal("Get is ErrPoolClosed (but should not be)")
 		}
-		if !errors.Is(got, context.Canceled) {
-			t.Fatalf("err = %v; want %v", got, context.Canceled)
+		if !errors.Is(getErr, context.Canceled) {
+			t.Fatalf("err = %v; want %v", getErr, context.Canceled)
 		}
 	})
 }

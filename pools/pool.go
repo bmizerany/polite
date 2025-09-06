@@ -28,7 +28,13 @@ type Conn struct {
 	closed  bool
 }
 
-func (c *Conn) Close() error { return nil }
+func (c *Conn) Close() error {
+	if c.closed {
+		return ErrPoolClosed
+	}
+	c.closed = true
+	return nil
+}
 
 // Errors
 var (
@@ -180,6 +186,16 @@ func (p *Pool) startNewConn(retire *Conn) {
 	}
 }
 
+func (p *Pool) dropWaiter(ch chan *Conn) {
+	p.readyMu.Lock()
+	p.waitingMu.Lock()
+	p.waiting.DeleteFunc(func(dch chan *Conn) bool {
+		return ch == dch
+	})
+	p.waitingMu.Unlock()
+	p.readyMu.Unlock()
+}
+
 func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	if ctx.Err() != nil {
 		// avoid tying up resources and delaying a connection from
@@ -250,14 +266,6 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 			p.testHookWaitCanceled(ch)
 		}
 
-		p.readyMu.Lock()
-		p.waitingMu.Lock()
-		p.waiting.DeleteFunc(func(dch chan *Conn) bool {
-			return ch == dch
-		})
-		p.waitingMu.Unlock()
-		p.readyMu.Unlock()
-
 		select {
 		case cn, ok := <-ch:
 			if !ok {
@@ -277,6 +285,8 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 				// about retrying operations.
 				return nil, ctx.Err()
 			}
+
+			p.dropWaiter(ch)
 
 			// Handle successful connection acquisition despite
 			// context cancellation
@@ -309,6 +319,11 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 			// cleanup) or soft (allowing continued use).
 			p.connChanPool.Put(ch)
 			return cn, nil
+		case <-p.cancelCtx.Done():
+			// Pool closed while we were waiting.
+			p.dropWaiter(ch)
+			p.connChanPool.Put(ch)
+			return nil, ErrPoolClosed
 		default:
 			p.connChanPool.Put(ch)
 			return nil, ctx.Err()
