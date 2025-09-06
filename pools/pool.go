@@ -39,10 +39,10 @@ func (c *Conn) Close() error {
 
 // Errors
 var (
-	ErrMaxWaiting = errors.New("pqlite: pool: too many waiting")
+	ErrMaxWaiting = errors.New(" pool: too many waiting")
 
 	// ErrPoolClosed is returned when the pool closed.
-	ErrPoolClosed = errors.New("pqlite: pool: closed")
+	ErrPoolClosed = errors.New(" pool: closed")
 )
 
 // Pool is a pool of values. It is safe for concurrent use by multiple
@@ -104,9 +104,9 @@ func (p *Pool) putConnChan(ch chan *Conn) {
 	select {
 	case _, ok := <-ch:
 		if !ok {
-			panic("pqlite: pool: unexpected closed channel in putConnChan")
+			panic(" pool: unexpected closed channel in putConnChan")
 		}
-		panic("pqlite: pool: unexpected non-empty channel in putConnChan")
+		panic(" pool: unexpected non-empty channel in putConnChan")
 	default:
 		p.connChanPool.Put(ch)
 	}
@@ -193,7 +193,7 @@ func (p *Pool) startNewConn(retire *Conn) {
 			return
 		}
 		if i > 3 {
-			p.log().Info("pqlite: pool: error opening new connection; retrying", "err",
+			p.log().Info(" pool: error opening new connection; retrying", "err",
 				cmp.Or(context.Cause(p.cancelCtx), err))
 		}
 	}
@@ -401,24 +401,13 @@ func (p *Pool) closeReadyLocked() error {
 		return p.cancelCtx.Err()
 	}
 
+	// unblock all waiters and prevent new ones
 	p.cancel(ErrPoolClosed)
 
 	// Next, close all ready values followed by all waiting
 	// values.
 	p.waitingMu.Lock()
 	defer p.waitingMu.Unlock()
-
-	// Start with everyone waiting so they are not blocked by the ready
-	// values being closed, since closing a channel is (most likely)
-	// faster than closing a connection since the connection play nice with
-	// postgres and send termination packets which can take time.
-	for {
-		ch, ok := p.waiting.Shift()
-		if !ok {
-			break
-		}
-		close(ch)
-	}
 
 	for {
 		cn, ok := p.ready.Pop()
