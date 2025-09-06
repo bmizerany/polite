@@ -343,14 +343,14 @@ func BenchmarkPoolStartNewConn(b *testing.B) {
 }
 
 func BenchmarkPool(b *testing.B) {
-	b.Run("driver=pqlite/open=1", func(b *testing.B) { benchmarkPool(b, 1) })
-	b.Run("driver=pqlite/open=2", func(b *testing.B) { benchmarkPool(b, 2) })
-	b.Run("driver=pqlite/open=4", func(b *testing.B) { benchmarkPool(b, 4) })
-	b.Run("driver=pqlite/open=8", func(b *testing.B) { benchmarkPool(b, 8) })
-	b.Run("driver=pqlite/open=16", func(b *testing.B) { benchmarkPool(b, 16) })
-	b.Run("driver=pqlite/open=32", func(b *testing.B) { benchmarkPool(b, 32) })
-	b.Run("driver=pqlite/open=48", func(b *testing.B) { benchmarkPool(b, 48) })
-	b.Run("driver=pqlite/open=64", func(b *testing.B) { benchmarkPool(b, 64) })
+	b.Run("open=1", func(b *testing.B) { benchmarkPool(b, 1) })
+	b.Run("open=2", func(b *testing.B) { benchmarkPool(b, 2) })
+	b.Run("open=4", func(b *testing.B) { benchmarkPool(b, 4) })
+	b.Run("open=8", func(b *testing.B) { benchmarkPool(b, 8) })
+	b.Run("open=16", func(b *testing.B) { benchmarkPool(b, 16) })
+	b.Run("open=32", func(b *testing.B) { benchmarkPool(b, 32) })
+	b.Run("open=48", func(b *testing.B) { benchmarkPool(b, 48) })
+	b.Run("open=64", func(b *testing.B) { benchmarkPool(b, 64) })
 }
 
 func benchmarkPool(b *testing.B, maxOpen int) {
