@@ -177,7 +177,10 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 
 		go get(ErrPoolClosed) // attempt to get another connection (but fail because pool is closed)
 		p.Close()             // close the pool giving waiters ErrPoolClosed
-		synctest.Wait()       // wait for error (or let synctest panic if it blocks)
+
+		// This will panic if the Get goroutine is not scheduled and does not exit,
+		// ensureing the assertion that it receives ErrPoolClosed is checked.
+		synctest.Wait()
 	})
 }
 
