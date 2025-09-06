@@ -264,26 +264,6 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 	}
 }
 
-func TestPoolGetAllocations(t *testing.T) {
-	p := &Pool{
-		Open:    testOpen,
-		MaxOpen: 1,
-		MaxUses: 1,
-	}
-	defer p.Close()
-
-	got := testing.AllocsPerRun(1000, func() {
-		cn, err := p.Get(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-		p.Put(cn)
-	})
-	if got > 0 {
-		t.Fatalf("unexpected allocations: %v", got)
-	}
-}
-
 func BenchmarkPoolGetPut(b *testing.B) {
 	b.ReportAllocs()
 

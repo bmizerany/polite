@@ -35,7 +35,6 @@ func TestPoolMaxUseWithWaiter(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range len(cc) {
 		wg.Go(func() {
-			defer wg.Done()
 			cn, err := p.Get(ctx)
 			if err != nil {
 				t.Error(err)
@@ -186,15 +185,14 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 	var got [3]error
 	var wg sync.WaitGroup
 	for i := range got {
-		wg.Go( func() {
-			defer wg.Done()
+		wg.Go(func() {
 			cn, err := p.Get(ctx)
 			if err != nil {
 				got[i] = err
 				return
 			}
 			p.Put(cn)
-		}()
+		})
 	}
 
 	select {
