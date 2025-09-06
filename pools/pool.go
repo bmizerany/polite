@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"blake.io/pqlite/backoff"
@@ -26,14 +27,13 @@ const (
 type Conn struct {
 	uses    int
 	created time.Time
-	closed  bool
+	closed  atomic.Bool
 }
 
 func (c *Conn) Close() error {
-	if c.closed {
+	if c.closed.Swap(true) {
 		return net.ErrClosed
 	}
-	c.closed = true
 	return nil
 }
 

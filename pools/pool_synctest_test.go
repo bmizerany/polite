@@ -98,8 +98,7 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 			})
 		}
 
-		sleepUntilDeadline(ctx)
-
+		time.Sleep(3 * time.Second)
 		wg.Wait()
 
 		for i := range len(got) {
@@ -133,7 +132,7 @@ func TestPoolSyncGetNearMissContextCancel(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		p := &Pool{
 			Logger:  testutil.Slogger(t),
-			Open:    closedConnOpener,
+			Open:    testOpen,
 			MaxOpen: 1,
 		}
 		defer p.Close()
@@ -190,7 +189,7 @@ func TestPoolSyncGetNearMissPoolClosed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		p := &Pool{
 			Logger:  testutil.Slogger(t),
-			Open:    closedConnOpener,
+			Open:    testOpen,
 			MaxOpen: 1,
 		}
 		defer p.Close()
@@ -241,16 +240,4 @@ func checker(t *testing.T) func(err error) {
 			t.Fatal(err)
 		}
 	}
-}
-
-func closedConnOpener(context.Context) (*Conn, error) {
-	return &Conn{closed: true}, nil
-}
-
-func sleepUntilDeadline(ctx context.Context) {
-	d, ok := ctx.Deadline()
-	if !ok {
-		panic("no deadline")
-	}
-	time.Sleep(time.Until(d))
 }

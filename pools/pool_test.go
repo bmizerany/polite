@@ -265,14 +265,8 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 }
 
 func TestPoolGetAllocations(t *testing.T) {
-	t.Skip("TODO: unskip and fix after synctest problems are fixed")
-
 	p := &Pool{
-		Open: func(context.Context) (*Conn, error) {
-			return &Conn{closed: true}, nil
-		},
-
-		// Ensure each Get results in a new connection.
+		Open:    testOpen,
 		MaxOpen: 1,
 		MaxUses: 1,
 	}
@@ -293,13 +287,8 @@ func TestPoolGetAllocations(t *testing.T) {
 func BenchmarkPoolGetPut(b *testing.B) {
 	b.ReportAllocs()
 
-	closedConn := &Conn{closed: true}
-
 	p := &Pool{
-		Open: func(context.Context) (*Conn, error) {
-			return closedConn, nil
-		},
-
+		Open:        testOpen,
 		MaxOpen:     1<<63 - 1,
 		MaxUses:     1<<63 - 1,
 		MaxWaiting:  1<<63 - 1,
@@ -320,10 +309,7 @@ func BenchmarkPoolStartNewConn(b *testing.B) {
 	b.ReportAllocs()
 
 	p := &Pool{
-		Open: func(context.Context) (*Conn, error) {
-			return &Conn{closed: true}, nil
-		},
-
+		Open:        testOpen,
 		MaxOpen:     1<<63 - 1,
 		MaxUses:     1<<63 - 1,
 		MaxWaiting:  1<<63 - 1,
