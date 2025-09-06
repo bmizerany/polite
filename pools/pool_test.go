@@ -244,7 +244,7 @@ func BenchmarkPoolGetPut(b *testing.B) {
 	b.ReportAllocs()
 
 	p := &Pool{
-		Open:        testOpen,
+		Open:        func(ctx context.Context) (*Conn, error) { return &Conn{}, nil },
 		MaxOpen:     1<<63 - 1,
 		MaxUses:     1<<63 - 1,
 		MaxWaiting:  1<<63 - 1,
