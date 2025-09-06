@@ -20,10 +20,10 @@ import (
 func TestPoolMaxUseWithWaiter(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{
+	p := &Pool[*Conn]{
 		MaxOpen: 1,
 		MaxUses: 1,
-		Open:    testOpen,
+		Open:    testOpen[*Conn],
 		Logger:  testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -52,8 +52,8 @@ func TestPoolMaxUseWithWaiter(t *testing.T) {
 func TestPoolClose(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{
-		Open:   testOpen,
+	p := &Pool[*Conn]{
+		Open:   testOpen[*Conn],
 		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -77,8 +77,8 @@ func TestPoolClose(t *testing.T) {
 func TestPoolGetReady(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{
-		Open:   testOpen,
+	p := &Pool[*Conn]{
+		Open:   testOpen[*Conn],
 		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -104,7 +104,7 @@ func TestPoolGetReady(t *testing.T) {
 func TestPoolGetNextErrorAfterClose(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{
+	p := &Pool[*Conn]{
 		MaxOpen: 1,
 		Open:    func(context.Context) (*Conn, error) { return nil, errors.New("test") },
 		Logger:  testutil.Slogger(t),
@@ -131,9 +131,9 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 func TestPoolPutClosedPool(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{
+	p := &Pool[*Conn]{
 		Logger: testutil.Slogger(t),
-		Open:   testOpen,
+		Open:   testOpen[*Conn],
 	}
 	defer p.Close()
 
@@ -157,7 +157,7 @@ func TestPoolPutClosedPool(t *testing.T) {
 
 func TestPoolGetCloseWithWaiter(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		p := &Pool{
+		p := &Pool[*Conn]{
 			MaxOpen: 1,
 			Open: func(ctx context.Context) (*Conn, error) {
 				// block until the pool is closed
@@ -195,7 +195,7 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 	waiters.Add(maxWaiters)
 	next := func(ctx context.Context) (*Conn, error) {
 		if shouldOpenConn.Load() {
-			return testOpen(ctx)
+			return testOpen[*Conn](ctx)
 		}
 
 		// Next is never called until by a client until their waiting
@@ -212,7 +212,7 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	p := &Pool{
+	p := &Pool[*Conn]{
 		MaxWaiting: maxWaiters,
 		Open:       next,
 		Logger:     testutil.Slogger(t),
@@ -243,7 +243,7 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 func BenchmarkPoolGetPut(b *testing.B) {
 	b.ReportAllocs()
 
-	p := &Pool{
+	p := &Pool[*Conn]{
 		Open:        func(ctx context.Context) (*Conn, error) { return &Conn{}, nil },
 		MaxOpen:     1<<63 - 1,
 		MaxUses:     1<<63 - 1,
@@ -264,8 +264,8 @@ func BenchmarkPoolGetPut(b *testing.B) {
 func BenchmarkPoolStartNewConn(b *testing.B) {
 	b.ReportAllocs()
 
-	p := &Pool{
-		Open:        testOpen,
+	p := &Pool[*Conn]{
+		Open:        testOpen[*Conn],
 		MaxOpen:     1<<63 - 1,
 		MaxUses:     1<<63 - 1,
 		MaxWaiting:  1<<63 - 1,
@@ -295,16 +295,17 @@ func BenchmarkPool(b *testing.B) {
 	b.Run("open=64", func(b *testing.B) { benchmarkPool(b, 64) })
 }
 
-func testOpen(ctx context.Context) (*Conn, error) {
-	return &Conn{}, nil
+func testOpen[T any](ctx context.Context) (T, error) {
+	var zero T
+	return zero, nil
 }
 
 func TestPoolSyncExpired(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		p := &Pool{
+		p := &Pool[*Conn]{
 			MaxLifetime: 3 * time.Second,
 			Logger:      testutil.Slogger(t),
-			Open:        testOpen,
+			Open:        testOpen[*Conn],
 		}
 		defer p.Close()
 
@@ -352,7 +353,7 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var retries atomic.Int64
 
-		p := &Pool{
+		p := &Pool[*Conn]{
 			Logger: testutil.Slogger(t),
 			Open: func(context.Context) (*Conn, error) {
 				retries.Add(1)
@@ -395,7 +396,7 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 	})
 }
 
-func (p *Pool) checkAndDrainPool() {
+func (p *Pool[T]) checkAndDrainPool() {
 	for {
 		v := p.connChanPool.Get()
 		if v == nil {
@@ -412,9 +413,9 @@ func TestPoolSyncGetNearMissContextCancel(t *testing.T) {
 	check := checker(t)
 
 	synctest.Test(t, func(t *testing.T) {
-		p := &Pool{
+		p := &Pool[*Conn]{
 			Logger:  testutil.Slogger(t),
-			Open:    testOpen,
+			Open:    testOpen[*Conn],
 			MaxOpen: 1,
 		}
 		defer p.Close()
@@ -469,9 +470,9 @@ func TestPoolSyncGetNearMissPoolClosed(t *testing.T) {
 	check := checker(t)
 
 	synctest.Test(t, func(t *testing.T) {
-		p := &Pool{
+		p := &Pool[*Conn]{
 			Logger:  testutil.Slogger(t),
-			Open:    testOpen,
+			Open:    testOpen[*Conn],
 			MaxOpen: 1,
 		}
 		defer p.Close()
@@ -525,9 +526,9 @@ func checker(t *testing.T) func(err error) {
 }
 
 func benchmarkPool(b *testing.B, maxOpen int) {
-	p := &Pool{
+	p := &Pool[*Conn]{
 		MaxOpen: maxOpen,
-		Open:    testOpen,
+		Open:    testOpen[*Conn],
 		Logger:  testutil.Slogger(b),
 	}
 	defer p.Close()

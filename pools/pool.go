@@ -48,7 +48,7 @@ var (
 // Pool is a pool of values. It is safe for concurrent use by multiple
 // goroutines. The zero value is a pool with no limit on the number of
 // waiters, ready for use.
-type Pool struct {
+type Pool[T any] struct {
 	// Open is a function that is called to open a new connection when
 	// the pool is empty.
 	//
@@ -100,7 +100,7 @@ type Pool struct {
 	testHookWaiterCanceled func(ch chan *Conn)
 }
 
-func (p *Pool) putConnChan(ch chan *Conn) {
+func (p *Pool[T]) putConnChan(ch chan *Conn) {
 	select {
 	case _, ok := <-ch:
 		if !ok {
@@ -113,7 +113,7 @@ func (p *Pool) putConnChan(ch chan *Conn) {
 }
 
 // caller must hold p.readyMu and p.waitingMu
-func (p *Pool) putLocked(cn *Conn) {
+func (p *Pool[T]) putLocked(cn *Conn) {
 	handoff := func(cn *Conn) bool {
 		ch, ok := p.waiting.Shift()
 		if ok {
@@ -140,7 +140,7 @@ func (p *Pool) putLocked(cn *Conn) {
 	p.ready.Push(cn)
 }
 
-func (p *Pool) put(cn *Conn) {
+func (p *Pool[T]) put(cn *Conn) {
 	p.readyMu.Lock()
 	if p.cancelCtx.Err() != nil {
 		p.readyMu.Unlock()
@@ -159,7 +159,7 @@ func (p *Pool) put(cn *Conn) {
 // closed.
 //
 // Put is a non-blocking operation.
-func (p *Pool) Put(cn *Conn) {
+func (p *Pool[T]) Put(cn *Conn) {
 	expired := p.MaxLifetime > 0 && time.Since(cn.created) >= p.MaxLifetime
 	cn.uses++
 	if expired || p.maxUses() > 0 && cn.uses >= p.maxUses() {
@@ -169,7 +169,7 @@ func (p *Pool) Put(cn *Conn) {
 	}
 }
 
-func (p *Pool) startNewConn(retire *Conn) {
+func (p *Pool[T]) startNewConn(retire *Conn) {
 	if retire != nil {
 		// Retire the connection so that it is not used again, and
 		// before we open a new one as to not exceed the max open
@@ -199,7 +199,7 @@ func (p *Pool) startNewConn(retire *Conn) {
 	}
 }
 
-func (p *Pool) dropWaiter(ch chan *Conn) {
+func (p *Pool[T]) dropWaiter(ch chan *Conn) {
 	p.readyMu.Lock()
 	p.waitingMu.Lock()
 	p.waiting.DeleteFunc(func(dch chan *Conn) bool {
@@ -209,7 +209,7 @@ func (p *Pool) dropWaiter(ch chan *Conn) {
 	p.readyMu.Unlock()
 }
 
-func (p *Pool) Get(ctx context.Context) (*Conn, error) {
+func (p *Pool[T]) Get(ctx context.Context) (*Conn, error) {
 	if ctx.Err() != nil {
 		// avoid tying up resources and delaying a connection from
 		// reaching a truly ready waiter if the context is already
@@ -359,7 +359,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 //
 // It returns all errors encountered while closing values wrapped into
 // one.
-func (p *Pool) CloseExpiredConns() error {
+func (p *Pool[T]) CloseExpiredConns() error {
 	maxLifetime := p.MaxLifetime
 	if maxLifetime == 0 {
 		maxLifetime = DefaultPoolMaxLifetime
@@ -386,13 +386,13 @@ func (p *Pool) CloseExpiredConns() error {
 	return errors.Join(errs...)
 }
 
-func (p *Pool) Close() error {
+func (p *Pool[T]) Close() error {
 	p.readyMu.Lock()
 	defer p.readyMu.Unlock()
 	return p.closeReadyLocked()
 }
 
-func (p *Pool) closeReadyLocked() error {
+func (p *Pool[T]) closeReadyLocked() error {
 	if p.cancelCtx == nil {
 		p.cancelCtx, p.cancel = context.WithCancelCause(context.Background())
 	}
@@ -425,28 +425,28 @@ func (p *Pool) closeReadyLocked() error {
 	return nil
 }
 
-func (p *Pool) maxOpen() int {
+func (p *Pool[T]) maxOpen() int {
 	if p.MaxOpen == 0 {
 		return DefaultPoolMaxConns
 	}
 	return p.MaxOpen
 }
 
-func (p *Pool) maxUses() int {
+func (p *Pool[T]) maxUses() int {
 	if p.MaxUses == 0 {
 		return DefaultPoolMaxUses
 	}
 	return p.MaxUses
 }
 
-func (p *Pool) maxWaiting() int {
+func (p *Pool[T]) maxWaiting() int {
 	if p.MaxWaiting == 0 {
 		return DefaultPoolMaxWaiters
 	}
 	return p.MaxWaiting
 }
 
-func (p *Pool) log() *slog.Logger {
+func (p *Pool[T]) log() *slog.Logger {
 	if p.Logger == nil {
 		return slog.Default()
 	}
