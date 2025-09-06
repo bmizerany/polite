@@ -1,4 +1,4 @@
-package pqlite
+package pools
 
 import (
 	"context"
@@ -32,16 +32,14 @@ func TestPoolMaxUseWithWaiter(t *testing.T) {
 	var cc [2]*Conn
 	var wg sync.WaitGroup
 	for i := range len(cc) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			cn, err := p.Get(ctx)
 			if err != nil {
 				t.Error(err)
 			}
 			defer p.Put(cn)
 			cc[i] = cn
-		}()
+		})
 	}
 	wg.Wait()
 	if cc[0] == cc[1] {

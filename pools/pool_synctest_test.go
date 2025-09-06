@@ -1,4 +1,4 @@
-package pqlite
+package pools
 
 import (
 	"context"
@@ -148,7 +148,7 @@ func TestPoolSyncGetNearMissContextCancel(t *testing.T) {
 		want, err := p.Get(ctx)
 		check(err)
 
-		p.testHookWaitCanceled = func(ch chan *Conn) {
+		p.testHookWaiterCanceled = func(ch chan *Conn) {
 			// Induce a near miss. Send the Conn on the wait
 			// channel after the context is canceled, but before
 			// Get checks the wait chan for a near miss after
@@ -205,26 +205,27 @@ func TestPoolSyncGetNearMissPoolClosed(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 
-		p.testHookWaitCanceled = func(ch chan *Conn) {
+		p.testHookWaiterCanceled = func(ch chan *Conn) {
 			p.Close()
 		}
 
-		var getErr error
+		ch := make(chan error, 1)
 		go func() {
 			cn, err := p.Get(ctx)
 			if cn != nil {
 				t.Error("expected nil *Conn")
 			}
-			getErr = err
+			ch <- err
 		}()
 
 		// Run until Get reaches the select,
 		// cancel the context,
 		// and then wait for the Get goroutine to exit.
 		synctest.Wait()
-		cancel()
-		synctest.Wait()
 
+		cancel()
+
+		getErr := <-ch
 		if errors.Is(getErr, ErrPoolClosed) {
 			t.Fatal("Get is ErrPoolClosed (but should not be)")
 		}

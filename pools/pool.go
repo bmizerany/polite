@@ -1,10 +1,11 @@
-package pqlite
+package pools
 
 import (
 	"cmp"
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -30,7 +31,7 @@ type Conn struct {
 
 func (c *Conn) Close() error {
 	if c.closed {
-		return ErrPoolClosed
+		return net.ErrClosed
 	}
 	c.closed = true
 	return nil
@@ -88,15 +89,27 @@ type Pool struct {
 	waitingMu sync.Mutex
 	waiting   queues.Fifo[chan *Conn]
 
-	// testHookWaitCanceled, if set, is called from Get when the wait is
+	// testHookWaiterCanceled, if set, is called from Get when the wait is
 	// canceled. It is not used by pqlite code itself - it is only here for use
 	// in tests.
 	//
-	// The channel passed to testHookWaitCanceled is the channel for the waiter.
+	// The channel passed to testHookWaiterCanceled is the channel for the waiter.
 	//
 	// It is called before ch is removed from the wait queue and before it is
 	// checked for a near miss.
-	testHookWaitCanceled func(ch chan *Conn)
+	testHookWaiterCanceled func(ch chan *Conn)
+}
+
+func (p *Pool) putConnChan(ch chan *Conn) {
+	select {
+	case _, ok := <-ch:
+		if !ok {
+			panic("pqlite: pool: unexpected closed channel in putConnChan")
+		}
+		panic("pqlite: pool: unexpected non-empty channel in putConnChan")
+	default:
+		p.connChanPool.Put(ch)
+	}
 }
 
 // caller must hold p.readyMu and p.waitingMu
@@ -262,8 +275,8 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		p.connChanPool.Put(ch)
 		return cn, nil
 	case <-ctx.Done():
-		if p.testHookWaitCanceled != nil {
-			p.testHookWaitCanceled(ch)
+		if p.testHookWaiterCanceled != nil {
+			p.testHookWaiterCanceled(ch)
 		}
 
 		select {
@@ -319,15 +332,25 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 			// cleanup) or soft (allowing continued use).
 			p.connChanPool.Put(ch)
 			return cn, nil
-		case <-p.cancelCtx.Done():
-			// Pool closed while we were waiting.
-			p.dropWaiter(ch)
-			p.connChanPool.Put(ch)
-			return nil, ErrPoolClosed
 		default:
 			p.connChanPool.Put(ch)
 			return nil, ctx.Err()
 		}
+	case <-p.cancelCtx.Done():
+		// Pool closed while we were waiting.
+		p.dropWaiter(ch)
+		select {
+		case cn, ok := <-ch:
+			// near miss (see above for rationale)
+			if ok {
+				// If the pool is closed,
+				// drop the value on the floor.
+				cn.Close()
+			}
+		default:
+		}
+		p.connChanPool.Put(ch)
+		return nil, ErrPoolClosed
 	}
 }
 
