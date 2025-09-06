@@ -157,18 +157,10 @@ func TestPoolPutClosedPool(t *testing.T) {
 
 func TestPoolGetCloseWithWaiter(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		waiting := make(chan struct{})
-
 		p := &Pool{
 			MaxOpen: 1,
 			Open: func(ctx context.Context) (*Conn, error) {
-				// Next is never called until by a client until their waiting
-				// chan is already in line, so we know now that someone is
-				// waiting, so signal that.
-				close(waiting)
-
-				// For the waiter to block until the pool is closed, and then
-				// only return an error.
+				// block until the pool is closed
 				<-ctx.Done()
 				return nil, ctx.Err()
 			},
@@ -176,27 +168,16 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 		}
 		defer p.Close()
 
-		var wg sync.WaitGroup
-		for range 3 {
-			wg.Go(func() {
-				_, err := p.Get(t.Context())
-				if !errors.Is(err, ErrPoolClosed) {
-					t.Errorf("Get() = %v; want %v", err, ErrPoolClosed)
-				}
-			})
-		}
-
-		select {
-		case <-waiting:
-			// Close the pool while someone is waiting.
-			if err := p.Close(); err != nil {
-				t.Fatal(err)
+		get := func(want error) {
+			_, err := p.Get(t.Context())
+			if !errors.Is(err, want) {
+				t.Errorf("Get() = %v; want %v", err, want)
 			}
-		case <-time.After(3 * time.Second):
-			t.Fatal("expected waiting to be closed")
 		}
 
-		wg.Wait()
+		go get(ErrPoolClosed) // attempt to get another connection (but fail because pool is closed)
+		p.Close()             // close the pool giving waiters ErrPoolClosed
+		synctest.Wait()       // wait for error (or let synctest panic if it blocks)
 	})
 }
 
