@@ -156,58 +156,48 @@ func TestPoolPutClosedPool(t *testing.T) {
 }
 
 func TestPoolGetCloseWithWaiter(t *testing.T) {
-	waiting := make(chan struct{})
-	next := func(ctx context.Context) (*Conn, error) {
-		// Next is never called until by a client until their waiting
-		// chan is already in line, so we know now that someone is
-		// waiting, so signal that.
-		close(waiting)
+	synctest.Test(t, func(t *testing.T) {
+		waiting := make(chan struct{})
 
-		// For the waiter to block until the pool is closed, and then
-		// only return an error.
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}
+		p := &Pool{
+			MaxOpen: 1,
+			Open: func(ctx context.Context) (*Conn, error) {
+				// Next is never called until by a client until their waiting
+				// chan is already in line, so we know now that someone is
+				// waiting, so signal that.
+				close(waiting)
 
-	p := &Pool{
-		MaxOpen: 1,
-		Open:    next,
-		Logger:  testutil.Slogger(t),
-	}
-	defer p.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	var got [3]error
-	var wg sync.WaitGroup
-	for i := range got {
-		wg.Go(func() {
-			cn, err := p.Get(ctx)
-			if err != nil {
-				got[i] = err
-				return
-			}
-			p.Put(cn)
-		})
-	}
-
-	select {
-	case <-waiting:
-		// Close the pool while someone is waiting.
-		if err := p.Close(); err != nil {
-			t.Fatal(err)
+				// For the waiter to block until the pool is closed, and then
+				// only return an error.
+				<-ctx.Done()
+				return nil, ctx.Err()
+			},
+			Logger: testutil.Slogger(t),
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("expected waiting to be closed")
-	}
+		defer p.Close()
 
-	wg.Wait()
+		var wg sync.WaitGroup
+		for range 3 {
+			wg.Go(func() {
+				_, err := p.Get(t.Context())
+				if !errors.Is(err, ErrPoolClosed) {
+					t.Errorf("Get() = %v; want %v", err, ErrPoolClosed)
+				}
+			})
+		}
 
-	want := [...]error{ErrPoolClosed, ErrPoolClosed, ErrPoolClosed}
-	if got != want {
-		t.Fatalf("got = %v; want %v", got, want)
-	}
+		select {
+		case <-waiting:
+			// Close the pool while someone is waiting.
+			if err := p.Close(); err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("expected waiting to be closed")
+		}
+
+		wg.Wait()
+	})
 }
 
 func TestPoolGetMaxWaiters(t *testing.T) {
