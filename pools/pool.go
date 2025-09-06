@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -30,7 +31,7 @@ type Conn struct {
 	closed  atomic.Bool
 }
 
-func (c T) Close() error {
+func (c *Conn) Close() error {
 	if c.closed.Swap(true) {
 		return net.ErrClosed
 	}
@@ -40,15 +41,13 @@ func (c T) Close() error {
 // Errors
 var (
 	ErrMaxWaiting = errors.New(" pool: too many waiting")
-
-	// ErrPoolClosed is returned when the pool closed.
 	ErrPoolClosed = errors.New(" pool: closed")
 )
 
 // Pool is a pool of values. It is safe for concurrent use by multiple
 // goroutines. The zero value is a pool with no limit on the number of
 // waiters, ready for use.
-type Pool[T any] struct {
+type Pool[T io.Closer] struct {
 	// Open is a function that is called to open a new connection when
 	// the pool is empty.
 	//
