@@ -244,15 +244,13 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 	defer p.Close()
 
 	var unblocked sync.WaitGroup
-	unblocked.Add(maxWaiters)
 	for range maxWaiters {
-		go func() {
-			defer unblocked.Done()
+		unblocked.Go(func() {
 			_, err := p.Get(ctx)
 			if !errors.Is(err, ErrPoolClosed) {
 				panic(err)
 			}
-		}()
+		})
 	}
 
 	waiters.Wait()
@@ -374,9 +372,7 @@ func benchmarkPool(b *testing.B, maxOpen int) {
 	rem.Store(int64(b.N))
 	var wg sync.WaitGroup
 	for i := range runtime.NumCPU() {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			zzz := rand.NewZipf(rand.New(rand.NewPCG(1, 2)), 2.0, 1.5, 100)
 			for rem.Add(-1) >= 0 {
 				start := time.Now()
@@ -396,7 +392,7 @@ func benchmarkPool(b *testing.B, maxOpen int) {
 				putns.Add(d.Nanoseconds())
 				maxputs[i] = max(maxputs[i], d)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

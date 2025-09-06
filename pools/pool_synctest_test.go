@@ -83,11 +83,9 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 		defer cancel()
 
 		var got [3]error
-		var g sync.WaitGroup
+		var wg sync.WaitGroup
 		for i := range 3 {
-			g.Add(1)
-			go func() {
-				defer g.Done()
+			wg.Go(func() {
 				cn, err := p.Get(ctx)
 				got[i] = err
 				if err == nil {
@@ -97,12 +95,12 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 					cn.Close()
 					panic("expected nil conn")
 				}
-			}()
+			})
 		}
 
 		sleepUntilDeadline(ctx)
 
-		g.Wait()
+		wg.Wait()
 
 		for i := range len(got) {
 			if got[i] == nil {
