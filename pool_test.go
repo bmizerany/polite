@@ -270,8 +270,8 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 	shouldOpenConn.Store(true)
 
 	_, err := p.Get(ctx)
-	if !errors.Is(err, ErrPoolFull) {
-		t.Fatalf("Get() = %v; want %v", err, ErrPoolFull)
+	if !errors.Is(err, ErrMaxWaiting) {
+		t.Fatalf("Get() = %v; want %v", err, ErrMaxWaiting)
 	}
 }
 

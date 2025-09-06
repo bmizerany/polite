@@ -24,7 +24,7 @@ const (
 
 // Errors
 var (
-	ErrPoolFull = errors.New("pqlite: pool: too many waiting")
+	ErrMaxWaiting = errors.New("pqlite: pool: too many waiting")
 
 	// ErrPoolClosed is returned when the pool closed.
 	ErrPoolClosed = errors.New("pqlite: pool: closed")
@@ -183,19 +183,13 @@ func (p *Pool) startNewConn(retire *Conn) {
 
 	for i, err := range backoff.Loop(p.cancelCtx, 5*time.Second) {
 		if err != nil {
-			p.readyMu.Lock()
-			p.openConns--
-			p.readyMu.Unlock()
+			// Poll is closed.
+			return
 		}
 		cn, err := p.open(p.cancelCtx)
 		if err == nil {
 			cn.created = time.Now()
 			p.put(cn)
-			return
-		}
-		if p.cancelCtx.Err() != nil {
-			// This mostly is to prevent logs from being written
-			// after tests are done, which is an error.
 			return
 		}
 		if i > 3 {
@@ -231,7 +225,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		if p.waiting.Len() >= p.maxWaiting() {
 			p.waitingMu.Unlock()
 			p.readyMu.Unlock()
-			return nil, nil, ErrPoolFull
+			return nil, nil, ErrMaxWaiting
 		}
 
 		// Get in line and wait for another goroutine to put a
