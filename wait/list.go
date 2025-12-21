@@ -58,18 +58,17 @@ func (p *List[T]) Close() {
 }
 
 // Take blocks until an item is available from the pool or ctx is done,
-// which ever comes first.
+// whichever comes first.
 //
-// If no items are available, and the number of loaded items is less than
-// MaxItems, or MaxItems is zero, it calls the provided load function in a new
-// goroutine to create a new item, which will be handed out to the next waiter,
-// not neccessarily the caller that provided the load function. This ensures
-// that items are handed out in FIFO order.
+// If no items are available and a load function is provided, Take starts the
+// load in a new goroutine when MaxItems allows. When load returns an error,
+// the load slot is released and the waiter continues to wait.
 //
-// If no items are available, and the List is closed, it returns ErrClosed
+// If no items are available and the List is closed, it returns ErrClosed
 // immediately and does not block waiting for another item.
-func (p *List[T]) Take(ctx context.Context, load func() T) (T, error) {
+func (p *List[T]) Take(ctx context.Context, load func() (T, error)) (T, error) {
 	var zero T
+	p.init()
 	if ctx.Err() != nil {
 		return zero, ctx.Err()
 	}
@@ -78,6 +77,13 @@ func (p *List[T]) Take(ctx context.Context, load func() T) (T, error) {
 	if v, ok := p.ready.Pop(); ok {
 		p.readyMu.Unlock()
 		return v, nil
+	}
+
+	select {
+	case <-p.closedCh:
+		p.readyMu.Unlock()
+		return zero, ErrClosed
+	default:
 	}
 
 	p.waitersMu.Lock()
@@ -94,54 +100,36 @@ func (p *List[T]) Take(ctx context.Context, load func() T) (T, error) {
 	}
 	p.waiters.Unshift(ch)
 
-	if p.MaxItems == 0 || p.loads < p.MaxItems {
-		p.loads++
+	startLoad := load != nil && p.shouldLoadLocked()
+
+	p.waitersMu.Unlock()
+	p.readyMu.Unlock()
+
+	if startLoad {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					// load panicked; decrement loads so pool can recover
-					p.readyMu.Lock()
-					p.loads--
-					p.readyMu.Unlock()
+					p.cancelLoad()
 					panic(r) // re-panic after cleanup
 				}
 			}()
-			var ready T
-			if load != nil {
-				ready = load()
+			ready, err := load()
+			if err != nil {
+				p.cancelLoad()
+				return
 			}
 			p.Put(ready)
 		}()
 	}
-
-	p.waitersMu.Unlock()
-	p.readyMu.Unlock()
 
 	select {
 	case v := <-ch:
 		p.chanPool.Put(ch)
 		return v, nil
 	case <-ctx.Done():
-		if p.TestHookWaiterCanceled != nil {
-			p.TestHookWaiterCanceled(ch)
-		}
-
-		p.waitersMu.Lock()
-		p.waiters.DeleteFunc(func(wch chan T) bool {
-			return ch == wch
-		})
-		p.waitersMu.Unlock()
-
-		select {
-		case v := <-ch:
-			// near miss
-			p.chanPool.Put(ch)
-			return v, nil
-		default:
-			p.chanPool.Put(ch)
-		}
-
-		return zero, ctx.Err()
+		return p.handleCancel(ch, ctx.Err())
+	case <-p.closedCh:
+		return p.handleCancel(ch, ErrClosed)
 	}
 }
 
@@ -187,12 +175,7 @@ func (p *List[T]) Put(v T) {
 	p.readyMu.Unlock()
 }
 
-// ShouldLoad returns true if a new item should be loaded.
-// If true, the caller must call Put() with the loaded item, or CancelLoad() if loading fails.
-func (p *List[T]) ShouldLoad() bool {
-	p.readyMu.Lock()
-	defer p.readyMu.Unlock()
-
+func (p *List[T]) shouldLoadLocked() bool {
 	if p.MaxItems == 0 || p.loads < p.MaxItems {
 		p.loads++
 		return true
@@ -200,62 +183,12 @@ func (p *List[T]) ShouldLoad() bool {
 	return false
 }
 
-// CancelLoad decrements the loads counter when a load operation fails.
-func (p *List[T]) CancelLoad() {
+func (p *List[T]) cancelLoad() {
 	p.readyMu.Lock()
-	p.loads--
+	if p.loads > 0 {
+		p.loads--
+	}
 	p.readyMu.Unlock()
-}
-
-// Wait blocks until an item is available or ctx is done.
-// Unlike Take, it does not trigger loading - the caller must handle that.
-// If the List is closed, Wait returns ErrClosed.
-func (p *List[T]) Wait(ctx context.Context) (T, error) {
-	var zero T
-	p.init()
-
-	if ctx.Err() != nil {
-		return zero, ctx.Err()
-	}
-
-	select {
-	case <-p.closedCh:
-		return zero, ErrClosed
-	default:
-	}
-
-	p.readyMu.Lock()
-	if v, ok := p.ready.Pop(); ok {
-		p.readyMu.Unlock()
-		return v, nil
-	}
-
-	p.waitersMu.Lock()
-	if p.MaxWaiters > 0 && p.waiters.Len() >= p.MaxWaiters {
-		p.waitersMu.Unlock()
-		p.readyMu.Unlock()
-		return zero, ErrMaxWaiters
-	}
-
-	// Get in line and wait
-	ch, _ := p.chanPool.Get().(chan T)
-	if ch == nil {
-		ch = make(chan T, 1)
-	}
-	p.waiters.Unshift(ch)
-
-	p.waitersMu.Unlock()
-	p.readyMu.Unlock()
-
-	select {
-	case v := <-ch:
-		p.chanPool.Put(ch)
-		return v, nil
-	case <-ctx.Done():
-		return p.handleCancel(ch, ctx.Err())
-	case <-p.closedCh:
-		return p.handleCancel(ch, ErrClosed)
-	}
 }
 
 func (p *List[T]) handleCancel(ch chan T, err error) (T, error) {
