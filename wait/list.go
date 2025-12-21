@@ -30,7 +30,7 @@ type List[T any] struct {
 	ready   queues.Lifo[T] // LIFO stack of ready items
 	loads   int            // number of items loaded in all calls to Take
 
-	// waitersMu guards waiters (and TestHookWaiterCanceled).
+	// waitersMu guards waiters (and testHookWaiterCanceled).
 	waitersMu sync.Mutex
 	waiters   queues.Fifo[chan T] // FIFO queue of waiters
 
@@ -39,7 +39,7 @@ type List[T any] struct {
 	closedOnce sync.Once
 	closedCh   chan struct{} // closed when List is closed
 
-	TestHookWaiterCanceled func(ch chan T)
+	testHookWaiterCanceled func(ch chan T)
 }
 
 func (p *List[T]) init() {
@@ -194,8 +194,8 @@ func (p *List[T]) cancelLoad() {
 func (p *List[T]) handleCancel(ch chan T, err error) (T, error) {
 	var zero T
 
-	if p.TestHookWaiterCanceled != nil {
-		p.TestHookWaiterCanceled(ch)
+	if p.testHookWaiterCanceled != nil {
+		p.testHookWaiterCanceled(ch)
 	}
 
 	p.waitersMu.Lock()
