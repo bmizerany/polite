@@ -32,3 +32,213 @@ BenchmarkPoolStartNewConn-16    	16564556	        75.91 ns/op	     145 B/op	    
 BenchmarkPoolStartNewConn-16    	18614907	        67.08 ns/op	     140 B/op	       1 allocs/op
 BenchmarkPoolStartNewConn-16    	17956410	        66.85 ns/op	     142 B/op	       1 allocs/op
 BenchmarkPoolStartNewConn-16    	14434657	        70.11 ns/op	     141 B/op	       1 allocs/op
+BenchmarkPool/driver=pqlite/open=1-16         	       1	557587048583 ns/op	557586891084 ns/get	557586891084 ns/getmax	      1208 ns/put	      1208 ns/putmax	  593688 B/op	    5057 allocs/op
+--- BENCH: BenchmarkPool/driver=pqlite/open=1-16
+    handler.go:322: time=2025-12-21T11:02:16.955+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+    handler.go:322: time=2025-12-21T11:02:17.211+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+    handler.go:322: time=2025-12-21T11:02:17.578+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+    handler.go:322: time=2025-12-21T11:02:17.829+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+    handler.go:322: time=2025-12-21T11:02:18.263+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+    handler.go:322: time=2025-12-21T11:02:18.775+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+    handler.go:322: time=2025-12-21T11:02:19.414+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+    handler.go:322: time=2025-12-21T11:02:21.073+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+    handler.go:322: time=2025-12-21T11:02:22.493+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+    handler.go:322: time=2025-12-21T11:02:24.181+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="dial unix /tmp/.s.PGSQL.5411: connect: no such file or directory"
+	... [output truncated]
+BenchmarkPool/driver=pqlite/open=1-16         	    1549	   2737783 ns/op	  41069953 ns/get	 629536292 ns/getmax	      1269 ns/put	     78792 ns/putmax	      32 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=1-16         	    1460	   2634507 ns/op	  39475078 ns/get	 628923167 ns/getmax	      1287 ns/put	    124709 ns/putmax	      34 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=1-16         	    1519	   2779594 ns/op	  40750780 ns/get	 628911292 ns/getmax	      1231 ns/put	    158417 ns/putmax	      32 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=1-16         	    1540	   2746194 ns/op	  41199957 ns/get	 627763292 ns/getmax	      1250 ns/put	    111708 ns/putmax	      32 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=1-16         	    1516	   2770341 ns/op	  40656508 ns/get	 630885541 ns/getmax	       981.5 ns/put	     64166 ns/putmax	      33 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=1-16         	    1522	   2789691 ns/op	  41133237 ns/get	 629909042 ns/getmax	       959.9 ns/put	    107333 ns/putmax	      32 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=1-16         	    1543	   2750188 ns/op	  41260310 ns/get	 629817666 ns/getmax	      1249 ns/put	    234750 ns/putmax	      32 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=1-16         	    1544	   2740761 ns/op	  41118296 ns/get	 630524833 ns/getmax	      1063 ns/put	    123666 ns/putmax	      32 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=1-16         	    1560	   2711077 ns/op	  40670708 ns/get	 628885875 ns/getmax	      1059 ns/put	     80750 ns/putmax	      32 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    2931	   1548774 ns/op	  21494278 ns/get	 264634250 ns/getmax	      1034 ns/put	    111875 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    3062	   1547051 ns/op	  21565154 ns/get	 200392625 ns/getmax	       849.5 ns/put	     85833 ns/putmax	      29 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    2910	   1554917 ns/op	  21712121 ns/get	 177551375 ns/getmax	       840.5 ns/put	     95958 ns/putmax	      31 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    2953	   1551101 ns/op	  21590037 ns/get	 216479375 ns/getmax	       885.1 ns/put	    126333 ns/putmax	      31 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    2935	   1556996 ns/op	  21624125 ns/get	 213140417 ns/getmax	       960.4 ns/put	    111333 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    3050	   1552153 ns/op	  21702401 ns/get	 225182000 ns/getmax	       854.6 ns/put	    104500 ns/putmax	      29 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    2848	   1546301 ns/op	  21583552 ns/get	 215706291 ns/getmax	       924.2 ns/put	     62750 ns/putmax	      31 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    2956	   1534743 ns/op	  21452884 ns/get	 195205375 ns/getmax	       952.0 ns/put	     81917 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    2888	   1555050 ns/op	  21707671 ns/get	 198530583 ns/getmax	       949.0 ns/put	     73708 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=2-16         	    2978	   1534896 ns/op	  21357440 ns/get	 229760709 ns/getmax	       929.3 ns/put	     82542 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5638	    703345 ns/op	   8432722 ns/get	  80335375 ns/getmax	       595.1 ns/put	     81334 ns/putmax	      29 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5407	    711132 ns/op	   8491316 ns/get	  79896125 ns/getmax	       645.8 ns/put	     86833 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5274	    712902 ns/op	   8508733 ns/get	  69583792 ns/getmax	       670.5 ns/put	     75333 ns/putmax	      31 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5924	    737845 ns/op	   8794152 ns/get	  76411416 ns/getmax	       649.7 ns/put	     68000 ns/putmax	      27 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5262	    716269 ns/op	   8539635 ns/get	  70490041 ns/getmax	       638.7 ns/put	     72250 ns/putmax	      31 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5257	    717710 ns/op	   8557330 ns/get	  94423625 ns/getmax	       624.4 ns/put	     79834 ns/putmax	      31 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5380	    705432 ns/op	   8467425 ns/get	  74555667 ns/getmax	       644.9 ns/put	     63833 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5403	    709877 ns/op	   8516010 ns/get	  82598959 ns/getmax	       670.4 ns/put	     77500 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5414	    714876 ns/op	   8553138 ns/get	  82128083 ns/getmax	       636.0 ns/put	     70208 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=4-16         	    5620	    704567 ns/op	   8443626 ns/get	 100913875 ns/getmax	       549.7 ns/put	     62959 ns/putmax	      30 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    6823	    381818 ns/op	   2998598 ns/get	  55011584 ns/getmax	       378.9 ns/put	     69125 ns/putmax	      27 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    7090	    384991 ns/op	   3022479 ns/get	  35092250 ns/getmax	       412.6 ns/put	     42917 ns/putmax	      23 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    7148	    383902 ns/op	   3048085 ns/get	  36780917 ns/getmax	       407.5 ns/put	     46208 ns/putmax	      23 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    6465	    378499 ns/op	   2949942 ns/get	  40840375 ns/getmax	       386.9 ns/put	     28291 ns/putmax	      25 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    7497	    400275 ns/op	   3137344 ns/get	  33967250 ns/getmax	       408.8 ns/put	     85416 ns/putmax	      24 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    6662	    370500 ns/op	   2953882 ns/get	  38391250 ns/getmax	       417.7 ns/put	     63916 ns/putmax	      24 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    7114	    381995 ns/op	   3041969 ns/get	  34495708 ns/getmax	       403.0 ns/put	     20500 ns/putmax	      23 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    7023	    381252 ns/op	   3034378 ns/get	  59832875 ns/getmax	       379.9 ns/put	     85917 ns/putmax	      26 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    7114	    386459 ns/op	   3032334 ns/get	  38929083 ns/getmax	       476.5 ns/put	     57166 ns/putmax	      26 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=8-16         	    7471	    399833 ns/op	   3150176 ns/get	  37295333 ns/getmax	       446.8 ns/put	     65584 ns/putmax	      27 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	    7778	    212942 ns/op	     19877 ns/get	   5832000 ns/getmax	       214.8 ns/put	     25417 ns/putmax	      41 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	    9192	    211500 ns/op	     19920 ns/get	   8466500 ns/getmax	       435.3 ns/put	     54875 ns/putmax	      34 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	    8686	    211077 ns/op	     16794 ns/get	   6736750 ns/getmax	       317.9 ns/put	     70042 ns/putmax	      36 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	    8420	    212719 ns/op	     18556 ns/get	   5675208 ns/getmax	       493.9 ns/put	    117917 ns/putmax	      38 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	   10000	    213706 ns/op	      6163 ns/get	   2063958 ns/getmax	       231.9 ns/put	     41584 ns/putmax	      32 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	    9682	    214060 ns/op	     15924 ns/get	   5767916 ns/getmax	       434.4 ns/put	     52834 ns/putmax	      33 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	    7701	    213286 ns/op	     16039 ns/get	   5417500 ns/getmax	       228.4 ns/put	     45959 ns/putmax	      41 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	    8500	    210062 ns/op	      5901 ns/get	   1884667 ns/getmax	       367.1 ns/put	    110667 ns/putmax	      37 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	    9100	    211018 ns/op	     11410 ns/get	   3654208 ns/getmax	       262.3 ns/put	     39209 ns/putmax	      35 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=16-16        	    9200	    212483 ns/op	     19779 ns/get	   6583834 ns/getmax	       424.9 ns/put	     67792 ns/putmax	      34 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	    8182	    210587 ns/op	     22976 ns/get	   9589875 ns/getmax	       218.5 ns/put	     26292 ns/putmax	      76 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	    6668	    200552 ns/op	     26992 ns/get	   9570000 ns/getmax	       471.6 ns/put	     97167 ns/putmax	      94 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	   10000	    213125 ns/op	      5837 ns/get	   2060166 ns/getmax	       209.6 ns/put	     30250 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	    8500	    210031 ns/op	      9342 ns/get	   2638667 ns/getmax	       340.3 ns/put	     47083 ns/putmax	      73 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	    7400	    202082 ns/op	      7553 ns/get	   2059583 ns/getmax	       218.7 ns/put	     74416 ns/putmax	      84 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	    9900	    215308 ns/op	     20800 ns/get	  10659334 ns/getmax	       361.0 ns/put	     51000 ns/putmax	      63 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	   10000	    214424 ns/op	     11951 ns/get	   5887833 ns/getmax	       231.5 ns/put	     50125 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	    7900	    212994 ns/op	      9664 ns/get	   2675292 ns/getmax	       339.5 ns/put	     39791 ns/putmax	      79 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	    8000	    211084 ns/op	      9106 ns/get	   2980875 ns/getmax	       227.3 ns/put	     61041 ns/putmax	      78 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=32-16        	    8000	    213866 ns/op	     30486 ns/get	  13954709 ns/getmax	       428.9 ns/put	     47166 ns/putmax	      78 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	    9884	    214868 ns/op	     18367 ns/get	   9376958 ns/getmax	       172.8 ns/put	     34667 ns/putmax	      94 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	    7900	    213253 ns/op	     19555 ns/get	   7479333 ns/getmax	       319.1 ns/put	     50458 ns/putmax	     118 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	    7200	    203896 ns/op	     15988 ns/get	   5446917 ns/getmax	       184.3 ns/put	     41500 ns/putmax	     129 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	    9300	    210396 ns/op	     14419 ns/get	   6692000 ns/getmax	       373.9 ns/put	     53291 ns/putmax	     100 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	    8000	    211283 ns/op	     15434 ns/get	   6170958 ns/getmax	       187.3 ns/put	     64750 ns/putmax	     112 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	    8800	    209117 ns/op	     15380 ns/get	   6562042 ns/getmax	       366.6 ns/put	     65375 ns/putmax	     106 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	    8600	    210829 ns/op	     14924 ns/get	   6710958 ns/getmax	       196.7 ns/put	     25750 ns/putmax	     106 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	   10000	    216663 ns/op	     22695 ns/get	  11754167 ns/getmax	       295.9 ns/put	     74834 ns/putmax	      93 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	    8100	    210542 ns/op	     15374 ns/get	   5950500 ns/getmax	       252.5 ns/put	     33375 ns/putmax	     115 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=48-16        	    8400	    211278 ns/op	      6816 ns/get	   2209916 ns/getmax	       436.3 ns/put	     66416 ns/putmax	      97 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=64-16        	    8400	    212315 ns/op	     17300 ns/get	   7611416 ns/getmax	       268.3 ns/put	     60125 ns/putmax	     106 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=64-16        	    8700	    210761 ns/op	     15649 ns/get	   6639834 ns/getmax	       278.3 ns/put	     42875 ns/putmax	     105 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=64-16        	    8500	    212118 ns/op	     16290 ns/get	   7077792 ns/getmax	       220.9 ns/put	     41375 ns/putmax	     103 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=64-16        	   10000	    213938 ns/op	     12309 ns/get	   5658583 ns/getmax	       376.8 ns/put	     62250 ns/putmax	     207 B/op	       0 allocs/op
+--- BENCH: BenchmarkPool/driver=pqlite/open=64-16
+    handler.go:322: time=2025-12-21T11:15:06.906+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:06.923+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:06.958+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:06.958+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:07.059+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:07.077+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:07.088+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:07.253+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:07.259+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:07.267+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+	... [output truncated]
+BenchmarkPool/driver=pqlite/open=64-16        	   10000	    212356 ns/op	     12419 ns/get	   5834875 ns/getmax	       226.0 ns/put	     43625 ns/putmax	     237 B/op	       0 allocs/op
+--- BENCH: BenchmarkPool/driver=pqlite/open=64-16
+    handler.go:322: time=2025-12-21T11:15:09.083+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:09.117+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:09.148+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:09.188+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:09.197+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:09.207+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:09.210+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:09.225+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:09.305+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:09.406+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+	... [output truncated]
+BenchmarkPool/driver=pqlite/open=64-16        	    8800	    208979 ns/op	     12564 ns/get	   5436250 ns/getmax	       223.9 ns/put	     27250 ns/putmax	     101 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=64-16        	    8400	    213043 ns/op	     16031 ns/get	   6680291 ns/getmax	       376.8 ns/put	     48291 ns/putmax	     213 B/op	       0 allocs/op
+--- BENCH: BenchmarkPool/driver=pqlite/open=64-16
+    handler.go:322: time=2025-12-21T11:15:13.135+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:13.189+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:13.203+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:13.251+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:13.261+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:13.342+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:13.422+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:13.423+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:13.431+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+    handler.go:322: time=2025-12-21T11:15:13.451+07:00 level=INFO msg="pqlite: pool: error opening new connection; retrying" err="postgres: sorry, too many clients already"
+	... [output truncated]
+BenchmarkPool/driver=pqlite/open=64-16        	    8000	    212905 ns/op	     18207 ns/get	   7714750 ns/getmax	       215.8 ns/put	     22375 ns/putmax	     112 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=64-16        	    8500	    212649 ns/op	     10627 ns/get	   3968583 ns/getmax	       259.5 ns/put	     64000 ns/putmax	     119 B/op	       0 allocs/op
+BenchmarkPool/driver=pqlite/open=64-16        	    9718	    214374 ns/op	     17850 ns/get	   9037250 ns/getmax	       229.1 ns/put	    315834 ns/putmax	      94 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1582	   2673741 ns/op	  40106294 ns/get	 588052250 ns/getmax	      1343 ns/put	     21167 ns/putmax	     223 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1548	   2727893 ns/op	  40918363 ns/get	 628897250 ns/getmax	      1187 ns/put	     30459 ns/putmax	     223 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1560	   2708496 ns/op	  40626142 ns/get	 631138000 ns/getmax	      1604 ns/put	    236542 ns/putmax	     223 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1528	   2766379 ns/op	  41279649 ns/get	 630813125 ns/getmax	      1433 ns/put	     24625 ns/putmax	     224 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1549	   2721593 ns/op	  40824758 ns/get	 628442167 ns/getmax	      1408 ns/put	    229959 ns/putmax	     223 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1534	   2759422 ns/op	  41384453 ns/get	 629115042 ns/getmax	      1497 ns/put	    391459 ns/putmax	     224 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1521	   2782535 ns/op	  40911821 ns/get	 630343458 ns/getmax	      1333 ns/put	    123292 ns/putmax	     224 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1550	   2720365 ns/op	  40805742 ns/get	 629100291 ns/getmax	      1597 ns/put	     47792 ns/putmax	     224 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1556	   2714442 ns/op	  40717985 ns/get	 629278834 ns/getmax	      1371 ns/put	     73500 ns/putmax	     223 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=1-16            	    1539	   2741621 ns/op	  41126257 ns/get	 629647625 ns/getmax	      1196 ns/put	     56542 ns/putmax	     224 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    3157	   1509087 ns/op	  21095776 ns/get	 195931167 ns/getmax	      1054 ns/put	     36583 ns/putmax	     217 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    2928	   1545015 ns/op	  21528896 ns/get	 283987083 ns/getmax	      1251 ns/put	     19458 ns/putmax	     218 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    2977	   1529798 ns/op	  21295294 ns/get	 258810917 ns/getmax	      1277 ns/put	     41583 ns/putmax	     218 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    2906	   1557932 ns/op	  21750935 ns/get	 198552042 ns/getmax	      1281 ns/put	     62958 ns/putmax	     218 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    2922	   1544668 ns/op	  21567207 ns/get	 238321709 ns/getmax	      1220 ns/put	     32917 ns/putmax	     218 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    2887	   1552486 ns/op	  21732798 ns/get	 250087541 ns/getmax	      1212 ns/put	     42625 ns/putmax	     218 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    2906	   1552216 ns/op	  21688277 ns/get	 168123667 ns/getmax	      1331 ns/put	     45542 ns/putmax	     219 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    2923	   1545905 ns/op	  21616870 ns/get	 238217125 ns/getmax	      1147 ns/put	     27750 ns/putmax	     219 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    2977	   1532695 ns/op	  21371955 ns/get	 192051000 ns/getmax	      1290 ns/put	     35709 ns/putmax	     218 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=2-16            	    2947	   1531807 ns/op	  21409639 ns/get	 273494625 ns/getmax	      1239 ns/put	     18333 ns/putmax	     218 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    5275	    714993 ns/op	   8526591 ns/get	  94123583 ns/getmax	      1011 ns/put	     82167 ns/putmax	     216 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    5236	    718218 ns/op	   8582274 ns/get	  95570833 ns/getmax	      1072 ns/put	     42417 ns/putmax	     217 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    5431	    713538 ns/op	   8500820 ns/get	 102607792 ns/getmax	      1053 ns/put	     38583 ns/putmax	     217 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    5419	    713645 ns/op	   8505351 ns/get	 119532000 ns/getmax	      1048 ns/put	     31584 ns/putmax	     217 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    5120	    717640 ns/op	   8603944 ns/get	  98085459 ns/getmax	      1035 ns/put	     43666 ns/putmax	     218 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    6123	    739019 ns/op	   8814455 ns/get	  80269417 ns/getmax	      1046 ns/put	     43500 ns/putmax	     214 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    5697	    714638 ns/op	   8404742 ns/get	  91318625 ns/getmax	       910.0 ns/put	     26542 ns/putmax	     215 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    5878	    733752 ns/op	   8638657 ns/get	  84974667 ns/getmax	       914.2 ns/put	     47042 ns/putmax	     215 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    5710	    708679 ns/op	   8377818 ns/get	  74686917 ns/getmax	       887.3 ns/put	     31500 ns/putmax	     215 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=4-16            	    5234	    715589 ns/op	   8521445 ns/get	  72562166 ns/getmax	       900.8 ns/put	     47792 ns/putmax	     217 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    7863	    400172 ns/op	   3191114 ns/get	  45256042 ns/getmax	       690.6 ns/put	     57541 ns/putmax	     223 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    7267	    393237 ns/op	   3072962 ns/get	  63497834 ns/getmax	       774.6 ns/put	     67583 ns/putmax	     225 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    7062	    384298 ns/op	   3018777 ns/get	  43525542 ns/getmax	       660.2 ns/put	     21458 ns/putmax	     226 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    8128	    404673 ns/op	   3207721 ns/get	  45853042 ns/getmax	       768.2 ns/put	     62833 ns/putmax	     222 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    7861	    403839 ns/op	   3214828 ns/get	  33962833 ns/getmax	       678.5 ns/put	     26917 ns/putmax	     222 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    7387	    398515 ns/op	   3116476 ns/get	  30399750 ns/getmax	       652.5 ns/put	     14292 ns/putmax	     225 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    7947	    405953 ns/op	   3209806 ns/get	  25690709 ns/getmax	       942.5 ns/put	     78125 ns/putmax	     222 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    7746	    404950 ns/op	   3202715 ns/get	  40649916 ns/getmax	       894.5 ns/put	     29000 ns/putmax	     223 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    7999	    406759 ns/op	   3195790 ns/get	  45539583 ns/getmax	       807.4 ns/put	     45125 ns/putmax	     222 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=8-16            	    7993	    404616 ns/op	   3221222 ns/get	  43184292 ns/getmax	       932.2 ns/put	     35333 ns/putmax	     222 B/op	       3 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	    6001	    198047 ns/op	     26624 ns/get	  12409167 ns/getmax	       652.3 ns/put	     51833 ns/putmax	      91 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	    7057	    194700 ns/op	     19920 ns/get	  11751583 ns/getmax	       752.2 ns/put	     75417 ns/putmax	      78 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	    6337	    191163 ns/op	     29628 ns/get	  14625042 ns/getmax	       809.8 ns/put	    109750 ns/putmax	      86 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	    6271	    194516 ns/op	     23715 ns/get	  11621333 ns/getmax	       832.9 ns/put	     57292 ns/putmax	      87 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	    6469	    188790 ns/op	     24000 ns/get	  11871292 ns/getmax	       663.5 ns/put	     79042 ns/putmax	      84 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	   10000	    213208 ns/op	     15736 ns/get	  13374750 ns/getmax	       714.1 ns/put	     61291 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	    7526	    199830 ns/op	     18420 ns/get	  12227042 ns/getmax	       751.3 ns/put	     51000 ns/putmax	      78 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	    6889	    194631 ns/op	     19241 ns/get	  10818333 ns/getmax	       606.7 ns/put	     68709 ns/putmax	      80 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	    7243	    204097 ns/op	     22560 ns/get	  13229875 ns/getmax	       701.1 ns/put	     75458 ns/putmax	      78 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=16-16           	    7302	    202242 ns/op	     19742 ns/get	  12285542 ns/getmax	       973.5 ns/put	    123541 ns/putmax	      78 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    6031	    195653 ns/op	     14627 ns/get	   6577125 ns/getmax	      1017 ns/put	     98791 ns/putmax	      90 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    9200	    210570 ns/op	     17981 ns/get	  13647000 ns/getmax	       732.6 ns/put	     91834 ns/putmax	      66 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    7273	    203919 ns/op	     23024 ns/get	  12809625 ns/getmax	       819.2 ns/put	     54208 ns/putmax	      78 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    6662	    198035 ns/op	     26430 ns/get	  13723125 ns/getmax	       712.1 ns/put	     53542 ns/putmax	      82 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    9136	    209504 ns/op	     15958 ns/get	  12148875 ns/getmax	       822.2 ns/put	     55500 ns/putmax	      65 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    7020	    194247 ns/op	     29299 ns/get	  15790792 ns/getmax	       777.1 ns/put	    102708 ns/putmax	      79 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    9464	    210135 ns/op	     17552 ns/get	  14623833 ns/getmax	       628.5 ns/put	     51667 ns/putmax	      64 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    5869	    181020 ns/op	     21739 ns/get	   9802042 ns/getmax	       850.2 ns/put	     82334 ns/putmax	      94 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    6952	    193977 ns/op	     25365 ns/get	  14321667 ns/getmax	       788.1 ns/put	     40583 ns/putmax	      79 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=32-16           	    9400	    208076 ns/op	      6921 ns/get	   6029041 ns/getmax	       839.8 ns/put	     81042 ns/putmax	      64 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	    9900	    213423 ns/op	      7927 ns/get	   8123416 ns/getmax	       831.8 ns/put	     85333 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	    7204	    202770 ns/op	     27704 ns/get	  15639291 ns/getmax	       765.0 ns/put	     74250 ns/putmax	      79 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	    7599	    210721 ns/op	     26027 ns/get	  16151750 ns/getmax	       772.0 ns/put	    112917 ns/putmax	      76 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	    9700	    212207 ns/op	      7026 ns/get	   5299917 ns/getmax	      1014 ns/put	    128625 ns/putmax	      64 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	    9700	    212202 ns/op	     11495 ns/get	  11127791 ns/getmax	       952.1 ns/put	     73958 ns/putmax	      63 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	    9000	    212228 ns/op	      8652 ns/get	   7150875 ns/getmax	       890.6 ns/put	     68334 ns/putmax	      65 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	    8788	    208004 ns/op	     13214 ns/get	   8987542 ns/getmax	       777.8 ns/put	     62666 ns/putmax	      66 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	   10000	    213337 ns/op	     21601 ns/get	  16942291 ns/getmax	       730.8 ns/put	     78958 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	   10000	    212983 ns/op	      7081 ns/get	   6847125 ns/getmax	       830.2 ns/put	     94750 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=48-16           	    6574	    188518 ns/op	     29371 ns/get	  16072792 ns/getmax	       830.2 ns/put	     62542 ns/putmax	      83 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	   10000	    212745 ns/op	     16744 ns/get	  14651750 ns/getmax	       714.2 ns/put	     72083 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	   10000	    213379 ns/op	      6577 ns/get	   5335750 ns/getmax	       925.6 ns/put	     91666 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	   10000	    213507 ns/op	     14827 ns/get	  13273250 ns/getmax	       779.6 ns/put	     68042 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	   10000	    213238 ns/op	     15611 ns/get	  12826625 ns/getmax	       734.3 ns/put	     52250 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	    6506	    189796 ns/op	     21424 ns/get	  10423166 ns/getmax	       899.9 ns/put	    126917 ns/putmax	      84 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	    7201	    202239 ns/op	     21614 ns/get	  11841334 ns/getmax	       782.6 ns/put	     77042 ns/putmax	      78 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	   10000	    212350 ns/op	     20023 ns/get	  18085750 ns/getmax	       653.5 ns/put	     38084 ns/putmax	      62 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	    7280	    203482 ns/op	     24489 ns/get	  12709583 ns/getmax	      1123 ns/put	    111709 ns/putmax	      78 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	    6340	    193137 ns/op	     21745 ns/get	   9757834 ns/getmax	       988.9 ns/put	     82542 ns/putmax	      86 B/op	       0 allocs/op
+BenchmarkPool/driver=pgx/open=64-16           	    8547	    208679 ns/op	     16549 ns/get	  10684833 ns/getmax	       804.4 ns/put	     75083 ns/putmax	      68 B/op	       0 allocs/op
+PASS
+ok  	blake.io/pqlite	1049.817s

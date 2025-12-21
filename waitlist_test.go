@@ -229,3 +229,179 @@ func BenchmarkFair(b *testing.B) {
 		b.ReportMetric(float64(tttp.Load())/float64(b.N), "ns/put")
 	})
 }
+
+func TestWaitListClose(t *testing.T) {
+	t.Run("Put after Close does nothing", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			p := &WaitList[int]{
+				MaxItems:   10,
+				MaxWaiters: 10,
+			}
+
+			// Close the waitlist
+			p.Close()
+
+			// Put should do nothing when closed
+			p.Put(42)
+
+			// Verify nothing was added
+			_, ok := p.TryTake()
+			if ok {
+				t.Error("TryTake() should return ok=false after Close, but got a value")
+			}
+		})
+	})
+
+	t.Run("concurrent Close and Put", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			p := &WaitList[int]{
+				MaxItems:   10,
+				MaxWaiters: 10,
+			}
+
+			// Start multiple Puts and a Close concurrently
+			for i := range 5 {
+				i := i
+				go func() {
+					p.Put(i)
+				}()
+			}
+
+			go func() {
+				p.Close()
+			}()
+
+			// Let all goroutines run
+			synctest.Wait()
+
+			// After Close, new Puts should do nothing
+			p.Put(999)
+
+			// Drain whatever was put before close
+			count := 0
+			for {
+				_, ok := p.TryTake()
+				if !ok {
+					break
+				}
+				count++
+			}
+
+			// We should have gotten some items (0-5), but not 999
+			if count > 5 {
+				t.Errorf("got %d items, but put at most 5 before close", count)
+			}
+		})
+	})
+
+	t.Run("Close wakes up waiters", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			p := &WaitList[int]{
+				MaxItems:   1,
+				MaxWaiters: 10,
+			}
+
+			ctx := context.Background()
+
+			// Start a waiter
+			errCh := make(chan error, 1)
+			go func() {
+				_, err := p.Wait(ctx)
+				errCh <- err
+			}()
+
+			// Wait for the goroutine to block
+			synctest.Wait()
+
+			// Close should wake it up
+			p.Close()
+
+			// Waiter should get ErrClosed
+			synctest.Wait()
+
+			err := <-errCh
+			if !errors.Is(err, ErrClosed) {
+				t.Errorf("Wait() err = %v, want ErrClosed", err)
+			}
+		})
+	})
+
+	t.Run("Put during Close with waiter", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			p := &WaitList[int]{
+				MaxItems:   1,
+				MaxWaiters: 10,
+			}
+
+			ctx := context.Background()
+
+			// Start a waiter
+			valCh := make(chan int, 1)
+			errCh := make(chan error, 1)
+			go func() {
+				v, err := p.Wait(ctx)
+				if err != nil {
+					errCh <- err
+				} else {
+					valCh <- v
+				}
+			}()
+
+			// Wait for the goroutine to block
+			synctest.Wait()
+
+			// Race: Put and Close happen concurrently
+			go p.Put(42)
+			go p.Close()
+
+			// Let both run
+			synctest.Wait()
+
+			// Waiter should get either the value or ErrClosed
+			select {
+			case v := <-valCh:
+				// Got the value - this is fine if Put won the race
+				if v != 42 {
+					t.Errorf("got value %d, want 42", v)
+				}
+			case err := <-errCh:
+				// Got an error - this is fine if Close won the race
+				if !errors.Is(err, ErrClosed) {
+					t.Errorf("Wait() err = %v, want ErrClosed", err)
+				}
+			default:
+				t.Error("waiter should have been unblocked")
+			}
+		})
+	})
+
+	t.Run("Wait after Close returns ErrClosed", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			p := &WaitList[int]{}
+
+			p.Close()
+
+			_, err := p.Wait(context.Background())
+			if !errors.Is(err, ErrClosed) {
+				t.Errorf("Wait() err = %v, want ErrClosed", err)
+			}
+		})
+	})
+
+	t.Run("Close is idempotent", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			p := &WaitList[int]{}
+
+			// Close multiple times - should not panic
+			p.Close()
+			p.Close()
+			p.Close()
+
+			// Should still return ErrClosed
+			_, err := p.Wait(context.Background())
+			if !errors.Is(err, ErrClosed) {
+				t.Errorf("Wait() err = %v, want ErrClosed", err)
+			}
+		})
+	})
+}
