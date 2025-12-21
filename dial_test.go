@@ -160,7 +160,8 @@ func TestOpenTLS(t *testing.T) {
 	t.Parallel()
 
 	sslrootcert, tlsargs := configureTLSOnly(t)
-	dsn := startPG(t, tlsargs...)
+	var dsn strings.Builder
+	dsn.WriteString(startPG(t, tlsargs...))
 
 	cases := []struct {
 		sslmode string
@@ -186,15 +187,15 @@ func TestOpenTLS(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.sslmode+"-"+tc.host, func(t *testing.T) {
-			dsn += " sslmode=" + tc.sslmode
+			dsn.WriteString(" sslmode=" + tc.sslmode)
 			if tc.host != "" {
-				dsn += " host=" + tc.host
+				dsn.WriteString(" host=" + tc.host)
 			}
 			if tc.sslroot != "" {
-				dsn += " sslrootcert=" + tc.sslroot
+				dsn.WriteString(" sslrootcert=" + tc.sslroot)
 			}
 
-			cn, err := Open(context.Background(), dsn, nil)
+			cn, err := Open(context.Background(), dsn.String(), nil)
 			if err != nil {
 				if !tc.wantErr {
 					t.Fatal(err)
@@ -369,7 +370,7 @@ func startPG(t *testing.T, settings ...string) string {
 	}, " ")
 }
 
-type logf func(format string, args ...interface{})
+type logf func(format string, args ...any)
 
 func waitForPGReady(ctx context.Context, logf logf, host, port string) error {
 	for _, err := range backoff.Loop(ctx, 200*time.Millisecond) {
