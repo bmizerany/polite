@@ -36,7 +36,25 @@ type WaitList[T any] struct {
 
 	chanPool sync.Pool // pool for waiter channels
 
+	closedOnce sync.Once
+	closedCh   chan struct{} // closed when WaitList is closed
+
 	testHookWaiterCanceled func(ch chan T)
+}
+
+func (p *WaitList[T]) init() {
+	if p.closedCh == nil {
+		p.closedCh = make(chan struct{})
+	}
+}
+
+// Close closes the WaitList, causing all current and future Wait calls
+// to return ErrClosed.
+func (p *WaitList[T]) Close() {
+	p.init()
+	p.closedOnce.Do(func() {
+		close(p.closedCh)
+	})
 }
 
 // Take blocks until an item is available from the pool or ctx is done,
@@ -142,6 +160,15 @@ func (p *WaitList[T]) TryTake() (_ T, ok bool) {
 //
 // If the WaitList is closed, Put does nothing.
 func (p *WaitList[T]) Put(v T) {
+	p.init()
+
+	// Check if closed
+	select {
+	case <-p.closedCh:
+		return
+	default:
+	}
+
 	p.readyMu.Lock()
 	p.waitersMu.Lock()
 	ch, ok := p.waiters.Shift()
@@ -182,10 +209,19 @@ func (p *WaitList[T]) cancelLoad() {
 
 // Wait blocks until an item is available or ctx is done.
 // Unlike Take, it does not trigger loading - the caller must handle that.
+// If the WaitList is closed, Wait returns ErrClosed.
 func (p *WaitList[T]) Wait(ctx context.Context) (T, error) {
 	var zero T
+	p.init()
+
 	if ctx.Err() != nil {
 		return zero, ctx.Err()
+	}
+
+	select {
+	case <-p.closedCh:
+		return zero, ErrClosed
+	default:
 	}
 
 	p.readyMu.Lock()
@@ -216,25 +252,33 @@ func (p *WaitList[T]) Wait(ctx context.Context) (T, error) {
 		p.chanPool.Put(ch)
 		return v, nil
 	case <-ctx.Done():
-		if p.testHookWaiterCanceled != nil {
-			p.testHookWaiterCanceled(ch)
-		}
-
-		p.waitersMu.Lock()
-		p.waiters.DeleteFunc(func(wch chan T) bool {
-			return ch == wch
-		})
-		p.waitersMu.Unlock()
-
-		select {
-		case v := <-ch:
-			// near miss
-			p.chanPool.Put(ch)
-			return v, nil
-		default:
-			p.chanPool.Put(ch)
-		}
-
-		return zero, ctx.Err()
+		return p.handleCancel(ch, ctx.Err())
+	case <-p.closedCh:
+		return p.handleCancel(ch, ErrClosed)
 	}
+}
+
+func (p *WaitList[T]) handleCancel(ch chan T, err error) (T, error) {
+	var zero T
+
+	if p.testHookWaiterCanceled != nil {
+		p.testHookWaiterCanceled(ch)
+	}
+
+	p.waitersMu.Lock()
+	p.waiters.DeleteFunc(func(wch chan T) bool {
+		return ch == wch
+	})
+	p.waitersMu.Unlock()
+
+	select {
+	case v := <-ch:
+		// near miss
+		p.chanPool.Put(ch)
+		return v, nil
+	default:
+		p.chanPool.Put(ch)
+	}
+
+	return zero, err
 }

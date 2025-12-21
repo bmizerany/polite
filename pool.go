@@ -177,6 +177,13 @@ func (p *Pool) loadConn() *Conn {
 }
 
 func (p *Pool) Get(ctx context.Context) (*Conn, error) {
+	if ctx.Err() != nil {
+		// avoid tying up resources and delaying a connection from
+		// reaching a truly ready waiter if the context is already
+		// done.
+		return nil, ctx.Err()
+	}
+
 	p.init()
 	if p.cancelCtx.Err() != nil {
 		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
@@ -193,14 +200,18 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		go p.openAndPut()
 	}
 
+	// Propagate testHook in case it was set after init
+	p.waitlist.testHookWaiterCanceled = p.testHookWaitCanceled
+
 	// Now wait for a connection
 	cn, err := p.waitlist.Wait(ctx)
 
 	if errors.Is(err, ErrMaxWaiters) {
 		return nil, ErrPoolFull
 	}
-	if err != nil {
-		err = cmp.Or(context.Cause(p.cancelCtx), err)
+	if errors.Is(err, ErrClosed) {
+		// Pool was closed while waiting
+		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
 	}
 	return cn, err
 }
@@ -222,6 +233,9 @@ func (p *Pool) Close() error {
 		return p.cancelCtx.Err()
 	}
 	p.cancel(ErrPoolClosed)
+
+	// Close the waitlist to wake up all waiters
+	p.waitlist.Close()
 
 	// Drain the waitlist by taking and closing all ready connections
 	for {
