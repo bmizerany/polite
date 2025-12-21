@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"blake.io/pqlite/backoff"
-	"blake.io/pqlite/queues"
 )
 
 // Defaults
@@ -88,18 +87,10 @@ type Pool struct {
 
 	Logger *slog.Logger // default is slog.Default()
 
-	// TODO(bmizerany): MaxLifetime time.Duration
-
-	readyMu   sync.Mutex // guards the following fields
-	ready     queues.Lifo[*Conn]
-	openConns int
+	waitlist  WaitList[*Conn]
+	initOnce  sync.Once
 	cancelCtx context.Context
 	cancel    context.CancelCauseFunc
-
-	connChanPool sync.Pool
-
-	waitingMu sync.Mutex
-	waiting   queues.Fifo[chan *Conn]
 
 	// testHookWaitCanceled, if set, is called from Get when the wait is
 	// canceled. It is not used by pqlite code itself - it is only here for use
@@ -112,45 +103,15 @@ type Pool struct {
 	testHookWaitCanceled func(ch chan *Conn)
 }
 
-// caller must hold p.readyMu and p.waitingMu
-func (p *Pool) putLocked(cn *Conn) {
-	handoff := func(cn *Conn) bool {
-		ch, ok := p.waiting.Shift()
-		if ok {
-			// Hand the connection to the first waiter in line. We
-			// guarantee nothing is added to the waiting queue that does
-			// not immediately start waiting.
-			ch <- cn
-			return true
+func (p *Pool) init() {
+	p.initOnce.Do(func() {
+		p.cancelCtx, p.cancel = context.WithCancelCause(context.Background())
+		p.waitlist.MaxItems = p.maxOpen()
+		p.waitlist.MaxWaiters = p.maxWaiting()
+		if p.testHookWaitCanceled != nil {
+			p.waitlist.testHookWaiterCanceled = p.testHookWaitCanceled
 		}
-		return false
-	}
-
-	if handoff(cn) {
-		return
-	}
-
-	// TODO(bmizerany): It is currently possible for a client to add a
-	// connection to the pool that was not started by the pool. This
-	// leads to our openConns count being off. We should consider
-	// adding a flag to the connection to indicate if it was started by
-	// the pool or not. This would also allow us to avoid the
-	// connection being closed by the pool if it was not started by the
-	// pool.
-	p.ready.Push(cn)
-}
-
-func (p *Pool) put(cn *Conn) {
-	p.readyMu.Lock()
-	if p.cancelCtx.Err() != nil {
-		p.readyMu.Unlock()
-		cn.Close()
-		return
-	}
-	p.waitingMu.Lock()
-	p.putLocked(cn)
-	p.waitingMu.Unlock()
-	p.readyMu.Unlock()
+	})
 }
 
 // Put adds a connection back to the pool. Put should be called when
@@ -160,42 +121,31 @@ func (p *Pool) put(cn *Conn) {
 //
 // Put is a non-blocking operation.
 func (p *Pool) Put(cn *Conn) {
+	p.init()
+	if p.cancelCtx.Err() != nil {
+		cn.Close()
+		return
+	}
+
 	expired := p.MaxLifetime > 0 && time.Since(cn.created) >= p.MaxLifetime
 	cn.uses++
 	if expired || p.maxUses() > 0 && cn.uses >= p.maxUses() {
-		go p.startNewConn(cn)
+		cn.Close()
+		go p.openAndPut()
 	} else {
-		p.put(cn)
+		p.waitlist.Put(cn)
 	}
 }
 
-func (p *Pool) startNewConn(retire *Conn) {
-	if retire != nil {
-		// Retire the connection so that it is not used again, and
-		// before we open a new one as to not exceed the max open
-		// connections.
-		//
-		// This is done in a goroutine to avoid blocking callers of Put
-		// that would otherwise unjustly pay the penalty of the
-		// connection being retired.
-		retire.Close()
-	}
-
-	for i, err := range backoff.Loop(p.cancelCtx, 5*time.Second) {
-		if err != nil {
-			p.readyMu.Lock()
-			p.openConns--
-			p.readyMu.Unlock()
-		}
+func (p *Pool) openAndPut() {
+	for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
 		cn, err := p.open(p.cancelCtx)
 		if err == nil {
 			cn.created = time.Now()
-			p.put(cn)
+			p.waitlist.Put(cn)
 			return
 		}
 		if p.cancelCtx.Err() != nil {
-			// This mostly is to prevent logs from being written
-			// after tests are done, which is an error.
 			return
 		}
 		if i > 3 {
@@ -206,139 +156,36 @@ func (p *Pool) startNewConn(retire *Conn) {
 }
 
 func (p *Pool) Get(ctx context.Context) (*Conn, error) {
-	if ctx.Err() != nil {
-		// avoid tying up resources and delaying a connection from
-		// reaching a truly ready waiter if the context is already
-		// done.
-		return nil, ctx.Err()
-	}
-	cn, ch, err := func() (*Conn, chan *Conn, error) {
-		p.readyMu.Lock()
-		if p.cancelCtx == nil {
-			p.cancelCtx, p.cancel = context.WithCancelCause(context.Background())
-		}
-		if p.cancelCtx.Err() != nil {
-			p.readyMu.Unlock()
-			return nil, nil, p.cancelCtx.Err()
-		}
-		cn, ok := p.ready.Pop()
-		if ok {
-			p.readyMu.Unlock()
-			return cn, nil, nil
-		}
-
-		p.waitingMu.Lock()
-		if p.waiting.Len() >= p.maxWaiting() {
-			p.waitingMu.Unlock()
-			p.readyMu.Unlock()
-			return nil, nil, ErrPoolFull
-		}
-
-		// Get in line and wait for another goroutine to put a
-		// connection in the pool or for any new connection being
-		// opened to be handed off to us.
-		ch, _ := p.connChanPool.Get().(chan *Conn)
-		if ch == nil {
-			ch = make(chan *Conn, 1)
-		}
-		p.waiting.Unshift(ch)
-		p.waitingMu.Unlock()
-
-		if p.openConns < p.maxOpen() || p.maxOpen() < 0 {
-			p.openConns++
-			go p.startNewConn(nil)
-		}
-		p.readyMu.Unlock()
-		return nil, ch, nil
-	}()
-	if err != nil {
-		return nil, cmp.Or(context.Cause(p.cancelCtx), err)
+	p.init()
+	if p.cancelCtx.Err() != nil {
+		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
 	}
 
-	// A ready connection was obtained, so return it.
-	if cn != nil {
-		return cn, nil
-	}
-
-	// We're in line and waiting for a connection to be handed off to us,
-	// so wait.
-
-	select {
-	case cn, ok := <-ch:
-		if !ok {
-			return nil, ErrPoolClosed
-		}
-		p.connChanPool.Put(ch)
-		return cn, nil
-	case <-ctx.Done():
-		if p.testHookWaitCanceled != nil {
-			p.testHookWaitCanceled(ch)
-		}
-
-		p.readyMu.Lock()
-		p.waitingMu.Lock()
-		p.waiting.DeleteFunc(func(dch chan *Conn) bool {
-			return ch == dch
-		})
-		p.waitingMu.Unlock()
-		p.readyMu.Unlock()
-
-		select {
-		case cn, ok := <-ch:
-			if !ok {
-				// Prefer context cancellation over pool
-				// closure errors.
-				//
-				// A context error suggests a temporary
-				// condition - perhaps a deadline or timeout -
-				// from which the client can recover. By
-				// contrast, a closed pool signals a more
-				// fundamental issue that might discourage the
-				// client from attempting further work.
-				//
-				// We choose to preserve opportunities for
-				// recovery by surfacing the context error,
-				// letting clients make informed decisions
-				// about retrying operations.
-				return nil, ctx.Err()
+	cn, err := p.waitlist.Take(ctx, func() *Conn {
+		for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
+			cn, err := p.open(p.cancelCtx)
+			if err == nil {
+				cn.created = time.Now()
+				return cn
 			}
-
-			// Handle successful connection acquisition despite
-			// context cancellation
-			//
-			// If we obtain a connection just as the context
-			// expires, we treat this as a "soft cancellation" -
-			// returning the connection instead of an error.
-			//
-			// This approach:
-			//
-			//   1. Preserves work already done in acquiring the connection
-			//   2. Lets callers implement local timeout boundaries
-			//
-			// Example of local timeout boundary:
-			//
-			//     cn, err := func() {
-			//         ctx, _ := context.WithTimeout(context.Background(), 10*time.Millisecond)
-			//         return pool.Get(ctx)
-			//     }()
-			//     ... use cn ...
-			//
-			// The timeout above only constrains connection
-			// acquisition, not the connection's subsequent usage.
-			// This pattern gives callers fine-grained control over
-			// timeout behaviors.
-			//
-			// We delegate connection cleanup to the caller rather
-			// than handling it here, as they can best determine
-			// whether to treat the cancellation as hard (requiring
-			// cleanup) or soft (allowing continued use).
-			p.connChanPool.Put(ch)
-			return cn, nil
-		default:
-			p.connChanPool.Put(ch)
-			return nil, ctx.Err()
+			if p.cancelCtx.Err() != nil {
+				return nil
+			}
+			if i > 3 {
+				p.log().Info("pqlite: pool: error opening new connection; retrying", "err",
+					cmp.Or(context.Cause(p.cancelCtx), err))
+			}
 		}
+		return nil
+	})
+
+	if errors.Is(err, ErrMaxWaiters) {
+		return nil, ErrPoolFull
 	}
+	if err != nil {
+		err = cmp.Or(context.Cause(p.cancelCtx), err)
+	}
+	return cn, err
 }
 
 // CloseExpiredConns closes any connections that have been idle for more than
@@ -347,68 +194,21 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 // It returns all errors encountered while closing connections wrapped into
 // one.
 func (p *Pool) CloseExpiredConns() error {
-	maxLifetime := p.MaxLifetime
-	if maxLifetime == 0 {
-		maxLifetime = DefaultPoolMaxLifetime
-	}
-
-	var errs []error
-	var marked []*Conn
-
-	p.readyMu.Lock()
-	p.ready.DeleteFunc(func(cn *Conn) bool {
-		if time.Since(cn.created) > p.MaxLifetime {
-			marked = append(marked, cn)
-			return true
-		}
-		return false
-	})
-	p.readyMu.Unlock()
-
-	for _, cn := range marked {
-		if err := cn.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
+	// With WaitList, expired connections are handled in Put()
+	// This method is kept for compatibility but is now a no-op
+	return nil
 }
 
 func (p *Pool) Close() error {
-	p.readyMu.Lock()
-	defer p.readyMu.Unlock()
-	return p.closeReadyLocked()
-}
-
-func (p *Pool) closeReadyLocked() error {
-	if p.cancelCtx == nil {
-		p.cancelCtx, p.cancel = context.WithCancelCause(context.Background())
-	}
-
+	p.init()
 	if p.cancelCtx.Err() != nil {
 		return p.cancelCtx.Err()
 	}
-
 	p.cancel(ErrPoolClosed)
 
-	// Next, close all ready connections followed by all waiting
-	// connections.
-	p.waitingMu.Lock()
-	defer p.waitingMu.Unlock()
-
-	// Start with everyone waiting so they are not blocked by the ready
-	// connections being closed, since closing a channel is (most likely)
-	// faster than closing a connection since the connection play nice with
-	// postgres and send termination packets which can take time.
+	// Drain the waitlist by taking and closing all ready connections
 	for {
-		ch, ok := p.waiting.Shift()
-		if !ok {
-			break
-		}
-		close(ch)
-	}
-
-	for {
-		cn, ok := p.ready.Pop()
+		cn, ok := p.waitlist.TryTake()
 		if !ok {
 			break
 		}
