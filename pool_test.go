@@ -34,16 +34,14 @@ func TestPoolMaxUseWithWaiter(t *testing.T) {
 	var cc [2]*Conn
 	var wg sync.WaitGroup
 	for i := range len(cc) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			cn, err := p.Get(ctx)
 			if err != nil {
 				t.Error(err)
 			}
 			defer p.Put(cn)
 			cc[i] = cn
-		}()
+		})
 	}
 	wg.Wait()
 	if cc[0] == cc[1] {
@@ -187,16 +185,14 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 	var got [3]error
 	var wg sync.WaitGroup
 	for i := range got {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			cn, err := p.Get(ctx)
 			if err != nil {
 				got[i] = err
 				return
 			}
 			p.Put(cn)
-		}()
+		})
 	}
 
 	select {
@@ -396,9 +392,7 @@ func benchmarkPool(b *testing.B, maxOpen int) {
 	rem.Store(int64(b.N))
 	var wg sync.WaitGroup
 	for i := range runtime.NumCPU() {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			zzz := rand.NewZipf(rand.New(rand.NewPCG(1, 2)), 2.0, 1.5, 100)
 			for rem.Add(-1) >= 0 {
 				start := time.Now()
@@ -418,7 +412,7 @@ func benchmarkPool(b *testing.B, maxOpen int) {
 				putns.Add(d.Nanoseconds())
 				maxputs[i] = max(maxputs[i], d)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -448,9 +442,7 @@ func benchmarkPoolPGX(b *testing.B, maxOpen int) {
 	rem.Store(int64(b.N))
 	var wg sync.WaitGroup
 	for i := range runtime.NumCPU() {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			zzz := rand.NewZipf(rand.New(rand.NewPCG(1, 2)), 2.0, 1.5, 100)
 			for rem.Add(-1) >= 0 {
@@ -471,7 +463,7 @@ func benchmarkPoolPGX(b *testing.B, maxOpen int) {
 				putns.Add(d.Nanoseconds())
 				maxputs[i] = max(maxputs[i], d)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

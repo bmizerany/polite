@@ -80,9 +80,7 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 		var got [3]error
 		var g sync.WaitGroup
 		for i := range 3 {
-			g.Add(1)
-			go func() {
-				defer g.Done()
+			g.Go(func() {
 				cn, err := p.Get(ctx)
 				got[i] = err
 				if err == nil {
@@ -92,7 +90,7 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 					cn.Close()
 					panic("expected nil conn")
 				}
-			}()
+			})
 		}
 
 		sleepUntilDeadline(ctx)
@@ -114,8 +112,6 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 func (p *Pool) checkAndDrainPool() {
 	// With WaitList, channel pooling is internal, so this is a no-op
 }
-
-
 
 func checker(t *testing.T) func(err error) {
 	t.Helper()

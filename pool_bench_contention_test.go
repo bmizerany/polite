@@ -23,7 +23,7 @@ func BenchmarkPoolContention(b *testing.B) {
 	defer p.Close()
 
 	// Pre-warm the pool
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		cn, err := p.Get(context.Background())
 		if err != nil {
 			b.Fatal(err)
