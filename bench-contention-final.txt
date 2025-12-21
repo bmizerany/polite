@@ -1,0 +1,16 @@
+goos: darwin
+goarch: arm64
+pkg: blake.io/pqlite
+cpu: Apple M3 Max
+BenchmarkPoolContention-16    	 5659663	       967.5 ns/op	      7016 ns/get	      2008 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16    	 6257596	      1064 ns/op	      7619 ns/get	      2857 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16    	 5665712	       960.5 ns/op	      6965 ns/get	      1952 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16    	 6196188	      1069 ns/op	      7649 ns/get	      2896 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16    	 5631735	       964.9 ns/op	      6999 ns/get	      1983 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16    	 6206809	      1057 ns/op	      7566 ns/get	      2787 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16    	 5597439	       966.2 ns/op	      7005 ns/get	      1993 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16    	 6196982	      1061 ns/op	      7604 ns/get	      2827 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16    	 5619985	       970.3 ns/op	      7030 ns/get	      2027 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16    	 6198766	      1060 ns/op	      7585 ns/get	      2813 ns/put	       0 B/op	       0 allocs/op
+PASS
+ok  	blake.io/pqlite	70.678s

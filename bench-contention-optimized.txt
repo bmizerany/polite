@@ -1,0 +1,16 @@
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x18 pc=0x104b85d14]
+
+goroutine 20 [running]:
+blake.io/pqlite.(*Pool).Put(0x140001b6000, 0x0)
+	/Users/bmizerany/src/pqlite/pool.go:130 +0x54
+blake.io/pqlite.BenchmarkPoolContention(0x140000e4588)
+	/Users/bmizerany/src/pqlite/pool_bench_contention_test.go:31 +0x8c
+testing.(*B).runN(0x140000e4588, 0x1)
+	/usr/local/go/src/testing/benchmark.go:219 +0x184
+testing.(*B).run1.func1()
+	/usr/local/go/src/testing/benchmark.go:245 +0x4c
+created by testing.(*B).run1 in goroutine 1
+	/usr/local/go/src/testing/benchmark.go:238 +0x88
+exit status 2
+FAIL	blake.io/pqlite	0.200s

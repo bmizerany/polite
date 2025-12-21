@@ -1,0 +1,34 @@
+goos: darwin
+goarch: arm64
+pkg: blake.io/pqlite
+cpu: Apple M3 Max
+BenchmarkPoolContention-16      	 1129579	       976.2 ns/op	      7054 ns/get	      2093 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16      	 1241229	      1066 ns/op	      7615 ns/get	      2911 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16      	 1000000	      1063 ns/op	      7589 ns/get	      2912 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16      	 1000000	      1067 ns/op	      7615 ns/get	      2946 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16      	 1000000	      1060 ns/op	      7578 ns/get	      2881 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16      	 1000000	      1064 ns/op	      7584 ns/get	      2951 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16      	 1000000	      1063 ns/op	      7574 ns/get	      2930 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16      	 1000000	      1069 ns/op	      7625 ns/get	      2969 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16      	 1000000	      1069 ns/op	      7618 ns/get	      2967 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolContention-16      	 1000000	      1056 ns/op	      7539 ns/get	      2854 ns/put	       0 B/op	       0 allocs/op
+BenchmarkPoolGetPut-16          	 2675812	       448.1 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolGetPut-16          	 2689573	       445.0 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolGetPut-16          	 2690199	       446.3 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolGetPut-16          	 2700033	       445.0 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolGetPut-16          	 2685499	       446.4 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolGetPut-16          	 2690013	       448.6 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolGetPut-16          	 2687526	       446.9 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolGetPut-16          	 2695558	       445.4 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolGetPut-16          	 2682836	       447.1 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolGetPut-16          	 2690562	       447.5 ns/op	      16 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	15128170	        70.23 ns/op	     139 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	19158004	        69.85 ns/op	     139 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	16048125	        77.14 ns/op	     137 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	16706246	        67.74 ns/op	     145 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	17875707	        75.87 ns/op	     142 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	16779568	        80.73 ns/op	     145 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	16564556	        75.91 ns/op	     145 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	18614907	        67.08 ns/op	     140 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	17956410	        66.85 ns/op	     142 B/op	       1 allocs/op
+BenchmarkPoolStartNewConn-16    	14434657	        70.11 ns/op	     141 B/op	       1 allocs/op
