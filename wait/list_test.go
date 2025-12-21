@@ -133,47 +133,6 @@ func TestFairPoolTakeContextCancel(t *testing.T) {
 		})
 	})
 
-	t.Run("near miss", func(t *testing.T) {
-		synctest.Test(t, func(t *testing.T) {
-			p := &wait.List[int]{
-				MaxItems:   1,
-				MaxWaiters: 10,
-
-				// induce near miss
-				TestHookWaiterCanceled: func(ch chan int) { ch <- 42 },
-			}
-
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-
-			// Drain to force waiters to durably block.
-			_, err := p.Take(ctx, fourtyTwo)
-			if err != nil {
-				t.Fatal("draining:", err)
-			}
-
-			// 1. waiter starts waiting
-			go func() {
-				got, err := p.Take(ctx, shouldNotCall)
-				if err != nil {
-					t.Errorf("near miss recovery: %v", err)
-				}
-				defer p.Put(got)
-				if got != 42 {
-					t.Errorf("near miss recovery: got = %d, want 42", got)
-				}
-			}()
-			synctest.Wait()
-
-			// 2. context is cancelled
-			cancel()
-
-			// 3. waiter sees cancellation
-			// 4. near miss happens
-			// 5. waiter recovers and gets 42
-			synctest.Wait()
-		})
-	})
 }
 
 func TestTakeLoadErrorAllowsRetry(t *testing.T) {

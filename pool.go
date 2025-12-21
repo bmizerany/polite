@@ -93,16 +93,6 @@ type Pool struct {
 	initOnce  sync.Once
 	cancelCtx context.Context
 	cancel    context.CancelCauseFunc
-
-	// testHookWaitCanceled, if set, is called from Get when the wait is
-	// canceled. It is not used by pqlite code itself - it is only here for use
-	// in tests.
-	//
-	// The channel passed to testHookWaitCanceled is the channel for the waiter.
-	//
-	// It is called before ch is removed from the wait queue and before it is
-	// checked for a near miss.
-	testHookWaitCanceled func(ch chan *Conn)
 }
 
 func (p *Pool) init() {
@@ -111,9 +101,6 @@ func (p *Pool) init() {
 		p.waitlist.MaxItems = p.maxOpen()
 		p.waitlist.MaxWaiters = p.maxWaiting()
 		p.loadFunc = p.openConn // create method value once during init
-		if p.testHookWaitCanceled != nil {
-			p.waitlist.TestHookWaiterCanceled = p.testHookWaitCanceled
-		}
 	})
 }
 
@@ -156,9 +143,6 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	if p.cancelCtx.Err() != nil {
 		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
 	}
-
-	// Propagate testHook in case it was set after init
-	p.waitlist.TestHookWaiterCanceled = p.testHookWaitCanceled
 
 	cn, err := p.waitlist.Take(ctx, p.loadFunc)
 
