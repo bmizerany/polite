@@ -89,6 +89,7 @@ type Pool struct {
 	Logger *slog.Logger // default is slog.Default()
 
 	waitlist  wait.List[*Conn]
+	loadFunc  func() (*Conn, error) // load function created once in init
 	initOnce  sync.Once
 	cancelCtx context.Context
 	cancel    context.CancelCauseFunc
@@ -109,6 +110,7 @@ func (p *Pool) init() {
 		p.cancelCtx, p.cancel = context.WithCancelCause(context.Background())
 		p.waitlist.MaxItems = p.maxOpen()
 		p.waitlist.MaxWaiters = p.maxWaiting()
+		p.loadFunc = p.openConn // create method value once during init
 		if p.testHookWaitCanceled != nil {
 			p.waitlist.TestHookWaiterCanceled = p.testHookWaitCanceled
 		}
@@ -132,49 +134,14 @@ func (p *Pool) Put(cn *Conn) {
 	cn.uses++
 	if expired || p.maxUses() > 0 && cn.uses >= p.maxUses() {
 		cn.Close()
-		go p.openAndPut()
+		go func() {
+			if repl, err := p.openConn(); err == nil {
+				p.waitlist.Put(repl)
+			}
+		}()
 	} else {
 		p.waitlist.Put(cn)
 	}
-}
-
-func (p *Pool) openAndPut() {
-	for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
-		cn, err := p.open(p.cancelCtx)
-		if err == nil {
-			cn.created = time.Now()
-			p.waitlist.Put(cn)
-			return
-		}
-		if p.cancelCtx.Err() != nil {
-			p.waitlist.CancelLoad()
-			return
-		}
-		if i > 3 {
-			p.log().Info("pqlite: pool: error opening new connection; retrying", "err",
-				cmp.Or(context.Cause(p.cancelCtx), err))
-		}
-	}
-	// Loop exhausted without success
-	p.waitlist.CancelLoad()
-}
-
-func (p *Pool) loadConn() *Conn {
-	for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
-		cn, err := p.open(p.cancelCtx)
-		if err == nil {
-			cn.created = time.Now()
-			return cn
-		}
-		if p.cancelCtx.Err() != nil {
-			return nil
-		}
-		if i > 3 {
-			p.log().Info("pqlite: pool: error opening new connection; retrying", "err",
-				cmp.Or(context.Cause(p.cancelCtx), err))
-		}
-	}
-	return nil
 }
 
 func (p *Pool) Get(ctx context.Context) (*Conn, error) {
@@ -190,22 +157,10 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
 	}
 
-	// Fast path: try to get a ready connection without allocating
-	cn, ok := p.waitlist.TryTake()
-	if ok {
-		return cn, nil
-	}
-
-	// Slow path: need to wait. Trigger connection opening if needed.
-	if p.waitlist.ShouldLoad() {
-		go p.openAndPut()
-	}
-
 	// Propagate testHook in case it was set after init
 	p.waitlist.TestHookWaiterCanceled = p.testHookWaitCanceled
 
-	// Now wait for a connection
-	cn, err := p.waitlist.Wait(ctx)
+	cn, err := p.waitlist.Take(ctx, p.loadFunc)
 
 	if errors.Is(err, wait.ErrMaxWaiters) {
 		return nil, ErrPoolFull
@@ -255,6 +210,24 @@ func (p *Pool) Close() error {
 	// theirs back to the pool.
 
 	return nil
+}
+
+func (p *Pool) openConn() (*Conn, error) {
+	for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
+		cn, err := p.open(p.cancelCtx)
+		if err == nil {
+			cn.created = time.Now()
+			return cn, nil
+		}
+		if p.cancelCtx.Err() != nil {
+			return nil, p.cancelCtx.Err()
+		}
+		if i > 3 {
+			p.log().Info("pqlite: pool: error opening new connection; retrying",
+				"err", cmp.Or(context.Cause(p.cancelCtx), err))
+		}
+	}
+	return nil, errors.New("failed to open connection after retries")
 }
 
 func (p *Pool) open(ctx context.Context) (*Conn, error) {

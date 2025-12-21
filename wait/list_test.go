@@ -22,8 +22,8 @@ func TestFairPool(t *testing.T) {
 		loads := new(atomic.Int64)
 		checkTake := func(want int) {
 			t.Helper()
-			got, err := p.Take(t.Context(), func() int {
-				return int(loads.Add(1) - 1)
+			got, err := p.Take(t.Context(), func() (int, error) {
+				return int(loads.Add(1) - 1), nil
 			})
 			if err != nil {
 				if want < 0 {
@@ -79,8 +79,8 @@ func TestFairPool(t *testing.T) {
 
 func TestFairPoolTakeContextCancel(t *testing.T) {
 	// load funcs for testing
-	shouldNotCall := func() int { panic("should not call load func") }
-	fourtyTwo := func() int { return 42 }
+	shouldNotCall := func() (int, error) { panic("should not call load func") }
+	fourtyTwo := func() (int, error) { return 42, nil }
 
 	t.Run("early cancel", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
@@ -176,12 +176,71 @@ func TestFairPoolTakeContextCancel(t *testing.T) {
 	})
 }
 
+func TestTakeLoadErrorAllowsRetry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p := &wait.List[int]{MaxItems: 1, MaxWaiters: 2}
+
+		loadErrStarted := make(chan struct{})
+		gotErrWaiter := make(chan int, 1)
+		go func() {
+			v, err := p.Take(t.Context(), func() (int, error) {
+				close(loadErrStarted)
+				return 0, errors.New("boom")
+			})
+			if err != nil {
+				t.Errorf("first waiter err = %v", err)
+				return
+			}
+			gotErrWaiter <- v
+		}()
+
+		synctest.Wait()
+		select {
+		case <-loadErrStarted:
+		default:
+			t.Fatal("load function returning error did not start")
+		}
+
+		loadOKStarted := make(chan struct{})
+		gotSecond := make(chan int, 1)
+		go func() {
+			v, err := p.Take(t.Context(), func() (int, error) {
+				close(loadOKStarted)
+				return 1, nil
+			})
+			if err != nil {
+				t.Errorf("second waiter err = %v", err)
+				return
+			}
+			gotSecond <- v
+		}()
+
+		synctest.Wait()
+		select {
+		case <-loadOKStarted:
+		default:
+			t.Fatal("load after error did not start")
+		}
+
+		// Deliver a second value so the second waiter can complete.
+		p.Put(2)
+		synctest.Wait()
+
+		if v := <-gotErrWaiter; v != 1 {
+			t.Fatalf("first waiter got %d, want 1", v)
+		}
+		if v := <-gotSecond; v != 2 {
+			t.Fatalf("second waiter got %d, want 2", v)
+		}
+	})
+}
+
 func BenchmarkFair(b *testing.B) {
 	b.Run("uncontended", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
 			p := &wait.List[int]{MaxItems: 10}
 			for pb.Next() {
-				v, err := p.Take(context.Background(), func() int { return 42 })
+				v, err := p.Take(context.Background(), func() (int, error) { return 42, nil })
 				if err != nil {
 					b.Fatal("Take:", err)
 				}
@@ -208,7 +267,7 @@ func BenchmarkFair(b *testing.B) {
 			zzz := rand.NewZipf(rand.New(rand.NewPCG(1, 2)), 2.0, 1.5, 100)
 			for pb.Next() {
 				ttt := time.Now()
-				h, err := p.Take(context.Background(), func() int { return 42 })
+				h, err := p.Take(context.Background(), func() (int, error) { return 42, nil })
 				if err != nil {
 					b.Fatal("Take:", err)
 				}
@@ -305,10 +364,10 @@ func TestWaitListClose(t *testing.T) {
 
 			ctx := context.Background()
 
-			// Start a waiter
+			// Start a waiter that will rely on another loader
 			errCh := make(chan error, 1)
 			go func() {
-				_, err := p.Wait(ctx)
+				_, err := p.Take(ctx, func() (int, error) { return 0, errors.New("boom") })
 				errCh <- err
 			}()
 
@@ -323,7 +382,7 @@ func TestWaitListClose(t *testing.T) {
 
 			err := <-errCh
 			if !errors.Is(err, wait.ErrClosed) {
-				t.Errorf("Wait() err = %v, want wait.ErrClosed", err)
+				t.Errorf("Take() err = %v, want wait.ErrClosed", err)
 			}
 		})
 	})
@@ -341,7 +400,7 @@ func TestWaitListClose(t *testing.T) {
 			valCh := make(chan int, 1)
 			errCh := make(chan error, 1)
 			go func() {
-				v, err := p.Wait(ctx)
+				v, err := p.Take(ctx, func() (int, error) { return 0, errors.New("boom") })
 				if err != nil {
 					errCh <- err
 				} else {
@@ -369,7 +428,7 @@ func TestWaitListClose(t *testing.T) {
 			case err := <-errCh:
 				// Got an error - this is fine if Close won the race
 				if !errors.Is(err, wait.ErrClosed) {
-					t.Errorf("Wait() err = %v, want wait.ErrClosed", err)
+					t.Errorf("Take() err = %v, want wait.ErrClosed", err)
 				}
 			default:
 				t.Error("waiter should have been unblocked")
@@ -383,9 +442,9 @@ func TestWaitListClose(t *testing.T) {
 
 			p.Close()
 
-			_, err := p.Wait(context.Background())
+			_, err := p.Take(context.Background(), nil)
 			if !errors.Is(err, wait.ErrClosed) {
-				t.Errorf("Wait() err = %v, want wait.ErrClosed", err)
+				t.Errorf("Take() err = %v, want wait.ErrClosed", err)
 			}
 		})
 	})
@@ -400,9 +459,9 @@ func TestWaitListClose(t *testing.T) {
 			p.Close()
 
 			// Should still return wait.ErrClosed
-			_, err := p.Wait(context.Background())
+			_, err := p.Take(context.Background(), nil)
 			if !errors.Is(err, wait.ErrClosed) {
-				t.Errorf("Wait() err = %v, want wait.ErrClosed", err)
+				t.Errorf("Take() err = %v, want wait.ErrClosed", err)
 			}
 		})
 	})
