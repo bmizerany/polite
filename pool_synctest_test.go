@@ -3,7 +3,6 @@ package pqlite
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -113,16 +112,7 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 }
 
 func (p *Pool) checkAndDrainPool() {
-	for {
-		v := p.connChanPool.Get()
-		if v == nil {
-			break
-		}
-		ch := v.(chan *Conn) // panic if wrong type
-		if len(ch) > 0 {
-			panic(fmt.Errorf("non-empty Conn in pool: len = %d!", len(ch)))
-		}
-	}
+	// With WaitList, channel pooling is internal, so this is a no-op
 }
 
 func TestPoolSyncGetNearMissContextCancel(t *testing.T) {

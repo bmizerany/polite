@@ -349,7 +349,7 @@ func BenchmarkPoolStartNewConn(b *testing.B) {
 	}
 
 	for b.Loop() {
-		p.startNewConn(nil)
+		p.openAndPut()
 	}
 }
 
