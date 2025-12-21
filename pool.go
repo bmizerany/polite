@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"blake.io/pqlite/backoff"
+	"blake.io/pqlite/wait"
 )
 
 // Defaults
@@ -87,7 +88,7 @@ type Pool struct {
 
 	Logger *slog.Logger // default is slog.Default()
 
-	waitlist  WaitList[*Conn]
+	waitlist  wait.List[*Conn]
 	initOnce  sync.Once
 	cancelCtx context.Context
 	cancel    context.CancelCauseFunc
@@ -109,7 +110,7 @@ func (p *Pool) init() {
 		p.waitlist.MaxItems = p.maxOpen()
 		p.waitlist.MaxWaiters = p.maxWaiting()
 		if p.testHookWaitCanceled != nil {
-			p.waitlist.testHookWaiterCanceled = p.testHookWaitCanceled
+			p.waitlist.TestHookWaiterCanceled = p.testHookWaitCanceled
 		}
 	})
 }
@@ -146,7 +147,7 @@ func (p *Pool) openAndPut() {
 			return
 		}
 		if p.cancelCtx.Err() != nil {
-			p.waitlist.cancelLoad()
+			p.waitlist.CancelLoad()
 			return
 		}
 		if i > 3 {
@@ -155,7 +156,7 @@ func (p *Pool) openAndPut() {
 		}
 	}
 	// Loop exhausted without success
-	p.waitlist.cancelLoad()
+	p.waitlist.CancelLoad()
 }
 
 func (p *Pool) loadConn() *Conn {
@@ -196,20 +197,20 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	}
 
 	// Slow path: need to wait. Trigger connection opening if needed.
-	if p.waitlist.shouldLoad() {
+	if p.waitlist.ShouldLoad() {
 		go p.openAndPut()
 	}
 
 	// Propagate testHook in case it was set after init
-	p.waitlist.testHookWaiterCanceled = p.testHookWaitCanceled
+	p.waitlist.TestHookWaiterCanceled = p.testHookWaitCanceled
 
 	// Now wait for a connection
 	cn, err := p.waitlist.Wait(ctx)
 
-	if errors.Is(err, ErrMaxWaiters) {
+	if errors.Is(err, wait.ErrMaxWaiters) {
 		return nil, ErrPoolFull
 	}
-	if errors.Is(err, ErrClosed) {
+	if errors.Is(err, wait.ErrClosed) {
 		// Pool was closed while waiting
 		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
 	}
