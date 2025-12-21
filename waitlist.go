@@ -26,17 +26,15 @@ type WaitList[T any] struct {
 	MaxWaiters int
 
 	// readyMu guards the ready list and loads counter.
-	// It also guards waitersMu (see below).
-	readyMu   sync.Mutex
-	ready     queues.List[T]      // LIFO list of ready items (PushFront+PopFront)
-	loads     int                 // number of items loaded in all calls to Take
-	readyFree []*queues.Handle[T] // reusable ready list handles
+	readyMu sync.Mutex
+	ready   queues.Lifo[T] // LIFO stack of ready items
+	loads   int            // number of items loaded in all calls to Take
 
 	// waitersMu guards waiters (and testHookWaiterCanceled).
 	waitersMu sync.Mutex
-	waiters   queues.List[chan T] // FIFO list of waiters (PushFront+PopBack)
+	waiters   queues.Fifo[chan T] // FIFO queue of waiters
 
-	freeWaitChans queues.Fifo[chan T] // reusable waiter channels
+	chanPool sync.Pool // pool for waiter channels
 
 	testHookWaiterCanceled func(ch chan T)
 }
@@ -59,9 +57,7 @@ func (p *WaitList[T]) Take(ctx context.Context, load func() T) (T, error) {
 	}
 
 	p.readyMu.Lock()
-	if node := p.ready.PopFront(); node != nil {
-		v := node.Value()
-		p.recycleReady(node)
+	if v, ok := p.ready.Pop(); ok {
 		p.readyMu.Unlock()
 		return v, nil
 	}
@@ -74,11 +70,11 @@ func (p *WaitList[T]) Take(ctx context.Context, load func() T) (T, error) {
 	}
 
 	// Get in line before we start any loading to ensure FIFO order.
-	ch, _ := p.freeWaitChans.Shift()
+	ch, _ := p.chanPool.Get().(chan T)
 	if ch == nil {
 		ch = make(chan T, 1)
 	}
-	waiterHandle := p.waiters.PushFront(nil, ch)
+	p.waiters.Unshift(ch)
 
 	if p.MaxItems == 0 || p.loads < p.MaxItems {
 		p.loads++
@@ -105,6 +101,7 @@ func (p *WaitList[T]) Take(ctx context.Context, load func() T) (T, error) {
 
 	select {
 	case v := <-ch:
+		p.chanPool.Put(ch)
 		return v, nil
 	case <-ctx.Done():
 		if p.testHookWaiterCanceled != nil {
@@ -112,15 +109,18 @@ func (p *WaitList[T]) Take(ctx context.Context, load func() T) (T, error) {
 		}
 
 		p.waitersMu.Lock()
-		p.waiters.Unlink(waiterHandle)
-		p.freeWaitChans.Unshift(ch)
+		p.waiters.DeleteFunc(func(wch chan T) bool {
+			return ch == wch
+		})
 		p.waitersMu.Unlock()
 
 		select {
 		case v := <-ch:
 			// near miss
+			p.chanPool.Put(ch)
 			return v, nil
 		default:
+			p.chanPool.Put(ch)
 		}
 
 		return zero, ctx.Err()
@@ -134,14 +134,7 @@ func (p *WaitList[T]) Take(ctx context.Context, load func() T) (T, error) {
 func (p *WaitList[T]) TryTake() (_ T, ok bool) {
 	p.readyMu.Lock()
 	defer p.readyMu.Unlock()
-	node := p.ready.PopFront()
-	if node != nil {
-		v := node.Value()
-		p.recycleReady(node)
-		return v, true
-	}
-	var zero T
-	return zero, false
+	return p.ready.Pop()
 }
 
 // Put hands v to the longest waiting waiter, or adds it to the ready list for
@@ -151,9 +144,8 @@ func (p *WaitList[T]) TryTake() (_ T, ok bool) {
 func (p *WaitList[T]) Put(v T) {
 	p.readyMu.Lock()
 	p.waitersMu.Lock()
-	waiter := p.waiters.PopBack()
-	if waiter != nil {
-		ch := waiter.Value()
+	ch, ok := p.waiters.Shift()
+	if ok {
 		select {
 		case ch <- v:
 		default:
@@ -163,21 +155,86 @@ func (p *WaitList[T]) Put(v T) {
 		p.readyMu.Unlock()
 		return
 	}
-	p.ready.PushFront(p.getReadyHandle(), v)
+	p.ready.Push(v)
 	p.waitersMu.Unlock()
 	p.readyMu.Unlock()
 }
 
-func (p *WaitList[T]) getReadyHandle() *queues.Handle[T] {
-	if n := len(p.readyFree); n > 0 {
-		h := p.readyFree[n-1]
-		p.readyFree = p.readyFree[:n-1]
-		return h
+// shouldLoad returns true if a new item should be loaded.
+// If true, the caller must call Put() with the loaded item, or cancelLoad() if loading fails.
+func (p *WaitList[T]) shouldLoad() bool {
+	p.readyMu.Lock()
+	defer p.readyMu.Unlock()
+
+	if p.MaxItems == 0 || p.loads < p.MaxItems {
+		p.loads++
+		return true
 	}
-	return new(queues.Handle[T])
+	return false
 }
 
-func (p *WaitList[T]) recycleReady(h *queues.Handle[T]) {
-	*h = queues.Handle[T]{}
-	p.readyFree = append(p.readyFree, h)
+// cancelLoad decrements the loads counter when a load operation fails.
+func (p *WaitList[T]) cancelLoad() {
+	p.readyMu.Lock()
+	p.loads--
+	p.readyMu.Unlock()
+}
+
+// Wait blocks until an item is available or ctx is done.
+// Unlike Take, it does not trigger loading - the caller must handle that.
+func (p *WaitList[T]) Wait(ctx context.Context) (T, error) {
+	var zero T
+	if ctx.Err() != nil {
+		return zero, ctx.Err()
+	}
+
+	p.readyMu.Lock()
+	if v, ok := p.ready.Pop(); ok {
+		p.readyMu.Unlock()
+		return v, nil
+	}
+
+	p.waitersMu.Lock()
+	if p.MaxWaiters > 0 && p.waiters.Len() >= p.MaxWaiters {
+		p.waitersMu.Unlock()
+		p.readyMu.Unlock()
+		return zero, ErrMaxWaiters
+	}
+
+	// Get in line and wait
+	ch, _ := p.chanPool.Get().(chan T)
+	if ch == nil {
+		ch = make(chan T, 1)
+	}
+	p.waiters.Unshift(ch)
+
+	p.waitersMu.Unlock()
+	p.readyMu.Unlock()
+
+	select {
+	case v := <-ch:
+		p.chanPool.Put(ch)
+		return v, nil
+	case <-ctx.Done():
+		if p.testHookWaiterCanceled != nil {
+			p.testHookWaiterCanceled(ch)
+		}
+
+		p.waitersMu.Lock()
+		p.waiters.DeleteFunc(func(wch chan T) bool {
+			return ch == wch
+		})
+		p.waitersMu.Unlock()
+
+		select {
+		case v := <-ch:
+			// near miss
+			p.chanPool.Put(ch)
+			return v, nil
+		default:
+			p.chanPool.Put(ch)
+		}
+
+		return zero, ctx.Err()
+	}
 }

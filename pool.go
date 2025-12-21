@@ -146,6 +146,7 @@ func (p *Pool) openAndPut() {
 			return
 		}
 		if p.cancelCtx.Err() != nil {
+			p.waitlist.cancelLoad()
 			return
 		}
 		if i > 3 {
@@ -153,6 +154,26 @@ func (p *Pool) openAndPut() {
 				cmp.Or(context.Cause(p.cancelCtx), err))
 		}
 	}
+	// Loop exhausted without success
+	p.waitlist.cancelLoad()
+}
+
+func (p *Pool) loadConn() *Conn {
+	for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
+		cn, err := p.open(p.cancelCtx)
+		if err == nil {
+			cn.created = time.Now()
+			return cn
+		}
+		if p.cancelCtx.Err() != nil {
+			return nil
+		}
+		if i > 3 {
+			p.log().Info("pqlite: pool: error opening new connection; retrying", "err",
+				cmp.Or(context.Cause(p.cancelCtx), err))
+		}
+	}
+	return nil
 }
 
 func (p *Pool) Get(ctx context.Context) (*Conn, error) {
@@ -161,23 +182,19 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
 	}
 
-	cn, err := p.waitlist.Take(ctx, func() *Conn {
-		for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
-			cn, err := p.open(p.cancelCtx)
-			if err == nil {
-				cn.created = time.Now()
-				return cn
-			}
-			if p.cancelCtx.Err() != nil {
-				return nil
-			}
-			if i > 3 {
-				p.log().Info("pqlite: pool: error opening new connection; retrying", "err",
-					cmp.Or(context.Cause(p.cancelCtx), err))
-			}
-		}
-		return nil
-	})
+	// Fast path: try to get a ready connection without allocating
+	cn, ok := p.waitlist.TryTake()
+	if ok {
+		return cn, nil
+	}
+
+	// Slow path: need to wait. Trigger connection opening if needed.
+	if p.waitlist.shouldLoad() {
+		go p.openAndPut()
+	}
+
+	// Now wait for a connection
+	cn, err := p.waitlist.Wait(ctx)
 
 	if errors.Is(err, ErrMaxWaiters) {
 		return nil, ErrPoolFull
@@ -212,7 +229,9 @@ func (p *Pool) Close() error {
 		if !ok {
 			break
 		}
-		cn.Close()
+		if cn != nil {
+			cn.Close()
+		}
 	}
 
 	// TODO(bmizerany): wait for all connections to be returned? We should
