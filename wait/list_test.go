@@ -1,4 +1,4 @@
-package pqlite
+package wait_test
 
 import (
 	"context"
@@ -8,11 +8,13 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"blake.io/pqlite/wait"
 )
 
 func TestFairPool(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		p := &WaitList[int]{
+		p := &wait.List[int]{
 			MaxItems:   2,
 			MaxWaiters: 3,
 		}
@@ -25,8 +27,8 @@ func TestFairPool(t *testing.T) {
 			})
 			if err != nil {
 				if want < 0 {
-					if !errors.Is(err, ErrMaxWaiters) {
-						t.Errorf("err = %v, want ErrMaxWaiters", err)
+					if !errors.Is(err, wait.ErrMaxWaiters) {
+						t.Errorf("err = %v, want wait.ErrMaxWaiters", err)
 					}
 					return
 				}
@@ -82,7 +84,7 @@ func TestFairPoolTakeContextCancel(t *testing.T) {
 
 	t.Run("early cancel", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			p := &WaitList[int]{
+			p := &wait.List[int]{
 				MaxItems:   1,
 				MaxWaiters: 10,
 			}
@@ -99,7 +101,7 @@ func TestFairPoolTakeContextCancel(t *testing.T) {
 
 	t.Run("waiting cancel", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			p := &WaitList[int]{
+			p := &wait.List[int]{
 				MaxItems:   1,
 				MaxWaiters: 10,
 			}
@@ -133,12 +135,12 @@ func TestFairPoolTakeContextCancel(t *testing.T) {
 
 	t.Run("near miss", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			p := &WaitList[int]{
+			p := &wait.List[int]{
 				MaxItems:   1,
 				MaxWaiters: 10,
 
 				// induce near miss
-				testHookWaiterCanceled: func(ch chan int) { ch <- 42 },
+				TestHookWaiterCanceled: func(ch chan int) { ch <- 42 },
 			}
 
 			ctx, cancel := context.WithCancel(t.Context())
@@ -177,7 +179,7 @@ func TestFairPoolTakeContextCancel(t *testing.T) {
 func BenchmarkFair(b *testing.B) {
 	b.Run("uncontended", func(b *testing.B) {
 		b.RunParallel(func(pb *testing.PB) {
-			p := &WaitList[int]{MaxItems: 10}
+			p := &wait.List[int]{MaxItems: 10}
 			for pb.Next() {
 				v, err := p.Take(context.Background(), func() int { return 42 })
 				if err != nil {
@@ -197,7 +199,7 @@ func BenchmarkFair(b *testing.B) {
 		var tttt atomic.Int64 // total-time-to-take
 		var tttp atomic.Int64 // total-time-to-put
 
-		p := &WaitList[int]{
+		p := &wait.List[int]{
 			MaxItems:   10,
 			MaxWaiters: 100,
 		}
@@ -233,7 +235,7 @@ func BenchmarkFair(b *testing.B) {
 func TestWaitListClose(t *testing.T) {
 	t.Run("Put after Close does nothing", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			p := &WaitList[int]{
+			p := &wait.List[int]{
 				MaxItems:   10,
 				MaxWaiters: 10,
 			}
@@ -254,7 +256,7 @@ func TestWaitListClose(t *testing.T) {
 
 	t.Run("concurrent Close and Put", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			p := &WaitList[int]{
+			p := &wait.List[int]{
 				MaxItems:   10,
 				MaxWaiters: 10,
 			}
@@ -296,7 +298,7 @@ func TestWaitListClose(t *testing.T) {
 
 	t.Run("Close wakes up waiters", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			p := &WaitList[int]{
+			p := &wait.List[int]{
 				MaxItems:   1,
 				MaxWaiters: 10,
 			}
@@ -316,19 +318,19 @@ func TestWaitListClose(t *testing.T) {
 			// Close should wake it up
 			p.Close()
 
-			// Waiter should get ErrClosed
+			// Waiter should get wait.ErrClosed
 			synctest.Wait()
 
 			err := <-errCh
-			if !errors.Is(err, ErrClosed) {
-				t.Errorf("Wait() err = %v, want ErrClosed", err)
+			if !errors.Is(err, wait.ErrClosed) {
+				t.Errorf("Wait() err = %v, want wait.ErrClosed", err)
 			}
 		})
 	})
 
 	t.Run("Put during Close with waiter", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			p := &WaitList[int]{
+			p := &wait.List[int]{
 				MaxItems:   1,
 				MaxWaiters: 10,
 			}
@@ -357,7 +359,7 @@ func TestWaitListClose(t *testing.T) {
 			// Let both run
 			synctest.Wait()
 
-			// Waiter should get either the value or ErrClosed
+			// Waiter should get either the value or wait.ErrClosed
 			select {
 			case v := <-valCh:
 				// Got the value - this is fine if Put won the race
@@ -366,8 +368,8 @@ func TestWaitListClose(t *testing.T) {
 				}
 			case err := <-errCh:
 				// Got an error - this is fine if Close won the race
-				if !errors.Is(err, ErrClosed) {
-					t.Errorf("Wait() err = %v, want ErrClosed", err)
+				if !errors.Is(err, wait.ErrClosed) {
+					t.Errorf("Wait() err = %v, want wait.ErrClosed", err)
 				}
 			default:
 				t.Error("waiter should have been unblocked")
@@ -375,32 +377,32 @@ func TestWaitListClose(t *testing.T) {
 		})
 	})
 
-	t.Run("Wait after Close returns ErrClosed", func(t *testing.T) {
+	t.Run("Wait after Close returns wait.ErrClosed", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			p := &WaitList[int]{}
+			p := &wait.List[int]{}
 
 			p.Close()
 
 			_, err := p.Wait(context.Background())
-			if !errors.Is(err, ErrClosed) {
-				t.Errorf("Wait() err = %v, want ErrClosed", err)
+			if !errors.Is(err, wait.ErrClosed) {
+				t.Errorf("Wait() err = %v, want wait.ErrClosed", err)
 			}
 		})
 	})
 
 	t.Run("Close is idempotent", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			p := &WaitList[int]{}
+			p := &wait.List[int]{}
 
 			// Close multiple times - should not panic
 			p.Close()
 			p.Close()
 			p.Close()
 
-			// Should still return ErrClosed
+			// Should still return wait.ErrClosed
 			_, err := p.Wait(context.Background())
-			if !errors.Is(err, ErrClosed) {
-				t.Errorf("Wait() err = %v, want ErrClosed", err)
+			if !errors.Is(err, wait.ErrClosed) {
+				t.Errorf("Wait() err = %v, want wait.ErrClosed", err)
 			}
 		})
 	})
