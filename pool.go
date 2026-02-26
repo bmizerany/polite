@@ -81,12 +81,13 @@ type Pool struct {
 	// error. If MaxWaiting is zero, then [DefaultPoolMaxWaiters] is used.
 	MaxWaiting int
 
-	// MaxLifetime is the maximum amount of time a connection can be
-	// idle before it is closed. If MaxLifetime is zero, then
-	// DefaultPoolMaxLifetime is used.
+	// MaxLifetime is the maximum age of a connection since creation
+	// before it is closed. If MaxLifetime is zero, then
+	// [DefaultPoolMaxLifetime] is used.
 	MaxLifetime time.Duration
 
-	Logger *slog.Logger // default is slog.Default()
+	// Logger logs pool activity. If Logger is nil, slog.Default() is used.
+	Logger *slog.Logger
 
 	waitlist  wait.List[*Conn]
 	loadFunc  func() (*Conn, error) // load function created once in init
