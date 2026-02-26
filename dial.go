@@ -27,10 +27,9 @@ type Config struct {
 }
 
 // Open opens a connection to postgres using the parameters in dsnOrURL,
-// which is a DSN or URL. The host, port, and sslmode parameters are
-// defaulted to localhost, 5432, and verify, respectively. No other
-// parameter has a default, including user, which must be specified by users
-// of Open.
+// which is a DSN or URL. By default, host=/tmp (Unix socket), port=5432,
+// and sslmode=require. The user parameter is defaulted and does not need to
+// be specified explicitly.
 //
 // If sslmode is "disable", then no TLS is used. Otherwise, TLS is used.
 func Open(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
