@@ -106,9 +106,8 @@ func (p *Pool) init() {
 }
 
 // Put adds a connection back to the pool. Put should be called when
-// finished with a connection to return it to the pool. If the Conn is
-// closed, nothing happens. If the pool is closed, the connection is also
-// closed.
+// finished with a connection to return it to the pool. If the pool is
+// closed, the connection is closed.
 //
 // Put is a non-blocking operation.
 func (p *Pool) Put(cn *Conn) {
