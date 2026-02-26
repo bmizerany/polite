@@ -21,8 +21,8 @@ type Listener struct {
 	c *Conn
 }
 
-// OpenListener opens a dedicated connection for listening for and sending
-// notifications on channels using postgres's LISTEN/NOITFY feature.
+// OpenListener opens a dedicated connection for listening for notifications
+// on channels using postgres's LISTEN/NOTIFY feature.
 func OpenListener(ctx context.Context, dsnOrURL string, cfg *Config) (*Listener, error) {
 	cn, err := Open(ctx, dsnOrURL, cfg)
 	if err != nil {
