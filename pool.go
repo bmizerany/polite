@@ -43,8 +43,8 @@ func Opener(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 	}
 }
 
-// DefaultOpener returns a function that opens a connection to the database
-// using the DefaultDSN with a nil config.
+// DefaultOpener opens a connection to the database using the DefaultDSN with
+// a nil config.
 func DefaultOpener(context.Context) (*Conn, error) {
 	cn, err := Open(context.Background(), DefaultDSN, nil)
 	if err != nil {
