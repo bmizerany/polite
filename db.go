@@ -73,8 +73,10 @@ type Result struct {
 }
 
 // Exec executes a query that is not intended to return rows, such as an
-// INSERT, UPDATE, or DELETE. It returns the number of rows affected (not the
-// number of rows matched) in a [Result] or any error encountered.
+// INSERT, UPDATE, or DELETE. It returns only an error.
+//
+// After Exec returns, call [Conn.LastResult] to get the number of rows
+// affected (not the number of rows matched).
 func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
 	for row, err := range c.Query(ctx, sql, args...) {
 		if err != nil {
