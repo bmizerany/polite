@@ -58,8 +58,8 @@ func DefaultOpener(context.Context) (*Conn, error) {
 // https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-TARGET-SESSION-ATTRS
 
 // Pool is a pool of connections. It is safe for concurrent use by multiple
-// goroutines. The zero value is a pool with no limit on the number of
-// waiters, ready for use.
+// goroutines. The zero value is ready for use and uses
+// [DefaultPoolMaxWaiters] as the waiting limit.
 type Pool struct {
 	// Open is a function that is called to open a new connection when
 	// the pool is empty.
@@ -67,8 +67,8 @@ type Pool struct {
 	// If Open is nil then DefaultOpener is used.
 	Open func(ctx context.Context) (*Conn, error)
 
-	// MaxConns is the maximum number of connections that can be open at
-	// once. If MaxConns is zero, then DefaultPoolMaxConns is used.
+	// MaxOpen is the maximum number of connections that can be open at
+	// once. If MaxOpen is zero, then DefaultPoolMaxConns is used.
 	MaxOpen int
 
 	// MaxUses is the maximum number of times a connection can be used
@@ -156,11 +156,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	return cn, err
 }
 
-// CloseExpiredConns closes any connections that have been idle for more than
-// MaxLifetime.
-//
-// It returns all errors encountered while closing connections wrapped into
-// one.
+// CloseExpiredConns is kept for compatibility and is currently a no-op.
 func (p *Pool) CloseExpiredConns() error {
 	// With WaitList, expired connections are handled in Put()
 	// This method is kept for compatibility but is now a no-op
