@@ -285,8 +285,8 @@ func (r *Row) ParseString() (string, error) {
 
 // Close discards any remaining columns in the row.
 //
-// Most users will not need to call this method, since Rows.All will call it
-// automatically after each yield.
+// In a for-range loop over Query's iter.Seq2, call Close when you stop reading
+// columns from the current row before moving on.
 func (r *Row) Close() error {
 	for {
 		_, err := r.View()
