@@ -32,7 +32,7 @@ var (
 
 // Opener returns a function that opens a connection to the database with
 // the provided DSN and configuration. The returned function can be assigned
-// to the [Pool.Open] field of a Pool.
+// to the Open field of a [Pool].
 func Opener(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 	return func(ctx context.Context) (*Conn, error) {
 		cn, err := Open(ctx, dsn, cfg)
