@@ -45,13 +45,12 @@ type Conn struct {
 	uses int
 }
 
-// Ping verifies that c can complete a simple round trip to the backend.
-// It sends "SELECT 1" using [Conn.Exec].
+// Ping verifies that c can complete a simple round trip to the backend by
+// executing SELECT 1.
+// It returns any error, if any, that occurred while executing the query or
+// reading the response.
 func (c *Conn) Ping(ctx context.Context) error {
-	if err := c.Exec(ctx, "SELECT 1"); err != nil {
-		return err
-	}
-	return nil
+	return c.Exec(ctx, "SELECT 1")
 }
 
 func (c *Conn) Close() error {
@@ -78,7 +77,7 @@ type Result struct {
 }
 
 // Exec executes a query that is not intended to return rows, such as an
-// INSERT, UPDATE, or DELETE. It returns only an error.
+// INSERT, UPDATE, or DELETE. It returns only an error, if any.
 //
 // After Exec returns, call [Conn.LastResult] to get the number of rows
 // affected (not the number of rows matched).
