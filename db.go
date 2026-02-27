@@ -70,7 +70,10 @@ func (c *Conn) Close() error {
 	return c.cn.Close()
 }
 
+// Result reports metadata from the most recent completed command.
+// Use [Conn.LastResult] to retrieve it.
 type Result struct {
+	// RowsAffected is the number of rows affected by the command.
 	RowsAffected int
 }
 
