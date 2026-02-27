@@ -292,8 +292,9 @@ func (r *Row) ParseString() (string, error) {
 
 // Close discards any remaining columns in the row.
 //
-// In a for-range loop over Query's iter.Seq2, call Close when you stop reading
-// columns from the current row before moving on.
+// In a range loop over [Conn.Query] or [Conn.CopyTo], each yielded [Row] must
+// be fully consumed before the loop advances or exits. If you stop reading
+// columns early, call Close.
 func (r *Row) Close() error {
 	for {
 		_, err := r.View()
