@@ -156,13 +156,6 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	return cn, err
 }
 
-// CloseExpiredConns is kept for compatibility and is currently a no-op.
-func (p *Pool) CloseExpiredConns() error {
-	// With WaitList, expired connections are handled in Put()
-	// This method is kept for compatibility but is now a no-op
-	return nil
-}
-
 func (p *Pool) Close() error {
 	p.init()
 	if p.cancelCtx.Err() != nil {
