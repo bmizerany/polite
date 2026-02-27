@@ -56,8 +56,9 @@
 //		_ = gotString
 //	}
 //
-// If you break a range loop over [Conn.Query] or [Conn.CopyTo], the iterator
-// closes the active [Row] before it returns.
+// In a range loop over [Conn.Query] or [Conn.CopyTo], each yielded [Row] must
+// be fully consumed before the loop advances or exits. If you stop reading
+// columns early, call [Row.Close] on that row first.
 //
 // # Transactions and One-Shot Batch Execution
 //
