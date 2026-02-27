@@ -20,14 +20,17 @@ func (e CopyError) Error() string { return string(e) }
 
 // CopyTo runs PostgreSQL COPY ... TO STDOUT WITH (FORMAT binary) on table.
 //
-// columns is optional. Nil or empty copies all columns. A non-empty slice
-// copies only those columns, in slice order.
+// The columns argument is optional. When columns is nil or empty, CopyTo
+// copies all table columns in table order. When columns is non-empty, CopyTo
+// copies only the listed columns in slice order.
 //
 // The returned iterator yields one [Row] per copied row with raw PostgreSQL
-// binary column values.
+// binary column values. If the COPY stream fails, the iterator yields that
+// error.
 //
-// As with [Conn.Query], fully consume each yielded row before continuing. If
-// iteration stops early, call [Row.Close] on the current row.
+// As with [Conn.Query], each yielded [Row] must be fully consumed before
+// iteration advances. If iteration stops early, call [Row.Close] on the
+// current row first.
 func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.Seq2[*Row, error] {
 	var b strings.Builder
 	b.WriteString("COPY ")
@@ -50,14 +53,18 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.
 
 // CopyFrom runs PostgreSQL COPY ... FROM STDIN WITH (FORMAT binary) into table.
 //
-// columns is optional. Nil or empty targets all columns in table order. A
-// non-empty slice maps values to listed columns in slice order.
+// The columns argument is optional. When columns is nil or empty, CopyFrom
+// targets all table columns in table order. When columns is non-empty, each
+// input row maps to the listed columns in slice order.
 //
-// from yields one row per iteration as raw PostgreSQL binary column values. If
-// from yields an error, CopyFrom stops and returns that error.
+// The from iterator yields one row per iteration as raw PostgreSQL binary
+// column values. If from yields an error, CopyFrom aborts the COPY and returns
+// that error.
 //
-// Iterator errors are hidden from PostgreSQL by default. Wrap an error with
-// [CopyError] to send a sanitized message through COPY FAIL.
+// Aborting a COPY sends COPY FAIL to PostgreSQL, and PostgreSQL may log the
+// failure message. To avoid accidental logging of frontend/internal details,
+// CopyFrom does not forward iterator error text by default. Use [CopyError] to
+// send an error message verbatim through COPY FAIL.
 func (c *Conn) CopyFrom(ctx context.Context, table string, columns []string, from iter.Seq2[[][]byte, error]) error {
 	if err := c.copyFrom(ctx, table, columns, from); err != nil {
 		var e *CopyError
