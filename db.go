@@ -45,6 +45,8 @@ type Conn struct {
 	uses int
 }
 
+// Ping verifies that c can complete a simple round trip to the backend.
+// It sends "SELECT 1" using [Conn.Exec].
 func (c *Conn) Ping(ctx context.Context) error {
 	if err := c.Exec(ctx, "SELECT 1"); err != nil {
 		return err
@@ -87,6 +89,8 @@ func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
 	return nil
 }
 
+// LastResult returns the result of the most recent completed command on c.
+// After [Conn.Exec], this includes the number of rows affected.
 func (c *Conn) LastResult() Result {
 	return Result{RowsAffected: int(c.rowsAffected)}
 }
