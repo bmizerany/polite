@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-// CopyFailError is an error that can be returned by an iter passed into
+// CopyError is an error that can be returned by an iter passed into
 // CopyFrom that will be used as the message sent to the server when a COPY
 // FROM fails.
 //
 // By default, CopyFrom does not send the error message to the server to
 // avoid accidentally sending sensitive information. If you want to send the
-// error message to the server, you can use the CopyFailError type to wrap the
+// error message to the server, you can use the CopyError type to wrap the
 // error and pass it to CopyFrom via the iter.
-type CopyFailError string
+type CopyError string
 
-func (e CopyFailError) Error() string { return string(e) }
+func (e CopyError) Error() string { return string(e) }
 
 func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.Seq2[*Row, error] {
 	var b strings.Builder
@@ -42,7 +42,7 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.
 
 func (c *Conn) CopyFrom(ctx context.Context, table string, columns []string, from iter.Seq2[[][]byte, error]) error {
 	if err := c.copyFrom(ctx, table, columns, from); err != nil {
-		var e *CopyFailError
+		var e *CopyError
 		if errors.As(err, &e) {
 			c.fc.WriteCopyFail(e.Error())
 		} else {
