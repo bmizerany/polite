@@ -54,7 +54,6 @@ func TestPoolSyncExpired(t *testing.T) {
 		p.Put(cc)
 
 		time.Sleep(3 * time.Second)
-		p.CloseExpiredConns()
 		if sleepPutGet() == cc {
 			t.Fatal("expected new conn")
 		}
