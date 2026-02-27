@@ -240,6 +240,8 @@ func (r *Row) Columns() int {
 	return int(r.numCols)
 }
 
+// View returns the raw bytes for the next column in the row.
+// It advances the row cursor by one column.
 func (r *Row) View() ([]byte, error) {
 	if r.rem == 0 {
 		return nil, ErrOutOfColumns
@@ -252,6 +254,8 @@ func (r *Row) View() ([]byte, error) {
 	return v.Data, nil
 }
 
+// ParseInt reads the next column with [Row.View] and decodes it as a binary
+// integer. Supported widths are 1, 2, 4, and 8 bytes.
 func (r *Row) ParseInt() (int, error) {
 	v, err := r.View()
 	if err != nil {
@@ -274,6 +278,8 @@ func (r *Row) ParseInt() (int, error) {
 
 var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
+// ParseTime reads the next column with [Row.ParseInt] and decodes it as a
+// PostgreSQL timestamp-without-timezone value.
 func (r *Row) ParseTime() (time.Time, error) {
 	microseconds, err := r.ParseInt()
 	if err != nil {
@@ -282,6 +288,7 @@ func (r *Row) ParseTime() (time.Time, error) {
 	return pgEpoch.Add(time.Duration(microseconds) * time.Microsecond), nil
 }
 
+// ParseString reads the next column with [Row.View] and returns it as a string.
 func (r *Row) ParseString() (string, error) {
 	v, err := r.View()
 	if err != nil {
