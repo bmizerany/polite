@@ -1,19 +1,23 @@
-// Package pqlite is a PostgreSQL client for direct wire-protocol access.
+// Package pqlite is a PostgreSQL wire-protocol client for streaming workloads
+// that need explicit connection control and low abstraction overhead without
+// database/sql.
 //
-// pqlite targets streaming workloads that need explicit connection control and
-// low abstraction overhead without database/sql.
+// # Purpose
 //
-// # Core Model
+// pqlite exposes backend sessions directly so callers can control query,
+// COPY, and notification flows with predictable lifecycle behavior.
+//
+// # Core Types
 //
 // [Conn] is one backend session. Use it for [Conn.Query], [Conn.Exec],
 // [Conn.CopyTo], and [Conn.CopyFrom].
 //
 // [Pool] shares [Conn] values across goroutines.
 //
-// [Listener] is a dedicated LISTEN/NOTIFY session. Keep listener streams on
-// dedicated connections when consumers can block.
+// [Listener] is a dedicated LISTEN/NOTIFY session. If a notification consumer
+// can stall, keep that stream on a dedicated [Conn].
 //
-// # Core Guarantees
+// # Query and COPY Contract
 //
 // Query and COPY readers yield iter.Seq2[*Row, error].
 //
@@ -23,7 +27,11 @@
 // COPY APIs use PostgreSQL binary format. [Conn.CopyTo] yields binary column
 // values. [Conn.CopyFrom] expects binary column values.
 //
-// # Streaming Query Pattern
+// Use [Row.View] for raw bytes, [Row.ParseString] for text values,
+// [Row.ParseInt] for integer encodings, and [Row.ParseTime] for
+// timestamp-without-time-zone values.
+//
+// Streaming query pattern:
 //
 //	for row, err := range cn.Query(ctx, "SELECT ...") {
 //		if err != nil {
@@ -32,31 +40,22 @@
 //		// consume row values
 //	}
 //
-// # Exceptions and Safety Defaults
+// # Pool and Listener Behavior
+//
+// [Pool] waiters are FIFO for predictable handoff. [Pool.Close] wakes blocked
+// waiters, and subsequent [Pool.Get] calls fail with [ErrPoolClosed].
+//
+// For waiter cancellation and contention measurements, see
+// wait/CANCELLATION_PERFORMANCE.md.
+//
+// # Safety and Compatibility
 //
 // [Conn.CopyFrom] does not send iterator error text to PostgreSQL by default.
 // This avoids accidental exposure of frontend details in PostgreSQL-visible
-// errors and logs.
+// errors and logs. Wrap errors with [CopyError] to send a sanitized message
+// through COPY FAIL.
 //
-// Wrap errors with [CopyError] to send a sanitized message through COPY FAIL.
-//
-// # Pool and Listener Behavior
-//
-// [Pool] uses FIFO waiters for predictable handoff and no starvation.
-//
-// Listener streams are consumer-driven. If a consumer can stall, keep that
-// stream on a dedicated [Conn].
-//
-// # Compatibility
-//
-// pqlite keeps public APIs and documented semantics stable.
-//
-// Internal protocol handling, buffering strategy, and performance tuning may
-// change across releases.
-//
-// # Parser Helpers
-//
-// Use [Row.View] for raw bytes, [Row.ParseString] for text values,
-// [Row.ParseInt] for integer encodings, and [Row.ParseTime] for
-// timestamp-without-time-zone values.
+// pqlite keeps public APIs and documented semantics stable. Internal protocol
+// handling, buffering strategy, and performance tuning may change across
+// releases.
 package pqlite
