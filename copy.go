@@ -13,12 +13,12 @@ import (
 //
 // CopyFrom hides iterator error text by default to avoid leaking frontend
 // details in server-visible errors or logs. Wrap an error with CopyError when
-// you want to send a deliberate sanitized message.
+// you want to send a sanitized message.
 type CopyError string
 
 func (e CopyError) Error() string { return string(e) }
 
-// CopyTo runs COPY ... TO STDOUT WITH (FORMAT binary) on table.
+// CopyTo runs PostgreSQL COPY ... TO STDOUT WITH (FORMAT binary) on table.
 //
 // columns is optional. Nil or empty copies all columns. A non-empty slice
 // copies only those columns, in slice order.
@@ -48,7 +48,7 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.
 	return c.Query(ctx, b.String())
 }
 
-// CopyFrom runs COPY ... FROM STDIN WITH (FORMAT binary) into table.
+// CopyFrom runs PostgreSQL COPY ... FROM STDIN WITH (FORMAT binary) into table.
 //
 // columns is optional. Nil or empty targets all columns in table order. A
 // non-empty slice maps values to listed columns in slice order.
@@ -57,7 +57,7 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.
 // from yields an error, CopyFrom stops and returns that error.
 //
 // Iterator errors are hidden from PostgreSQL by default. Wrap an error with
-// [CopyError] to send a deliberate sanitized message through COPY FAIL.
+// [CopyError] to send a sanitized message through COPY FAIL.
 func (c *Conn) CopyFrom(ctx context.Context, table string, columns []string, from iter.Seq2[[][]byte, error]) error {
 	if err := c.copyFrom(ctx, table, columns, from); err != nil {
 		var e *CopyError
