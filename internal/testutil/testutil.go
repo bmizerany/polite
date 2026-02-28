@@ -7,6 +7,7 @@ package testutil
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 )
@@ -45,9 +46,20 @@ func SloggerFail(t testing.TB) *slog.Logger {
 	return slog.New(failOnERRORHandler{t, slog.NewTextHandler(logWriter{t}, handlerOptions)})
 }
 
-// Slooger returns a logger suitable for use in tests. It logs to t.Logf and
+// Slogger returns a logger suitable for use in tests. It logs to t.Logf and
 // will fail if the log level is ERROR.
 func Slogger(t testing.TB) *slog.Logger {
 	t.Helper()
 	return slog.New(slog.NewTextHandler(logWriter{t}, handlerOptions))
+}
+
+// Checker returns a function that can be used to check that err wraps or
+// equals want and logs a test error if it does not.
+func Checker(t testing.TB) func(err, want error) {
+	t.Helper()
+	return func(got, want error) {
+		if !errors.Is(got, want) {
+			t.Errorf("err[%[1]T] = %v, want %[2]v", got, want)
+		}
+	}
 }

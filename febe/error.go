@@ -61,8 +61,23 @@ type Error struct {
 	*Notice
 }
 
-func (n *Notice) AsError() *Error {
-	return &Error{Notice: n}
+// ErrorCode creates an *Error with the given code and empty message.
+// This can be conviently used to to check with errors.Is for specific error
+// codes without needing to construct a full *Error.
+//
+// Example:
+//
+//	if errors.Is(err, febe.ErrorCode("23505")) {
+//	    // handle unique violation
+//	}
+//
+// Common errors are defined in the pqlite package for convienience.
+func ErrorCode(code string) *Error {
+	return &Error{Notice: &Notice{Code: code}}
+}
+
+func (e *Notice) AsError() *Error {
+	return &Error{Notice: e}
 }
 
 func (e *Error) Error() string {
@@ -70,6 +85,15 @@ func (e *Error) Error() string {
 	b.WriteString("postgres: ")
 	b.WriteString(e.Message)
 	return b.String()
+}
+
+// Is reports whether the error is an *Error and with the same Code.
+func (e *Error) Is(target error) bool {
+	t, ok := target.(*Error)
+	if !ok {
+		return false
+	}
+	return e.Code == t.Code
 }
 
 type NoticeResponse struct {
