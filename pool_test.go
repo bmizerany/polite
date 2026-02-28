@@ -7,7 +7,6 @@ import (
 	"net"
 	"runtime"
 	"slices"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,7 +14,6 @@ import (
 	"time"
 
 	"blake.io/pqlite/internal/testutil"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPoolMaxUseWithWaiter(t *testing.T) {
@@ -485,15 +483,6 @@ func BenchmarkPool(b *testing.B) {
 	b.Run("driver=pqlite/open=32", func(b *testing.B) { benchmarkPool(b, 32) })
 	b.Run("driver=pqlite/open=48", func(b *testing.B) { benchmarkPool(b, 48) })
 	b.Run("driver=pqlite/open=64", func(b *testing.B) { benchmarkPool(b, 64) })
-
-	b.Run("driver=pgx/open=1", func(b *testing.B) { benchmarkPoolPGX(b, 1) })
-	b.Run("driver=pgx/open=2", func(b *testing.B) { benchmarkPoolPGX(b, 2) })
-	b.Run("driver=pgx/open=4", func(b *testing.B) { benchmarkPoolPGX(b, 4) })
-	b.Run("driver=pgx/open=8", func(b *testing.B) { benchmarkPoolPGX(b, 8) })
-	b.Run("driver=pgx/open=16", func(b *testing.B) { benchmarkPoolPGX(b, 16) })
-	b.Run("driver=pgx/open=32", func(b *testing.B) { benchmarkPoolPGX(b, 32) })
-	b.Run("driver=pgx/open=48", func(b *testing.B) { benchmarkPoolPGX(b, 48) })
-	b.Run("driver=pgx/open=64", func(b *testing.B) { benchmarkPoolPGX(b, 64) })
 }
 
 func benchmarkPool(b *testing.B, maxOpen int) {
@@ -531,56 +520,6 @@ func benchmarkPool(b *testing.B, maxOpen int) {
 
 				start = time.Now()
 				p.Put(cn)
-				d = time.Since(start)
-				putns.Add(d.Nanoseconds())
-				maxputs[i] = max(maxputs[i], d)
-			}
-		})
-	}
-	wg.Wait()
-
-	b.ReportMetric(float64(getns.Load())/float64(b.N), "ns/get")
-	b.ReportMetric(float64(slices.Max(maxgets)), "ns/getmax")
-
-	b.ReportMetric(float64(putns.Load())/float64(b.N), "ns/put")
-	b.ReportMetric(float64(slices.Max(maxputs)), "ns/putmax")
-}
-
-func benchmarkPoolPGX(b *testing.B, maxOpen int) {
-	dsn := testDSN + " pool_max_conns=" + strconv.Itoa(maxOpen)
-	pool, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer pool.Close()
-
-	ctx := context.Background()
-
-	var getns atomic.Int64 // time to get
-	maxgets := make([]time.Duration, runtime.NumCPU())
-	var putns atomic.Int64 // time to put
-	maxputs := make([]time.Duration, runtime.NumCPU())
-
-	var rem atomic.Int64
-	rem.Store(int64(b.N))
-	var wg sync.WaitGroup
-	for i := range runtime.NumCPU() {
-		wg.Go(func() {
-			zzz := rand.NewZipf(rand.New(rand.NewPCG(1, 2)), 2.0, 1.5, 100)
-			for rem.Add(-1) >= 0 {
-				start := time.Now()
-				cn, err := pool.Acquire(ctx)
-				if err != nil {
-					panic(err)
-				}
-				d := time.Since(start)
-				getns.Add(d.Nanoseconds())
-				maxgets[i] = max(maxgets[i], d)
-
-				time.Sleep(time.Duration(zzz.Uint64()) * time.Millisecond)
-
-				start = time.Now()
-				cn.Release()
 				d = time.Since(start)
 				putns.Add(d.Nanoseconds())
 				maxputs[i] = max(maxputs[i], d)
