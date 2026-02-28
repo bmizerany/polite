@@ -20,6 +20,20 @@ var (
 	ErrUnsupportedCopyFormat = errors.New("pqlite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 )
 
+// ConstraintViolated reports whether err represents a unique violation on the
+// given constraint name.
+//
+// Example:
+//
+//	err := db.Exec(ctx, "INSERT INTO users (email) VALUES (?)", email)
+//	if ConstraintViolated(err, "users_email_key") {
+//	    // handle unique violation on users_email_key
+//	}
+func ConstraintViolated(err error, name string) bool {
+	fe, ok := errors.AsType[*febe.Error](err)
+	return ok && fe.Code == "23505" && fe.Constraint == name
+}
+
 type statement struct {
 	name string
 	in   febe.ParameterDescriptionResponse
