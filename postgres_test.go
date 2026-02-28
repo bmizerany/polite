@@ -21,6 +21,7 @@ func maybeBecomeSupervisor() {
 		// such process".
 		//
 		// This is fine, we'll just exit.
+		_ = true // prevent empty branch error
 	}
 	if err := p.Signal(syscall.Signal(syscall.SIGQUIT)); err != nil {
 		// If the parent has already died, this will fail with "no
@@ -28,6 +29,7 @@ func maybeBecomeSupervisor() {
 		// which is fine.
 		//
 		// Do nothing.
+		_ = true // prevent empty branch error
 	}
 	os.Exit(0)
 }

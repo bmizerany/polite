@@ -474,7 +474,6 @@ func TestNotice(t *testing.T) {
 	}
 	keep := diff.KeepFields[febe.Notice]("Severity", "Verbosity", "Message")
 	diff.Test(t, t.Errorf, got, want, keep)
-
 }
 
 func TestParameterStatus(t *testing.T) {
@@ -551,7 +550,5 @@ func checkPing(t *testing.T, c *Conn) {
 	}
 }
 
-var (
-	testDSN = cmp.Or(os.Getenv("DATABASE_URL"),
-		"dbname=postgres host=/tmp port=5411 sslmode=disable user=postgres password=postgres")
-)
+var testDSN = cmp.Or(os.Getenv("DATABASE_URL"),
+	"dbname=postgres host=/tmp port=5411 sslmode=disable user=postgres password=postgres")
