@@ -36,6 +36,9 @@
 // backend value of default_transaction_read_only. If it is not "on",
 // operations fail with [ErrInvalidReadOnlyConn] before query execution.
 //
+// The guard is connection-scoped and SQL-agnostic. [Conn.Query] and [Conn.Exec]
+// are checked the same way.
+//
 // This guard applies uniformly to [Conn.Query], [Conn.Exec], [Conn.CopyTo],
 // and [Conn.CopyFrom].
 //

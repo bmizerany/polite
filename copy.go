@@ -28,9 +28,8 @@ func (e CopyError) Error() string { return string(e) }
 // binary column values. If the COPY stream fails, the iterator yields that
 // error.
 //
-// As with [Conn.Query], each yielded [Row] must be fully consumed before
-// iteration advances. If iteration stops early, call [Row.Close] on the
-// current row first.
+// For row iteration and draining behavior, see the package docs section
+// "Query, COPY, and Row Draining".
 func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.Seq2[*Row, error] {
 	var b strings.Builder
 	b.WriteString("COPY ")

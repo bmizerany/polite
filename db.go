@@ -27,6 +27,10 @@ func isReadOnly(ctx context.Context) bool {
 	return ctx.Value(readOnlyKey) != nil
 }
 
+// WithReadOnly marks ctx as requiring a read-only backend session.
+//
+// It does not modify backend state. See the package docs section
+// "Read-Only Contexts" for behavior and error semantics.
 func WithReadOnly(ctx context.Context) context.Context {
 	return context.WithValue(ctx, readOnlyKey, 1)
 }
@@ -107,6 +111,9 @@ type Result struct {
 //
 // After Exec returns, call [Conn.LastResult] to get the number of rows
 // affected (not the number of rows matched).
+//
+// Exec uses [Conn.Query] internally, so read-only context checks and row
+// draining behavior follow the package docs.
 func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
 	for row, err := range c.Query(ctx, sql, args...) {
 		if err != nil {
@@ -210,6 +217,10 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	}
 }
 
+// Query executes sql and yields rows as an iterator.
+//
+// See the package docs for statement caching, read-only context behavior, and
+// row draining semantics.
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
 		if err := c.prepare(ctx, "", sql, args...); err != nil {
@@ -329,9 +340,9 @@ func (r *Row) ParseString() (string, error) {
 
 // Close discards any remaining columns in the row.
 //
-// In a range loop over [Conn.Query] or [Conn.CopyTo], each yielded [Row] must
-// be fully consumed before the loop advances or exits. If you stop reading
-// columns early, call Close.
+// Query and Copy iterators drain unread row columns automatically when
+// iteration advances or stops. Call Close when you want to force that drain
+// immediately and observe its error at the call site.
 func (r *Row) Close() error {
 	for {
 		_, err := r.View()
