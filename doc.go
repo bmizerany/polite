@@ -17,19 +17,46 @@
 // [Listener] is a dedicated LISTEN/NOTIFY session. If a notification consumer
 // can stall, keep that stream on a dedicated [Conn].
 //
-// # Query and COPY Contract
+// # Auto Prepared Statements
+//
+// [Conn] automatically prepares SQL statements on first use and caches them
+// per connection by exact SQL text. Later calls with the same SQL reuse the
+// prepared statement automatically.
+//
+// This applies to [Conn.Query], [Conn.Exec], [Conn.CopyTo], and
+// [Conn.CopyFrom]. Statement caches are per-[Conn] and are not shared across a
+// [Pool].
+//
+// # Read-Only Contexts
+//
+// [WithReadOnly] marks a context as requiring a read-only backend session.
+// It does not run SET commands or change backend state.
+//
+// When a read-only context is used, statement preparation checks the current
+// backend value of default_transaction_read_only. If it is not "on",
+// operations fail with [ErrInvalidReadOnlyConn] before query execution.
+//
+// This guard applies uniformly to [Conn.Query], [Conn.Exec], [Conn.CopyTo],
+// and [Conn.CopyFrom].
+//
+// # Query, COPY, and Row Draining
 //
 // Query and COPY readers yield iter.Seq2[*Row, error].
 //
-// Each yielded [Row] must be fully consumed before iteration advances. If a
-// loop stops early, call [Row.Close] on the current row.
+// [Row] exposes columns as a stream. Use [Row.View] for raw bytes,
+// [Row.ParseString] for text values, [Row.ParseInt] for integer encodings,
+// and [Row.ParseTime] for timestamp-without-time-zone values.
+//
+// Unread columns are drained automatically when iteration advances to the next
+// row. If iteration stops early (for example break or return), pqlite drains
+// the current row and remaining protocol messages before returning the
+// connection to ReadyForQuery.
+//
+// [Row.Close] is available when callers want to force draining immediately and
+// observe the close error at that call site.
 //
 // COPY APIs use PostgreSQL binary format. [Conn.CopyTo] yields binary column
 // values. [Conn.CopyFrom] expects binary column values.
-//
-// Use [Row.View] for raw bytes, [Row.ParseString] for text values,
-// [Row.ParseInt] for integer encodings, and [Row.ParseTime] for
-// timestamp-without-time-zone values.
 //
 // Streaming query pattern:
 //
