@@ -3,6 +3,7 @@ module blake.io/pqlite
 go 1.26.0
 
 require (
+	blake.io/wait v0.0.0-20251229075418-37c5686254da
 	github.com/lib/pq v1.10.9
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	kr.dev/diff v0.3.0

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"blake.io/pqlite/backoff"
-	"blake.io/pqlite/wait"
+	"blake.io/wait"
 )
 
 // Defaults
@@ -90,7 +90,7 @@ type Pool struct {
 	Logger *slog.Logger
 
 	waitlist  wait.List[*Conn]
-	loadFunc  func() (*Conn, error) // load function created once in init
+	loadFunc  func() *Conn // load function created once in init
 	initOnce  sync.Once
 	cancelCtx context.Context
 	cancel    context.CancelCauseFunc
@@ -122,7 +122,7 @@ func (p *Pool) Put(cn *Conn) {
 	if expired || p.maxUses() > 0 && cn.uses >= p.maxUses() {
 		cn.Close()
 		go func() {
-			if repl, err := p.openConn(); err == nil {
+			if repl := p.openConn(); repl != nil {
 				p.waitlist.Put(repl)
 			}
 		}()
@@ -185,22 +185,22 @@ func (p *Pool) Close() error {
 	return nil
 }
 
-func (p *Pool) openConn() (*Conn, error) {
+func (p *Pool) openConn() *Conn {
 	for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
 		cn, err := p.open(p.cancelCtx)
 		if err == nil {
 			cn.created = time.Now()
-			return cn, nil
+			return cn
 		}
 		if p.cancelCtx.Err() != nil {
-			return nil, p.cancelCtx.Err()
+			return nil
 		}
 		if i > 3 {
 			p.log().Info("pqlite: pool: error opening new connection; retrying",
 				"err", cmp.Or(context.Cause(p.cancelCtx), err))
 		}
 	}
-	return nil, errors.New("failed to open connection after retries")
+	return nil
 }
 
 func (p *Pool) open(ctx context.Context) (*Conn, error) {
