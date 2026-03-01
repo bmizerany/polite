@@ -1,11 +1,19 @@
-// Package pqlite is a PostgreSQL wire-protocol client for streaming workloads
-// that need explicit connection control and low abstraction overhead without
-// database/sql.
+// Package pqlite is a mid-level PostgreSQL client for streaming workloads that
+// want explicit connection control without dropping to FE/BE message handling.
+//
+// It sits between [blake.io/pqlite/febe] and database/sql:
+// - lower-level than database/sql, with direct session and protocol-flow
+//   control
+// - higher-level than febe, with ready-to-use Query/Exec/COPY/LISTEN APIs
+//
+// pqlite is not a database/sql driver layer. It is a direct client API for
+// modern Go code that needs modern PostgreSQL features with predictable
+// behavior.
 //
 // # Purpose
 //
-// pqlite exposes backend sessions directly so callers can control query,
-// COPY, and notification flows with predictable lifecycle behavior.
+// pqlite exposes backend sessions so callers can control query, COPY, and
+// notification flows with predictable lifecycle behavior.
 //
 // # Core Types
 //
