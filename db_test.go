@@ -476,6 +476,72 @@ func TestNotice(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want, keep)
 }
 
+func TestReadOnlyGuardedWritableConnFails(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	err := cn.Exec(WithReadOnly(context.Background()), "SELECT 1")
+	if !errors.Is(err, ErrInvalidReadOnlyConn) {
+		t.Fatalf("Exec() = %v; want %v", err, ErrInvalidReadOnlyConn)
+	}
+}
+
+func TestReadOnlyGuardPrecedence(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	err := cn.Exec(WithReadOnly(context.Background()), "SELECT !")
+	if !errors.Is(err, ErrInvalidReadOnlyConn) {
+		t.Fatalf("Exec() = %v; want %v", err, ErrInvalidReadOnlyConn)
+	}
+}
+
+func TestReadOnlyStartupOn(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn, err := Open(ctx, testDSN+" default_transaction_read_only=on", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := cn.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if err := cn.Exec(WithReadOnly(ctx), "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadOnlyRuntimeUpdate(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+
+	err := cn.Exec(WithReadOnly(ctx), "SELECT 1")
+	if !errors.Is(err, ErrInvalidReadOnlyConn) {
+		t.Fatalf("Exec() = %v; want %v", err, ErrInvalidReadOnlyConn)
+	}
+
+	if err := cn.Exec(ctx, "SET default_transaction_read_only=on"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Exec(WithReadOnly(ctx), "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cn.Exec(ctx, "SET default_transaction_read_only=off"); err != nil {
+		t.Fatal(err)
+	}
+	err = cn.Exec(WithReadOnly(ctx), "SELECT 1")
+	if !errors.Is(err, ErrInvalidReadOnlyConn) {
+		t.Fatalf("Exec() = %v; want %v", err, ErrInvalidReadOnlyConn)
+	}
+}
+
 func TestParameterStatus(t *testing.T) {
 	t.Parallel()
 

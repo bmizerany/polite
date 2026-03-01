@@ -7,6 +7,7 @@ import (
 	"iter"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"blake.io/pqlite/febe"
@@ -15,10 +16,23 @@ import (
 // Errors
 var (
 	ErrDone                  = errors.New("pqlite: done")
+	ErrInvalidReadOnlyConn   = errors.New("pqlite: invalid read-only connection")
 	ErrOutOfColumns          = errors.New("pqlite: out of columns")
 	ErrTLSRefused            = errors.New("pqlite: TLS refused by backend")
 	ErrUnsupportedCopyFormat = errors.New("pqlite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 )
+
+type readOnlyContextKey struct{}
+type readOnlyContextSentinel struct{}
+
+var (
+	readOnlyKey      readOnlyContextKey
+	readOnlySentinel readOnlyContextSentinel
+)
+
+func WithReadOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, readOnlyKey, readOnlySentinel)
+}
 
 // ConstraintViolated reports whether err represents a unique violation on the
 // given constraint name.
@@ -115,6 +129,10 @@ func (c *Conn) LastResult() Result {
 var allBinary = []int16{1}
 
 func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) (err error) {
+	if _, ok := ctx.Value(readOnlyKey).(readOnlyContextSentinel); ok &&
+		!strings.EqualFold(c.params["default_transaction_read_only"], "on") {
+		return ErrInvalidReadOnlyConn
+	}
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		err = c.maybeRecoverFrom(ctx, err)
