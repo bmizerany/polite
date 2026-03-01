@@ -225,10 +225,8 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[
 			return
 		}
 		var processed int
-		ok := true
 		for {
 			row, err := c.nextRow(ctx, processed)
-			processed++
 			if err != nil {
 				if errors.Is(err, ErrDone) {
 					return
@@ -237,19 +235,23 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[
 				yield(nil, err)
 				return
 			}
-
-			// continue to yield rows until the user says stop, and then
-			// discard the remaining rows.
-			if ok {
-				ok = yield(row, nil)
-			} else {
-				if err := row.Close(); err != nil {
-					yield(nil, err)
-					return
+			processed++
+			if !yield(row, nil) {
+				// Drain the columns, and any remaining
+				// messages until ReadyForQuery.
+				for {
+					err := c.maybeRecoverFrom(ctx, row.Close())
+					if err != nil {
+						// TODO: add "Stopped early" to trace and mark the conn as invalid for future use
+						fmt.Printf("pqlite: stopped early with error: %v\n", err)
+						return
+					}
+					_, err = c.nextRow(ctx, processed)
+					if errors.Is(err, ErrDone) {
+						return
+					}
+					processed++
 				}
-			}
-			if row.rem != 0 {
-				panic(fmt.Sprintf("pqlite: %d unprocessed columns", row.rem))
 			}
 		}
 	}
