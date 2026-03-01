@@ -344,9 +344,9 @@ func BenchmarkPoolStartNewConn(b *testing.B) {
 	}
 
 	for b.Loop() {
-		cn, err := p.openConn()
-		if err != nil {
-			b.Fatal(err)
+		cn := p.openConn()
+		if cn == nil {
+			b.Fatal("openConn() = nil")
 		}
 		p.waitlist.Put(cn)
 	}

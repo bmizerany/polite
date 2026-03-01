@@ -1,3 +1,5 @@
+blake.io/wait v0.0.0-20251229075418-37c5686254da h1:o7ChK52RynHsQnoGBhzI33wOnXVDtbnkwMSgoJ6gkTk=
+blake.io/wait v0.0.0-20251229075418-37c5686254da/go.mod h1:MdvsuLRdx3fTep8YSerBaxiQYrSpmd9VCG0spMQ3zbg=
 github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c h1:pxW6RcqyfI9/kWtOwnv/G+AzdKuy2ZrqINhenH4HyNs=
 github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/lib/pq v1.10.9 h1:YXG7RB+JIjhP29X+OtkiDnYaXQwpS4JEWq7dtCCRUEw=
