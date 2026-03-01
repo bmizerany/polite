@@ -500,6 +500,28 @@ func TestParameterStatus(t *testing.T) {
 	})
 }
 
+func TestParameterStatusTraceCompatibility(t *testing.T) {
+	t.Parallel()
+
+	cn := newSessionDB(t)
+	defer checkPing(t, cn)
+
+	var got int
+	ctx := febe.WithTrace(context.Background(), &febe.Trace{
+		ReceivedParameterStatus: func(ctx context.Context, p febe.Parameter) {
+			got++
+		},
+	})
+
+	if err := cn.Exec(ctx, "SET datestyle TO postgres, dmy"); err != nil {
+		t.Fatal(err)
+	}
+	checkPing(t, cn)
+	if got == 0 {
+		t.Fatal("expected ReceivedParameterStatus callback to fire")
+	}
+}
+
 func TestByteaString(t *testing.T) {
 	t.Parallel()
 

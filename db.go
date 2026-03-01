@@ -46,8 +46,9 @@ type Conn struct {
 
 	created time.Time
 
-	nstmt int
-	cache map[string]*statement
+	nstmt  int
+	cache  map[string]*statement
+	params map[string]string
 
 	rowsAffected int
 
