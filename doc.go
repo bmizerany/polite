@@ -1,113 +1,87 @@
-// Package pqlite is a direct client API for modern Go code that needs modern
-// PostgreSQL features with predictable behavior.
+// Package pqlite implements PostgreSQL Conn and Pool types with a modern Go API.
 //
-// Basic query example:
+// Use the [Conn] API for direct session control and streaming access to query
+// results, COPY, and notifications.
 //
-//	ctx := context.Background()
-//	for row, err := range cn.Query(ctx, "SELECT id, email, role FROM users LIMIT 3") {
-//		if err != nil {
-//			log.Fatal(err)
-//		}
-//		id, err := row.ParseInt()
-//		if err != nil {
-//			log.Fatal(err)
-//		}
-//		email, err := row.ParseString()
-//		if err != nil {
-//			log.Fatal(err)
-//		}
-//		role, err := row.ParseString()
-//		if err != nil {
-//			log.Fatal(err)
-//		}
-//		fmt.Printf("id=%d email=%s role=%s\n", id, email, role)
-//	}
+// Use the [Pool] API for sharing a pool of connections across concurrent
+// workloads with strong fairness guarantees. See its documentation for more
+// details.
 //
-// It is a mid-level PostgreSQL client for streaming workloads that want
-// explicit connection control without dropping to FE/BE message handling.
+// Use the [Listener] API for PostgreSQL LISTEN/NOTIFY support over a dedicated connection.
 //
-// It sits between [blake.io/pqlite/febe] and database/sql:
-// - lower-level than database/sql, with direct session and protocol-flow
-//   control
-// - higher-level than febe, with ready-to-use Query/Exec/COPY/LISTEN APIs
+// # Performance
 //
-// pqlite is not a database/sql driver layer.
+// Pqlite is designed for high performance and low latency. It minimizes
+// allocations, avoids unnecessary buffering, and uses efficient data
+// structures and algorithms for protocol handling. It is suitable for
+// high-throughput, high-concurrency applications that want low-latency query
+// execution. Performance may vary based on workload and environment, so
+// benchmarking with realistic scenarios is recommended.
 //
-// # Purpose
-//
-// pqlite exposes backend sessions so callers can control query, COPY, and
-// notification flows with predictable lifecycle behavior.
-//
-// # Core Types
-//
-// [Conn] is one backend session. Use it for [Conn.Query], [Conn.Exec],
-// [Conn.CopyTo], and [Conn.CopyFrom].
-//
-// [Pool] shares [Conn] values across goroutines.
-//
-// [Listener] is a dedicated LISTEN/NOTIFY session. If a notification consumer
-// can stall, keep that stream on a dedicated [Conn].
-//
-// # Auto Prepared Statements
+// # Prepared Statement Caching
 //
 // [Conn] automatically prepares SQL statements on first use and caches them
 // per connection by exact SQL text. Later calls with the same SQL reuse the
 // prepared statement automatically.
 //
 // This applies to [Conn.Query], [Conn.Exec], [Conn.CopyTo], and
-// [Conn.CopyFrom]. Statement caches are per-[Conn] and are not shared across a
-// [Pool].
+// [Conn.CopyFrom].
 //
-// # Read-Only Contexts
+// # Fairness and Concurrency
 //
-// [WithReadOnly] marks a context as requiring a read-only backend session.
-// It does not run SET commands or change backend state.
+// [Pool] provides strong fairness guarantees for concurrent workloads to
+// prevent starving clients and ensure predictable performance. When multiple
+// goroutines call [Pool.Get] concurrently, they are served in FIFO order. Each
+// gets the most recently returned connection from the pool, so they benefit
+// from any warm-up or caching effects on that connection.
 //
-// When a read-only context is used, statement preparation checks the current
-// backend value of default_transaction_read_only. If it is not "on",
-// operations fail with [ErrInvalidReadOnlyConn] before query execution.
+// # Contexts and Cancellation
 //
-// The guard is connection-scoped and SQL-agnostic. [Conn.Query] and [Conn.Exec]
-// are checked the same way.
+// All [Conn] and [Pool] APIs that interact with PostgreSQL accept a context for
+// cancellation and timeouts.
 //
-// This guard applies uniformly to [Conn.Query], [Conn.Exec], [Conn.CopyTo],
-// and [Conn.CopyFrom].
+// A context cancellation or timeout during an inflight operation with
+// PostgreSQL causes a [Conn] to send a cancel request to the backend and
+// return an error that wraps [context.Canceled] or [context.DeadlineExceeded].
+// The connection is returned to ReadyForQuery and can be reused for subsequent
+// operations.
 //
-// # Query, COPY, and Row Draining
+// A context cancellation or timeout while waiting for a connection from a
+// [Pool] causes the [Pool.Get] call to return an error that wraps
+// [context.Canceled] or [context.DeadlineExceeded]. No cancel request is sent
+// to PostgreSQL since no operation has started on a connection yet. The
+// cancellation does not affect any inflight connection attempt that may have
+// started as a result of the [Pool.Get] call, so that the next caller to
+// [Pool.Get] may still receive a connection if the attempt succeeds, avoid
+// having to start and wait for another connection attempt.
 //
-// Query and COPY readers yield iter.Seq2[*Row, error].
+// # Read-Only Connection Guards
 //
-// [Row] exposes columns as a stream. Use [Row.View] for raw bytes,
-// [Row.ParseString] for text values, [Row.ParseInt] for integer encodings,
-// and [Row.ParseTime] for timestamp-without-time-zone values.
+// The [WithReadOnly] function returns a copy of a context that marks any
+// connection obtained from a call to [Pool.Get] with that context as configured for
+// read-only access. This is implemented by setting `default_transaction_read_only=on`
+// on the connection before returning it from [Pool.Get], and resetting it to
+// `default_transaction_read_only=off` when the connection is returned to the pool.
 //
-// Unread columns are drained automatically when iteration advances to the next
-// row. If iteration stops early (for example break or return), pqlite drains
-// the current row and remaining protocol messages before returning the
-// connection to ReadyForQuery.
+// This provides a guard against accidental writes to the database by ensuring any
+// connection obtained from a call to [Pool.Get] is configured for read-only
+// access, and preventing the use of any [Conn] without `default_transaction_read_only=on` set.
+// This is useful for enforcing read-only access in parts of an application,
+// such as HTTP request handlers for GET requests:
 //
-// [Row.Close] is available when callers want to force draining immediately and
-// observe the close error at that call site.
+//	func readOnlyMiddleware(next http.Handler) http.Handler {
+//		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+//			if r.Method == "GET" {
+//				// Downstream uses of the request context with a [Pool.Get] will
+//				// yield a read-only connection, preventing
+//				// accidental side-effects on the database from
+//				// GET requests.
+//				r = r.WithContext(pqlite.WithReadOnly(r.Context()))
+//			}
 //
-// COPY APIs use PostgreSQL binary format. [Conn.CopyTo] yields binary column
-// values. [Conn.CopyFrom] expects binary column values.
-//
-// Streaming query pattern:
-//
-//	for row, err := range cn.Query(ctx, "SELECT ...") {
-//		if err != nil {
-//			break
-//		}
-//		// consume row values
+//			next.ServeHTTP(w, r)
+//		})
 //	}
-//
-// # Pool and Listener Behavior
-//
-// [Pool] waiters are FIFO for predictable handoff. [Pool.Close] wakes blocked
-// waiters, and subsequent [Pool.Get] calls fail with [ErrPoolClosed].
-//
-// For waiter cancellation and contention measurements, see
-// wait/CANCELLATION_PERFORMANCE.md.
 //
 // # Safety and Compatibility
 //
