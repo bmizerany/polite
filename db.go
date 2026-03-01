@@ -7,7 +7,6 @@ import (
 	"iter"
 	"net"
 	"strconv"
-	"strings"
 	"time"
 
 	"blake.io/pqlite/febe"
@@ -22,16 +21,14 @@ var (
 	ErrUnsupportedCopyFormat = errors.New("pqlite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 )
 
-type readOnlyContextKey struct{}
-type readOnlyContextSentinel struct{}
+var readOnlyKey = new(struct{})
 
-var (
-	readOnlyKey      readOnlyContextKey
-	readOnlySentinel readOnlyContextSentinel
-)
+func isReadOnly(ctx context.Context) bool {
+	return ctx.Value(readOnlyKey) != nil
+}
 
 func WithReadOnly(ctx context.Context) context.Context {
-	return context.WithValue(ctx, readOnlyKey, readOnlySentinel)
+	return context.WithValue(ctx, readOnlyKey, 1)
 }
 
 // ConstraintViolated reports whether err represents a unique violation on the
@@ -129,8 +126,7 @@ func (c *Conn) LastResult() Result {
 var allBinary = []int16{1}
 
 func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) (err error) {
-	if _, ok := ctx.Value(readOnlyKey).(readOnlyContextSentinel); ok &&
-		!strings.EqualFold(c.params["default_transaction_read_only"], "on") {
+	if ctx.Value(readOnlyKey) != nil && c.params["default_transaction_read_only"] != "on" {
 		return ErrInvalidReadOnlyConn
 	}
 	stmt, err := c.getStmt(ctx, sql)

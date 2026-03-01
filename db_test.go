@@ -506,7 +506,7 @@ func TestReadOnlyStartupOn(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cn, err := Open(ctx, testDSN+" default_transaction_read_only=on", nil)
+	cn, err := Open(ctx, testDSN+" defaUlt_tRansacTion_read_only=oN", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
