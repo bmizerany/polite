@@ -1,6 +1,28 @@
 // Package pqlite is a direct client API for modern Go code that needs modern
 // PostgreSQL features with predictable behavior.
 //
+// Basic query example:
+//
+//	ctx := context.Background()
+//	for row, err := range cn.Query(ctx, "SELECT id, email, role FROM users LIMIT 3") {
+//		if err != nil {
+//			log.Fatal(err)
+//		}
+//		id, err := row.ParseInt()
+//		if err != nil {
+//			log.Fatal(err)
+//		}
+//		email, err := row.ParseString()
+//		if err != nil {
+//			log.Fatal(err)
+//		}
+//		role, err := row.ParseString()
+//		if err != nil {
+//			log.Fatal(err)
+//		}
+//		fmt.Printf("id=%d email=%s role=%s\n", id, email, role)
+//	}
+//
 // It is a mid-level PostgreSQL client for streaming workloads that want
 // explicit connection control without dropping to FE/BE message handling.
 //
