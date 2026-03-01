@@ -76,11 +76,17 @@ type ReadyForQueryResponse struct {
 type Conn struct {
 	c *febeio.Conn
 	h MessageHeader // the last header read
+
+	parameterStatusHook func(Parameter)
 }
 
 func New(r io.Reader, w io.Writer) *Conn {
 	cn := febeio.NewConn(r, w)
 	return &Conn{c: cn}
+}
+
+func (c *Conn) SetParameterStatusHook(fn func(Parameter)) {
+	c.parameterStatusHook = fn
 }
 
 func (c *Conn) checkMessageHeader(want ...byte) error {
@@ -176,6 +182,12 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 			s, err := c.readParameterStatus()
 			if err != nil {
 				return zero, err
+			}
+			if c.parameterStatusHook != nil {
+				c.parameterStatusHook(Parameter{
+					Name:  s.Name,
+					Value: s.Value,
+				})
 			}
 			if t.ReceivedParameterStatus != nil {
 				t.ReceivedParameterStatus(ctx, Parameter{

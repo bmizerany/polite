@@ -75,7 +75,11 @@ func Open(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 		cn:      cn,
 		fc:      febe.New(cn, cn),
 		created: time.Now(),
+		params:  make(map[string]string),
 	}
+	c.fc.SetParameterStatusHook(func(p febe.Parameter) {
+		c.params[strings.ToLower(p.Name)] = p.Value
+	})
 
 	err = func() error {
 		if err := c.fc.WriteStartupMessage(o.Extra...); err != nil {
