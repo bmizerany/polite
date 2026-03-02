@@ -222,16 +222,25 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 	tcfg := cmp.Or(cfg.TLSConfig.Clone(), &tls.Config{})
 
 	if o.SSLRootCert != "" {
-		data, err := os.ReadFile(o.SSLRootCert)
-		if err != nil {
-			return nil, fmt.Errorf("postgres: failed to read root certificate: %w", err)
+		if strings.EqualFold(o.SSLRootCert, "system") {
+			roots, err := x509.SystemCertPool()
+			if err != nil {
+				return nil, fmt.Errorf("pqlite: failed to load system root certificates: %w", err)
+			}
+			tcfg.RootCAs = roots
+			tcfg.ClientCAs = roots
+		} else {
+			data, err := os.ReadFile(o.SSLRootCert)
+			if err != nil {
+				return nil, fmt.Errorf("postgres: failed to read root certificate: %w", err)
+			}
+			roots := x509.NewCertPool()
+			if !roots.AppendCertsFromPEM(data) {
+				return nil, fmt.Errorf("postgres: failed to parse root certificate")
+			}
+			tcfg.RootCAs = roots
+			tcfg.ClientCAs = roots
 		}
-		roots := x509.NewCertPool()
-		if !roots.AppendCertsFromPEM(data) {
-			return nil, fmt.Errorf("postgres: failed to parse root certificate")
-		}
-		tcfg.RootCAs = roots
-		tcfg.ClientCAs = roots
 	}
 
 	switch o.SSLMode {
