@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -90,10 +91,8 @@ func (c *Conn) SetParameterStatusHook(fn func(Parameter)) {
 }
 
 func (c *Conn) checkMessageHeader(want ...byte) error {
-	for _, w := range want {
-		if c.h.Type() == w {
-			return nil
-		}
+	if slices.Contains(want, c.h.Type()) {
+		return nil
 	}
 	return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", c.h.Type(), string(want))
 }
@@ -246,7 +245,7 @@ func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 	var s sizer
 	s.addInt32() // length
 	s.addInt32() // protocol version
-	for i := 0; i < len(params); i++ {
+	for i := range params {
 		k, v, _ := strings.Cut(params[i], "=")
 		s.addString(k)
 		s.addString(v)
@@ -255,7 +254,7 @@ func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 
 	c.c.WriteInt32(s.size())
 	c.c.WriteInt32(196608)
-	for i := 0; i < len(params); i++ {
+	for i := range params {
 		k, v, _ := strings.Cut(params[i], "=")
 		c.c.WriteString(k)
 		c.c.WriteString(v)

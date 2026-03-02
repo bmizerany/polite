@@ -7,7 +7,7 @@ type testT struct {
 	n int // number of calls to Fail
 }
 
-func (t *testT) Errorf(msg string, args ...interface{}) {
+func (t *testT) Errorf(msg string, args ...any) {
 	t.Helper()
 	t.n++
 	t.T.Logf(msg, args...) // Errors are expected, so just log, don't fail.
