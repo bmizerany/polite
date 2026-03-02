@@ -15,25 +15,10 @@ import (
 // Errors
 var (
 	ErrDone                  = errors.New("pqlite: done")
-	ErrInvalidReadOnlyConn   = errors.New("pqlite: invalid read-only connection")
 	ErrOutOfColumns          = errors.New("pqlite: out of columns")
 	ErrTLSRefused            = errors.New("pqlite: TLS refused by backend")
 	ErrUnsupportedCopyFormat = errors.New("pqlite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 )
-
-var readOnlyKey = new(struct{})
-
-func isReadOnly(ctx context.Context) bool {
-	return ctx.Value(readOnlyKey) != nil
-}
-
-// WithReadOnly marks ctx as requiring a read-only backend session.
-//
-// It does not modify backend state. See the package docs section
-// "Read-Only Contexts" for behavior and error semantics.
-func WithReadOnly(ctx context.Context) context.Context {
-	return context.WithValue(ctx, readOnlyKey, 1)
-}
 
 // ConstraintViolated reports whether err represents a unique violation on the
 // given constraint name.
@@ -55,6 +40,8 @@ type statement struct {
 	out  febe.RowDescriptionResponse
 }
 
+// Conn is a PostgreSQL connection. It is not safe for concurrent use by
+// multiple goroutines.
 type Conn struct {
 	cn net.Conn
 	fc *febe.Conn
@@ -63,7 +50,6 @@ type Conn struct {
 
 	nstmt  int
 	cache  map[string]*statement
-	params map[string]string
 
 	rowsAffected int
 
@@ -112,8 +98,8 @@ type Result struct {
 // After Exec returns, call [Conn.LastResult] to get the number of rows
 // affected (not the number of rows matched).
 //
-// Exec uses [Conn.Query] internally, so read-only context checks and row
-// draining behavior follow the package docs.
+// Exec uses [Conn.Query] internally, so row draining behavior follows the
+// package docs.
 func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
 	for row, err := range c.Query(ctx, sql, args...) {
 		if err != nil {
@@ -133,9 +119,6 @@ func (c *Conn) LastResult() Result {
 var allBinary = []int16{1}
 
 func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) (err error) {
-	if ctx.Value(readOnlyKey) != nil && c.params["default_transaction_read_only"] != "on" {
-		return ErrInvalidReadOnlyConn
-	}
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		err = c.maybeRecoverFrom(ctx, err)
@@ -219,8 +202,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 
 // Query executes sql and yields rows as an iterator.
 //
-// See the package docs for statement caching, read-only context behavior, and
-// row draining semantics.
+// See the package docs for statement caching and row draining semantics.
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
 		if err := c.prepare(ctx, "", sql, args...); err != nil {
