@@ -27,6 +27,11 @@
 // This applies to [Conn.Query], [Conn.Exec], [Conn.CopyTo], and
 // [Conn.CopyFrom].
 //
+// # Concurrency
+//
+// [Conn] values are not safe for concurrent use by multiple goroutines.
+// All operations must be performed sequentially per connection.
+//
 // # Fairness and Concurrency
 //
 // [Pool] provides strong fairness guarantees for concurrent workloads to
@@ -54,34 +59,6 @@
 // started as a result of the [Pool.Get] call, so that the next caller to
 // [Pool.Get] may still receive a connection if the attempt succeeds, avoid
 // having to start and wait for another connection attempt.
-//
-// # Read-Only Connection Guards
-//
-// The [WithReadOnly] function returns a copy of a context that marks any
-// connection obtained from a call to [Pool.Get] with that context as configured for
-// read-only access. This is implemented by setting `default_transaction_read_only=on`
-// on the connection before returning it from [Pool.Get], and resetting it to
-// `default_transaction_read_only=off` when the connection is returned to the pool.
-//
-// This provides a guard against accidental writes to the database by ensuring any
-// connection obtained from a call to [Pool.Get] is configured for read-only
-// access, and preventing the use of any [Conn] without `default_transaction_read_only=on` set.
-// This is useful for enforcing read-only access in parts of an application,
-// such as HTTP request handlers for GET requests:
-//
-//	func readOnlyMiddleware(next http.Handler) http.Handler {
-//		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-//			if r.Method == "GET" {
-//				// Downstream uses of the request context with a [Pool.Get] will
-//				// yield a read-only connection, preventing
-//				// accidental side-effects on the database from
-//				// GET requests.
-//				r = r.WithContext(pqlite.WithReadOnly(r.Context()))
-//			}
-//
-//			next.ServeHTTP(w, r)
-//		})
-//	}
 //
 // # Safety and Compatibility
 //
