@@ -15,7 +15,7 @@ import (
 
 func TestError(t *testing.T) {
 	cn := New(nil, errorWriter{}) // panics if a Read is called
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		err := cn.WriteStartupMessage()
 		if i == 0 && err != nil {
 			t.Fatalf("[%d]: unexpected error: %v", i, err)
@@ -424,7 +424,7 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 
 	var checked int
 
-	to := reflect.TypeOf(&Conn{})
+	to := reflect.TypeFor[*Conn]()
 	cn := &Conn{}
 	vo := reflect.ValueOf(cn)
 
@@ -661,23 +661,23 @@ func testReadMethodSignature(t *testing.T, m reflect.Method) {
 	if m.Type.NumIn() != 1 || m.Type.NumOut() != 2 {
 		t.Fatalf("wrong number of in/out params: %d/%d", m.Type.NumIn(), m.Type.NumOut())
 	}
-	if m.Type.In(0) != reflect.TypeOf((*Conn)(nil)) {
+	if m.Type.In(0) != reflect.TypeFor[*Conn]() {
 		t.Errorf("wrong type for first param")
 	}
 	if m.Type.NumOut() != 2 {
 		t.Fatal("wrong number of out params")
 	}
 	m0 := m.Type.Out(0)
-	if m0.Kind() == reflect.Ptr {
+	if m0.Kind() == reflect.Pointer {
 		t.Errorf("first out param should not be a pointer")
 	}
-	if !m0.Implements(reflect.TypeOf(new(Message)).Elem()) {
+	if !m0.Implements(reflect.TypeFor[Message]()) {
 		t.Errorf("first out param should implement Message")
 	}
 	if m0.Name() != "MessageHeader" && !strings.HasSuffix(m0.Name(), "Response") {
 		t.Errorf("first out param %q should end with Response", m0.Name())
 	}
-	if m.Type.Out(1) != reflect.TypeOf(new(error)).Elem() {
+	if m.Type.Out(1) != reflect.TypeFor[error]() {
 		t.Errorf("second out param should be an error")
 	}
 }

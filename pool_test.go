@@ -448,24 +448,6 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 	})
 }
 
-func (p *Pool) checkAndDrainPool() {
-	// With WaitList, channel pooling is internal, so this is a no-op
-}
-
-func checker(t *testing.T) func(err error) {
-	t.Helper()
-	return func(err error) {
-		t.Helper()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func closedConnOpener(context.Context) (*Conn, error) {
-	return &Conn{closed: true}, nil
-}
-
 func sleepUntilDeadline(ctx context.Context) {
 	d, ok := ctx.Deadline()
 	if !ok {
