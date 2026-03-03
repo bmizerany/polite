@@ -58,7 +58,8 @@ type Conn struct {
 	cn net.Conn
 	fc *febe.Conn
 
-	created time.Time
+	created   time.Time
+	useGoTime bool
 
 	nstmt int
 	cache map[string]*statement
@@ -127,11 +128,50 @@ func (c *Conn) LastResult() Result {
 }
 
 var allBinary = []int16{1}
+var goTimeSetPortal = "__pqlite_set_time"
+
+func formatGoTime(t time.Time) string {
+	return t.UTC().Round(time.Microsecond).Format("2006-01-02 15:04:05.999999Z07:00")
+}
+
+func (c *Conn) queueSetGoTime() error {
+	if !c.useGoTime {
+		return nil
+	}
+
+	sql := "SET pqlite.go_time = '" + formatGoTime(time.Now()) + "'"
+	if err := c.fc.WriteParse("", sql); err != nil {
+		return err
+	}
+	if err := c.fc.WriteBind(goTimeSetPortal, "", nil, nil); err != nil {
+		return err
+	}
+	return c.fc.WriteExecute(goTimeSetPortal, 0)
+}
+
+func (c *Conn) initGoTime(ctx context.Context) error {
+	for _, sql := range []string{
+		"CREATE SCHEMA IF NOT EXISTS pqlite",
+		"CREATE OR REPLACE FUNCTION pqlite.now() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT current_setting('pqlite.go_time', false)::timestamptz $$",
+		"CREATE OR REPLACE FUNCTION pqlite.transaction_timestamp() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT current_setting('pqlite.go_time', false)::timestamptz $$",
+		"CREATE OR REPLACE FUNCTION pqlite.statement_timestamp() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT current_setting('pqlite.go_time', false)::timestamptz $$",
+		"CREATE OR REPLACE FUNCTION pqlite.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS $$ SELECT current_setting('pqlite.go_time', false)::timestamptz $$",
+		"SELECT set_config('search_path', 'pqlite,pg_catalog,' || current_setting('search_path'), false)",
+	} {
+		if err := c.Exec(ctx, sql); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) (err error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		err = c.maybeRecoverFrom(ctx, err)
+		return err
+	}
+	if err := c.queueSetGoTime(); err != nil {
 		return err
 	}
 	fp := &febe.FormatParams{
@@ -359,8 +399,8 @@ func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 			return nil, err
 		}
 		switch h.Type() {
-		case '2':
-			// Headeonly; No discard needed
+		case '1', '2':
+			// Header-only; no body to discard.
 			continue
 		case 'C':
 			m, err := c.fc.ReadCommandComplete()

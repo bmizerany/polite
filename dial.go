@@ -24,6 +24,7 @@ import (
 type Config struct {
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 	TLSConfig   *tls.Config
+	UseGoTime   bool
 }
 
 // Open opens a connection to postgres using the parameters in dsnOrURL,
@@ -72,9 +73,10 @@ func Open(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	})
 
 	c := &Conn{
-		cn:      cn,
-		fc:      febe.New(cn, cn),
-		created: time.Now(),
+		cn:        cn,
+		fc:        febe.New(cn, cn),
+		created:   time.Now(),
+		useGoTime: cfg.UseGoTime,
 	}
 
 	err = func() error {
@@ -101,6 +103,9 @@ func Open(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 				_, err := c.fc.ReadReadyForQuery()
 				if err != nil {
 					return err
+				}
+				if c.useGoTime {
+					return c.initGoTime(ctx)
 				}
 				return nil
 			default:
