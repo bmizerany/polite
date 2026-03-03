@@ -40,16 +40,28 @@ type statement struct {
 	out  febe.RowDescriptionResponse
 }
 
-// Conn is a PostgreSQL connection. It is not safe for concurrent use by
-// multiple goroutines.
+// Conn is a PostgreSQL connection.
+//
+// Conn is not safe for concurrent use by multiple goroutines.
+//
+// Conn prepares SQL on first use and caches prepared statements per connection
+// by exact SQL text. Calls with the same SQL reuse the cached statement.
+//
+// This statement cache is used by [Conn.Query], [Conn.Exec], [Conn.CopyTo],
+// and [Conn.CopyFrom].
+//
+// If a context is canceled or times out during an in-flight operation, Conn
+// sends a cancel request to PostgreSQL. The returned error wraps
+// [context.Canceled] or [context.DeadlineExceeded]. Conn returns to
+// ReadyForQuery and can be reused.
 type Conn struct {
 	cn net.Conn
 	fc *febe.Conn
 
 	created time.Time
 
-	nstmt  int
-	cache  map[string]*statement
+	nstmt int
+	cache map[string]*statement
 
 	rowsAffected int
 
@@ -61,10 +73,8 @@ type Conn struct {
 	uses int
 }
 
-// Ping verifies that c can complete a simple round trip to the backend by
-// executing SELECT 1.
-// It returns any error, if any, that occurred while executing the query or
-// reading the response.
+// Ping verifies that c can complete a round trip to the backend by executing
+// SELECT 1. It returns errors from query execution or response reading.
 func (c *Conn) Ping(ctx context.Context) error {
 	return c.Exec(ctx, "SELECT 1")
 }
@@ -93,13 +103,13 @@ type Result struct {
 }
 
 // Exec executes a query that is not intended to return rows, such as an
-// INSERT, UPDATE, or DELETE. It returns only an error, if any.
+// INSERT, UPDATE, or DELETE. It returns only an error.
 //
 // After Exec returns, call [Conn.LastResult] to get the number of rows
 // affected (not the number of rows matched).
 //
-// Exec uses [Conn.Query] internally, so row draining behavior follows the
-// package docs.
+// Exec uses [Conn.Query] internally, so row draining follows the package
+// section "Row Draining".
 func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
 	for row, err := range c.Query(ctx, sql, args...) {
 		if err != nil {
@@ -202,7 +212,10 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 
 // Query executes sql and yields rows as an iterator.
 //
-// See the package docs for statement caching and row draining semantics.
+// Query uses Conn's per-connection prepared statement cache.
+//
+// See the package section "Row Draining" for iterator cleanup behavior when
+// columns are unread or iteration stops early.
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
 		if err := c.prepare(ctx, "", sql, args...); err != nil {
@@ -323,8 +336,10 @@ func (r *Row) ParseString() (string, error) {
 // Close discards any remaining columns in the row.
 //
 // Query and Copy iterators drain unread row columns automatically when
-// iteration advances or stops. Call Close when you want to force that drain
-// immediately and observe its error at the call site.
+// iteration advances or stops. See the package section "Row Draining".
+//
+// Call Close when you want to force that drain immediately and observe its
+// error at the call site.
 func (r *Row) Close() error {
 	for {
 		_, err := r.View()
