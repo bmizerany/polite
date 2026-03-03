@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"blake.io/pqlite/febe"
@@ -566,6 +567,59 @@ func TestRowParseTime(t *testing.T) {
 	}
 	want := []time.Time{time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)}
 	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestUseGoTime(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cn, err := Open(context.Background(), testDSN, &Config{UseGoTime: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cn.Close()
+
+		check := func() {
+			t.Helper()
+
+			err := cn.Exec(context.Background(), "CREATE TEMP TABLE IF NOT EXISTS synctest (t TIMESTAMPTZ DEFAULT now())")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			const q = `
+				WITH ins AS (
+					INSERT INTO synctest DEFAULT VALUES
+					RETURNING t
+				)
+
+				-- Select all variations of now()
+				-- and check the equal the synctest bubble time.
+				SELECT now(), transaction_timestamp(), statement_timestamp(), t FROM ins
+			`
+
+			for row, err := range cn.Query(context.Background(), q) {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if row.Columns() <= 0 {
+					t.Fatal("expected at least one column")
+				}
+				for i := range row.Columns() {
+					v, _ := row.ParseTime()
+					if !v.Equal(time.Now().Truncate(time.Microsecond)) {
+						t.Fatalf("[%d]: got %v; want %v", i, v, time.Now())
+					}
+				}
+
+				return
+			}
+
+			t.Fatal("expected at least one row")
+		}
+
+		check()
+		time.Sleep(1 * time.Hour)
+		check()
+	})
 }
 
 func checkPing(t *testing.T, c *Conn) {
