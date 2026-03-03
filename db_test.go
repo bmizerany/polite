@@ -45,7 +45,7 @@ const (
 func createDB(t testing.TB) string {
 	t.Helper()
 
-	cn, err := Open(context.Background(), testDSN, nil)
+	cn, err := Open(t.Context(), testDSN, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func createDB(t testing.TB) string {
 	tname := strings.ReplaceAll(t.Name(), "/", "_")
 	dbname := fmt.Sprintf("gotest_%s_%s", tname, rand.Text()[:6])
 	dbname = strings.ToLower(dbname)
-	if err := cn.Exec(context.Background(), "CREATE DATABASE "+dbname); err != nil {
+	if err := cn.Exec(t.Context(), "CREATE DATABASE "+dbname); err != nil {
 		t.Fatal(err)
 	}
 	dsn := testDSN + " dbname=" + dbname
@@ -65,7 +65,7 @@ func createDB(t testing.TB) string {
 //
 // Users that need a clean database should use createDB instead.
 func newSessionDB(t testing.TB) *Conn {
-	ctx := context.Background()
+	ctx := t.Context()
 	dsn := createDB(t)
 	if t.Failed() {
 		t.FailNow()
@@ -89,7 +89,7 @@ func newSessionDB(t testing.TB) *Conn {
 var funcsCreated atomic.Bool
 
 func newSession(t testing.TB) *Conn {
-	ctx := context.Background()
+	ctx := t.Context()
 	cn, err := Open(ctx, testDSN, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func newSession(t testing.TB) *Conn {
 		sqlCreateRaiseNotice,
 		sqlCreateRaiseError,
 	} {
-		if err := cn.Exec(context.Background(), sql); err != nil {
+		if err := cn.Exec(t.Context(), sql); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -126,7 +126,7 @@ func TestQuery(t *testing.T) {
 	for range 3 {
 		const q = `SELECT 1, 2, 'three'`
 		var got [][]any
-		for row, err := range cn.Query(context.Background(), q) {
+		for row, err := range cn.Query(t.Context(), q) {
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -148,7 +148,7 @@ func TestQueryAllocations(t *testing.T) {
 	cn := newSession(t)
 	allocs := testing.AllocsPerRun(1000, func() {
 		const q = `SELECT 1, 'two'`
-		for row, err := range cn.Query(context.Background(), q) {
+		for row, err := range cn.Query(t.Context(), q) {
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -182,7 +182,7 @@ func TestConnClose(t *testing.T) {
 	}
 
 	// Ensure we can't use the connection after closing.
-	if err := cn.Ping(context.Background()); !errors.Is(err, net.ErrClosed) {
+	if err := cn.Ping(t.Context()); !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("Ping() = %v; want %v", err, ErrPoolClosed)
 	}
 }
@@ -195,7 +195,7 @@ func TestRowClose(t *testing.T) {
 	cn := newSession(t)
 
 	t.Run("with remaining values", func(t *testing.T) {
-		for row, err := range cn.Query(context.Background(), q) {
+		for row, err := range cn.Query(t.Context(), q) {
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -206,7 +206,7 @@ func TestRowClose(t *testing.T) {
 	})
 
 	t.Run("without remaining values", func(t *testing.T) {
-		for row, err := range cn.Query(context.Background(), q) {
+		for row, err := range cn.Query(t.Context(), q) {
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -231,7 +231,7 @@ func TestQueryExtended(t *testing.T) {
 		SELECT $2
 	`
 	var got []string
-	for row, err := range cn.Query(context.Background(), q, "hello", "world") {
+	for row, err := range cn.Query(t.Context(), q, "hello", "world") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -266,7 +266,7 @@ func TestQueryAll(t *testing.T) {
 
 	cn := newSession(t)
 	var got [][]string
-	for row, err := range cn.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range cn.Query(t.Context(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -287,7 +287,7 @@ func TestQueryBreakInAll(t *testing.T) {
 
 	cn := newSession(t)
 	var got [][]string
-	for row, err := range cn.Query(context.Background(), "SELECT * FROM generate_series(1, 5)") {
+	for row, err := range cn.Query(t.Context(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -318,7 +318,7 @@ func TestQueryUnprocceedColumnsPanic(t *testing.T) {
 
 	cn := newSession(t)
 	var n int
-	for row, err := range cn.Query(context.Background(), "SELECT generate_series(1, 3)") {
+	for row, err := range cn.Query(t.Context(), "SELECT generate_series(1, 3)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -339,7 +339,7 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 		checkPing(t, cn)
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var got []error
 	for _, err := range cn.Query(ctx, "") {
@@ -357,7 +357,7 @@ func TestExecSelectTag(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
-	if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
+	if err := cn.Exec(t.Context(), "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 	want := Result{
@@ -371,7 +371,7 @@ func TestExecLimit1(t *testing.T) {
 
 	cn := newSession(t)
 	var got []byte
-	ctx := febe.WithTrace(context.Background(), &febe.Trace{
+	ctx := febe.WithTrace(t.Context(), &febe.Trace{
 		ReceivedHeader: func(ctx context.Context, h febe.MessageHeader) {
 			got = append(got, h.Type())
 		},
@@ -388,10 +388,10 @@ func TestExec(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
-	if err := cn.Exec(context.Background(), "CREATE TEMP TABLE foo (bar INT)"); err != nil {
+	if err := cn.Exec(t.Context(), "CREATE TEMP TABLE foo (bar INT)"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cn.Exec(context.Background(), "INSERT INTO foo VALUES (1)"); err != nil {
+	if err := cn.Exec(t.Context(), "INSERT INTO foo VALUES (1)"); err != nil {
 		t.Fatal(err)
 	}
 	want := Result{
@@ -401,7 +401,7 @@ func TestExec(t *testing.T) {
 }
 
 func TestErrors(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	t.Run("prepare error", func(t *testing.T) {
 		t.Parallel()
 		cn := newSession(t)
@@ -458,7 +458,7 @@ func TestNotice(t *testing.T) {
 		}
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// no handler
 	notice(ctx)
@@ -490,7 +490,7 @@ func TestParameterStatus(t *testing.T) {
 	defer checkPing(t, cn) // ensure we leave in a good state
 
 	var got []febe.Parameter
-	ctx := febe.WithTrace(context.Background(), &febe.Trace{
+	ctx := febe.WithTrace(t.Context(), &febe.Trace{
 		ReceivedParameterStatus: func(ctx context.Context, p febe.Parameter) {
 			got = append(got, p)
 		},
@@ -514,7 +514,7 @@ func TestParameterStatusTraceCompatibility(t *testing.T) {
 	defer checkPing(t, cn)
 
 	var got int
-	ctx := febe.WithTrace(context.Background(), &febe.Trace{
+	ctx := febe.WithTrace(t.Context(), &febe.Trace{
 		ReceivedParameterStatus: func(ctx context.Context, p febe.Parameter) {
 			got++
 		},
@@ -535,7 +535,7 @@ func TestByteaString(t *testing.T) {
 	cn := newSession(t)
 	defer checkPing(t, cn) // ensure we leave in a good state
 
-	ctx := context.Background()
+	ctx := t.Context()
 	var got []string
 	for row, err := range cn.Query(ctx, "SELECT '\x12\x345'::bytea") {
 		if err != nil {
@@ -553,7 +553,7 @@ func TestRowParseTime(t *testing.T) {
 	cn := newSession(t)
 	defer checkPing(t, cn) // ensure we leave in a good state
 
-	ctx := context.Background()
+	ctx := t.Context()
 	var got []time.Time
 	for row, err := range cn.Query(ctx, `SELECT '2021-01-01 00:00:00'::timestamp`) {
 		if err != nil {
@@ -571,7 +571,7 @@ func TestRowParseTime(t *testing.T) {
 
 func TestUseGoTime(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		cn, err := Open(context.Background(), testDSN, &Config{UseGoTime: true})
+		cn, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -580,7 +580,7 @@ func TestUseGoTime(t *testing.T) {
 		check := func() {
 			t.Helper()
 
-			err := cn.Exec(context.Background(), "CREATE TEMP TABLE IF NOT EXISTS synctest (t TIMESTAMPTZ DEFAULT now())")
+			err := cn.Exec(t.Context(), "CREATE TEMP TABLE IF NOT EXISTS synctest (t TIMESTAMPTZ DEFAULT now())")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -596,7 +596,7 @@ func TestUseGoTime(t *testing.T) {
 				SELECT now(), transaction_timestamp(), statement_timestamp(), t FROM ins
 			`
 
-			for row, err := range cn.Query(context.Background(), q) {
+			for row, err := range cn.Query(t.Context(), q) {
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -627,7 +627,10 @@ func checkPing(t *testing.T, c *Conn) {
 	if t.Failed() {
 		return
 	}
-	if err := c.Ping(context.Background()); err != nil {
+	if err := c.Ping(t.Context()); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		t.Fatal(err)
 	}
 }
