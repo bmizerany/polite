@@ -20,6 +20,9 @@ func (e CopyError) Error() string { return string(e) }
 
 // CopyTo runs PostgreSQL COPY ... TO STDOUT WITH (FORMAT binary) on table.
 //
+// CopyTo uses Conn's per-connection prepared statement cache by exact SQL
+// text.
+//
 // The columns argument is optional. When columns is nil or empty, CopyTo
 // copies all table columns in table order. When columns is non-empty, CopyTo
 // copies only the listed columns in slice order.
@@ -28,8 +31,8 @@ func (e CopyError) Error() string { return string(e) }
 // binary column values. If the COPY stream fails, the iterator yields that
 // error.
 //
-// For row iteration and draining behavior, see the package docs section
-// "Query, COPY, and Row Draining".
+// For row iteration and draining behavior, see the package section "Row
+// Draining".
 func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.Seq2[*Row, error] {
 	var b strings.Builder
 	b.WriteString("COPY ")
@@ -52,6 +55,9 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.
 
 // CopyFrom runs PostgreSQL COPY ... FROM STDIN WITH (FORMAT binary) into table.
 //
+// CopyFrom uses Conn's per-connection prepared statement cache by exact SQL
+// text.
+//
 // The columns argument is optional. When columns is nil or empty, CopyFrom
 // targets all table columns in table order. When columns is non-empty, each
 // input row maps to the listed columns in slice order.
@@ -61,9 +67,9 @@ func (c *Conn) CopyTo(ctx context.Context, table string, columns []string) iter.
 // that error.
 //
 // Aborting a COPY sends COPY FAIL to PostgreSQL, and PostgreSQL may log the
-// failure message. To avoid accidental logging of frontend/internal details,
-// CopyFrom does not forward iterator error text by default. Use [CopyError] to
-// send an error message verbatim through COPY FAIL.
+// failure message. To avoid leaking frontend/internal details, CopyFrom does
+// not forward iterator error text by default. Use [CopyError] to send a
+// sanitized error message through COPY FAIL.
 func (c *Conn) CopyFrom(ctx context.Context, table string, columns []string, from iter.Seq2[[][]byte, error]) error {
 	if err := c.copyFrom(ctx, table, columns, from); err != nil {
 		var e *CopyError

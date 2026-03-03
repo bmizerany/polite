@@ -58,8 +58,14 @@ func DefaultOpener(context.Context) (*Conn, error) {
 // https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-TARGET-SESSION-ATTRS
 
 // Pool is a pool of connections. It is safe for concurrent use by multiple
-// goroutines. The zero value is ready for use and uses
-// [DefaultPoolMaxWaiters] as the waiting limit.
+// goroutines.
+//
+// Concurrent [Pool.Get] callers are served in FIFO order to avoid starvation.
+// Each waiter receives the most recently returned connection, preserving warm
+// per-connection state such as prepared statements.
+//
+// The zero value is ready for use and uses [DefaultPoolMaxWaiters] as the
+// waiting limit.
 type Pool struct {
 	// Open is a function that is called to open a new connection when
 	// the pool is empty.
@@ -105,11 +111,9 @@ func (p *Pool) init() {
 	})
 }
 
-// Put adds a connection back to the pool. Put should be called when
-// finished with a connection to return it to the pool. If the pool is
-// closed, the connection is closed.
+// Put returns cn to the pool. If the pool is closed, Put closes cn instead.
 //
-// Put is a non-blocking operation.
+// Put does not block.
 func (p *Pool) Put(cn *Conn) {
 	p.init()
 	if p.cancelCtx.Err() != nil {
@@ -131,6 +135,15 @@ func (p *Pool) Put(cn *Conn) {
 	}
 }
 
+// Get returns a connection from the pool.
+//
+// If ctx is canceled or times out while waiting, Get returns an error that
+// wraps [context.Canceled] or [context.DeadlineExceeded]. No cancel request is
+// sent to PostgreSQL because no operation has started on a connection.
+//
+// Canceling a Get wait does not cancel an in-flight open attempt started for
+// that wait. If the open later succeeds, a later caller to [Pool.Get] may
+// receive that connection.
 func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	if ctx.Err() != nil {
 		// avoid tying up resources and delaying a connection from

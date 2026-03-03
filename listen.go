@@ -14,15 +14,15 @@ type Notification struct {
 	Payload []byte // notification payload
 }
 
-// Listener listens for notifications sent by the database via
-// NOTIFY commands. It only receives notifications on channels that have
-// been explicitly LISTENed to using the Listen method.
+// Listener receives PostgreSQL LISTEN/NOTIFY messages.
+//
+// It only yields notifications for channels registered with [Listener.Listen].
 type Listener struct {
 	c *Conn
 }
 
 // OpenListener opens a dedicated connection for listening for notifications
-// on channels using postgres's LISTEN/NOTIFY feature.
+// on channels using PostgreSQL's LISTEN/NOTIFY feature.
 func OpenListener(ctx context.Context, dsnOrURL string, cfg *Config) (*Listener, error) {
 	cn, err := Open(ctx, dsnOrURL, cfg)
 	if err != nil {
@@ -31,6 +31,10 @@ func OpenListener(ctx context.Context, dsnOrURL string, cfg *Config) (*Listener,
 	return &Listener{c: cn}, nil
 }
 
+// Listen registers channel with LISTEN.
+//
+// channel must be a valid PostgreSQL identifier. Listen builds the SQL text
+// directly because LISTEN does not support bind parameters.
 func (l *Listener) Listen(ctx context.Context, channel string) error {
 	// NOTE: Using bind parameters with LISTEN is illegal, so
 	// we have to build the query here.
@@ -40,6 +44,7 @@ func (l *Listener) Listen(ctx context.Context, channel string) error {
 	return l.c.Exec(ctx, "LISTEN "+channel)
 }
 
+// Notifications yields notifications until ctx is canceled or an error occurs.
 func (l *Listener) Notifications(ctx context.Context) iter.Seq2[Notification, error] {
 	return func(yield func(Notification, error) bool) {
 		var zero Notification
@@ -73,6 +78,7 @@ func (l *Listener) Notifications(ctx context.Context) iter.Seq2[Notification, er
 	}
 }
 
+// Close closes the underlying dedicated connection.
 func (l *Listener) Close() error {
 	return l.c.Close()
 }

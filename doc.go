@@ -1,73 +1,53 @@
-// Package pqlite implements PostgreSQL Conn and Pool types with a modern Go API.
+// Package pqlite provides PostgreSQL client primitives for Go.
 //
-// Use the [Conn] API for direct session control and streaming access to query
-// results, COPY, and notifications.
+// pqlite is not a database/sql driver and does not implement
+// database/sql/driver.
 //
-// Use the [Pool] API for sharing a pool of connections across concurrent
-// workloads with strong fairness guarantees. See its documentation for more
-// details.
+// [Conn] represents one PostgreSQL session for queries, COPY, and
+// LISTEN/NOTIFY.
 //
-// Use the [Listener] API for PostgreSQL LISTEN/NOTIFY support over a dedicated connection.
+// [Pool] manages reusable [Conn] values for concurrent callers.
 //
-// # Performance
-//
-// Pqlite is designed for high performance and low latency. It minimizes
-// allocations, avoids unnecessary buffering, and uses efficient data
-// structures and algorithms for protocol handling. It is suitable for
-// high-throughput, high-concurrency applications that want low-latency query
-// execution. Performance may vary based on workload and environment, so
-// benchmarking with realistic scenarios is recommended.
-//
-// # Prepared Statement Caching
-//
-// [Conn] automatically prepares SQL statements on first use and caches them
-// per connection by exact SQL text. Later calls with the same SQL reuse the
-// prepared statement automatically.
-//
-// This applies to [Conn.Query], [Conn.Exec], [Conn.CopyTo], and
-// [Conn.CopyFrom].
+// [Listener] provides LISTEN/NOTIFY over a dedicated connection.
 //
 // # Concurrency
 //
-// [Conn] values are not safe for concurrent use by multiple goroutines.
-// All operations must be performed sequentially per connection.
+// [Conn] is not safe for concurrent use by multiple goroutines.
 //
-// # Fairness and Concurrency
+// [Pool] is safe for concurrent use by multiple goroutines.
 //
-// [Pool] provides strong fairness guarantees for concurrent workloads to
-// prevent starving clients and ensure predictable performance. When multiple
-// goroutines call [Pool.Get] concurrently, they are served in FIFO order. Each
-// gets the most recently returned connection from the pool, so they benefit
-// from any warm-up or caching effects on that connection.
+// # Contexts
 //
-// # Contexts and Cancellation
+// [Conn] and [Pool] methods that interact with PostgreSQL accept
+// [context.Context].
 //
-// All [Conn] and [Pool] APIs that interact with PostgreSQL accept a context for
-// cancellation and timeouts.
+// If a [Conn] operation is canceled in flight, Conn sends a cancel request to
+// PostgreSQL. The returned error wraps [context.Canceled] or
+// [context.DeadlineExceeded].
 //
-// A context cancellation or timeout during an inflight operation with
-// PostgreSQL causes a [Conn] to send a cancel request to the backend and
-// return an error that wraps [context.Canceled] or [context.DeadlineExceeded].
-// The connection is returned to ReadyForQuery and can be reused for subsequent
-// operations.
+// If [Pool.Get] is canceled while waiting for a connection, it returns an
+// error that wraps [context.Canceled] or [context.DeadlineExceeded]. No cancel
+// request is sent to PostgreSQL because no operation has started.
 //
-// A context cancellation or timeout while waiting for a connection from a
-// [Pool] causes the [Pool.Get] call to return an error that wraps
-// [context.Canceled] or [context.DeadlineExceeded]. No cancel request is sent
-// to PostgreSQL since no operation has started on a connection yet. The
-// cancellation does not affect any inflight connection attempt that may have
-// started as a result of the [Pool.Get] call, so that the next caller to
-// [Pool.Get] may still receive a connection if the attempt succeeds, avoid
-// having to start and wait for another connection attempt.
+// # Row Iteration
 //
-// # Safety and Compatibility
+// [Conn.Query] and [Conn.CopyTo] return [iter.Seq2[*Row, error]]. Each
+// iteration is either (row, nil) or (nil, err). A non-nil err ends iteration.
 //
-// [Conn.CopyFrom] does not send iterator error text to PostgreSQL by default.
-// This avoids accidental exposure of frontend details in PostgreSQL-visible
-// errors and logs. Wrap errors with [CopyError] to send a sanitized message
-// through COPY FAIL.
+// # Row Draining
 //
-// pqlite keeps public APIs and documented semantics stable. Internal protocol
-// handling, buffering strategy, and performance tuning may change across
-// releases.
+// [Row] values are forward-only. Read columns in order with [Row.View] or
+// [Row.ParseInt], [Row.ParseTime], and [Row.ParseString].
+//
+// Unread columns are drained automatically when iteration advances or ends.
+//
+// If iteration stops early, Query drains unread row data and backend messages
+// until ReadyForQuery before the connection is reused.
+//
+// Call [Row.Close] to force draining of unread columns immediately and observe
+// drain errors at that call site.
+//
+// The public API and documented semantics are stable across minor releases.
+// Internal protocol handling, buffering strategy, and performance tuning may
+// change across releases.
 package pqlite
