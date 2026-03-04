@@ -303,7 +303,7 @@ func TestOpenDialError(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	maybeBecomeSupervisor()
-	os.Exit(m.Run())
+	m.Run()
 }
 
 // startPG starts a postgres instance and returns a DSN to connect to it.
