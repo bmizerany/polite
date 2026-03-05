@@ -170,9 +170,9 @@ func TestNotificationResponseTrace(t *testing.T) {
 	cn.WriteTerminate()
 	cn.Flush()
 
-	var got *NotificationResponse
+	var got *Notification
 	ctx := WithTrace(context.Background(), &Trace{
-		ReceivedNotification: func(ctx context.Context, n *NotificationResponse) {
+		ReceivedNotification: func(ctx context.Context, n *Notification) {
 			got = n
 		},
 	})
@@ -182,7 +182,7 @@ func TestNotificationResponseTrace(t *testing.T) {
 		t.Fatalf("err = %v; want %v", err, ErrTerminated)
 	}
 
-	want := &NotificationResponse{
+	want := &Notification{
 		MessageHeader: MessageHeader{
 			msgType: 'A',
 			msgLen:  20,
@@ -520,12 +520,12 @@ func TestReadNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := cn.ReadNotification()
+	got, err := cn.readNotification()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := NotificationResponse{
+	want := Notification{
 		MessageHeader: MessageHeader{
 			msgType: 'A',
 			msgLen:  33,
