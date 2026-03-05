@@ -95,6 +95,7 @@ func (e *Notice) Fields(yield func(fieldID byte, val string) bool) {
 
 // Error represents an error received from the backend.
 type Error struct {
+	// Notice holds the decoded error fields.
 	*Notice
 }
 
