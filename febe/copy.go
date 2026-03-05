@@ -4,13 +4,18 @@ import (
 	"io"
 )
 
+// CopyFormat reports whether COPY data is encoded as text or binary.
 type CopyFormat byte
 
 var (
-	CopyFormatText   CopyFormat = 0
+	// CopyFormatText indicates text COPY encoding.
+	CopyFormatText CopyFormat = 0
+
+	// CopyFormatBinary indicates binary COPY encoding.
 	CopyFormatBinary CopyFormat = 1
 )
 
+// String returns c as "text", "binary", or "unknown".
 func (c *CopyFormat) String() string {
 	switch *c {
 	case CopyFormatText:
@@ -21,10 +26,15 @@ func (c *CopyFormat) String() string {
 	return "unknown"
 }
 
-// CopyResponse represnets the response to the COPY IN, COPY OUT commands.
+// CopyResponse represents a CopyInResponse or CopyOutResponse message.
 type CopyResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
-	Format  CopyFormat
+
+	// Format reports the row format used by the COPY stream.
+	Format CopyFormat
+
+	// NumCols reports the number of columns in each COPY row.
 	NumCols int16
 
 	// NOTE: format codes, today, will always be all 0 or all 1
@@ -44,6 +54,10 @@ func (c *Conn) ReadCopyOut() (CopyResponse, error) {
 	return c.readCopy()
 }
 
+// ReadCopyIn reads the response to the COPY IN command.
+//
+// It discards the format codes for each column since they are always all 0
+// or all 1 depending on the Format field (currently for PostgreSQL 16).
 func (c *Conn) ReadCopyIn() (CopyResponse, error) {
 	var zero CopyResponse
 	if err := c.checkMessageHeader('G'); err != nil {
@@ -78,6 +92,12 @@ const (
 	binaryExtLength = "\x00\x00\x00\x00"
 )
 
+// WriteCopyDataRow writes one CopyData message.
+//
+// Each value is encoded as a non-NULL field preceded by its length. If
+// includeHeader is true, the binary COPY header is written before the row
+// data. If values is empty, WriteCopyDataRow writes the binary COPY end
+// marker instead of a row.
 func (c *Conn) WriteCopyDataRow(values [][]byte, includeHeader bool) error {
 	var s sizer
 	s.addInt32() // length
@@ -126,10 +146,13 @@ func (c *Conn) discardBinarySignatureFlagsAndExt() error {
 	return c.c.Discard(int(n))
 }
 
+// CopyDoneResponse is the backend CopyDone message.
 type CopyDoneResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
 }
 
+// ReadCopyDone reads a CopyDone response.
 func (c *Conn) ReadCopyDone() (CopyDoneResponse, error) {
 	var zero CopyDoneResponse
 	if err := c.checkMessageHeader('c'); err != nil {
@@ -138,12 +161,14 @@ func (c *Conn) ReadCopyDone() (CopyDoneResponse, error) {
 	return CopyDoneResponse{MessageHeader: c.h}, nil
 }
 
+// WriteCopyDone writes a frontend CopyDone message.
 func (c *Conn) WriteCopyDone() error {
 	c.c.WriteByte('c')
 	c.c.WriteInt32(4)
 	return c.Err()
 }
 
+// WriteCopyFail writes a frontend CopyFail message with msg.
 func (c *Conn) WriteCopyFail(msg string) error {
 	var s sizer
 	s.addInt32() // length
