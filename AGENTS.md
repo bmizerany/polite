@@ -41,3 +41,32 @@ Fixes #12345
 EOF
 )"
 ```
+
+## Documentation
+
+- Always include whitespace between fields of a struct and preceeding fields.
+
+Good:
+
+```go
+type Foo struct {
+    // Bar is the bar field.
+    Bar string
+
+    // Foo is the foo field.
+    Foo string
+}
+```
+
+Bad:
+
+```go
+type Foo struct {
+    // Bar is the bar field.
+    Bar string
+    // Foo is the foo field.
+    Foo string
+}
+```
+
+B
