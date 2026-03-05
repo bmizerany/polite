@@ -1,12 +1,14 @@
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - "main"
   pull_request:
     # all PRs on all branches
   merge_group:
     branches:
       - "main"
+
+env:
+  GOMODCACHE: ${{ github.workspace }}/gomodcache
 
 concurrency:
   # For PRs, later CI runs preempt previous ones. e.g. a force push on a PR
@@ -19,31 +21,69 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gomod-cache:
+    runs-on: ubuntu-20.04
+    outputs:
+      cache-key: ${{ steps.hash.outputs.key }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Compute cache key from go.{mod,sum}
+        id: hash
+        run: echo "key=gomod-${{ hashFiles('go.mod', 'go.sum') }}" >> "$GITHUB_OUTPUT"
+
+      # See if the cache entry already exists to avoid downloading it
+      # and doing the cache write again.
+      - name: check-cache
+        id: check-cache
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: gomodcache
+          key: ${{ steps.hash.outputs.key }}
+          lookup-only: true
+          enableCrossOsArchive: true
+
+      - name: download-modules
+        if: steps.check-cache.outputs.cache-hit != 'true'
+        run: go mod download
+
+      - name: cache-modules
+        if: steps.check-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: gomodcache
+          key: ${{ steps.hash.outputs.key }}
+          enableCrossOsArchive: true
 
   test:
     runs-on: ubuntu-20.04
+    needs: gomod-cache
     steps:
       - name: checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # 4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: go mod cache restore
-        uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      - name: Restore Go module cache
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
+          path: gomodcache
+          key: ${{ needs.gomod-cache.outputs.cache-key }}
+          enableCrossOsArchive: true
+
+      - name: Restore Cache
+        id: restore-cache
+        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          # This is only restoring the build cache. Mod cache is shared across jobs.
           path: |
             ~/.cache/go-build
-            ~/go/pkg/mod/cache
-            ~/AppData/Local/go-build
+            ~\AppData\Local\go-build
           key: |
-            ${{ runner.os }}-${{ matrix.goarch }}-${{ matrix.buildflags }}-go-2-${{ hashFiles('**/go.sum') }}-${{ github.run_id }}
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ github.job }}-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.goarch }}-${{ matrix.buildflags }}-go-2-${{ hashFiles('**/go.sum') }}-
-            ${{ runner.os }}-${{ matrix.goarch }}-${{ matrix.buildflags }}-go-2-
-
-      - name: setup env
-        if: always()
-        run: |
-          mkdir -p $HOME/.local
-          go env -w GOEXPERIMENT=synctest,cacheprog
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ github.job }}-
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-
+            ${{ runner.os }}-go-
 
       - name: setup postgres
         uses: bmizerany/setup-postgres@v3
@@ -58,15 +98,15 @@ jobs:
         if: always() # This may contain clues to test failures that came before it, so always run it.
         run: go run honnef.co/go/tools/cmd/staticcheck ./...
 
-      - name: go mod cache save
-        uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      - name: Save Cache
         # Always run this step, even if the previous steps failed. Failures can
         # happen after successful builds, so save that work.
-        if: always()
+        if: always() && steps.restore-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
+          # This is only saving the build cache. Mod cache is shared across jobs.
           path: |
             ~/.cache/go-build
-            ~/go/pkg/mod/cache
-            ~/AppData/Local/go-build
+            ~\AppData\Local\go-build
           key: |
-            ${{ runner.os }}-${{ matrix.goarch }}-${{ matrix.buildflags }}-go-2-${{ hashFiles('**/go.sum') }}-${{ github.run_id }}
+            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ github.job }}-${{ github.run_id }}
