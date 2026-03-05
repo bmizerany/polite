@@ -61,19 +61,30 @@ func RequestTLS(cn net.Conn) (ok bool, err error) {
 	return b[0] == 'S', nil
 }
 
+// ReadyStatus reports the backend transaction status in ReadyForQuery.
 type ReadyStatus byte
 
 const (
-	ReadyStatusIdle   ReadyStatus = 'I'
-	ReadyStatusBusy   ReadyStatus = 'T'
+	// ReadyStatusIdle indicates the backend is not in a transaction block.
+	ReadyStatusIdle ReadyStatus = 'I'
+
+	// ReadyStatusBusy indicates the backend is in a transaction block.
+	ReadyStatusBusy ReadyStatus = 'T'
+
+	// ReadyStatusFailed indicates the backend is in a failed transaction block.
 	ReadyStatusFailed ReadyStatus = 'E'
 )
 
+// ReadyForQueryResponse is the backend ReadyForQuery message.
 type ReadyForQueryResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
+
+	// Status reports the backend transaction status.
 	Status ReadyStatus
 }
 
+// Conn reads and writes frontend/backend protocol messages.
 type Conn struct {
 	c *febeio.Conn
 	h MessageHeader // the last header read
@@ -81,11 +92,14 @@ type Conn struct {
 	parameterStatusHook func(Parameter)
 }
 
+// New returns a Conn that reads from r and writes to w.
 func New(r io.Reader, w io.Writer) *Conn {
 	cn := febeio.NewConn(r, w)
 	return &Conn{c: cn}
 }
 
+// SetParameterStatusHook sets fn to receive ParameterStatus messages consumed
+// by ReadHeader. A nil fn disables the hook.
 func (c *Conn) SetParameterStatusHook(fn func(Parameter)) {
 	c.parameterStatusHook = fn
 }
@@ -97,14 +111,17 @@ func (c *Conn) checkMessageHeader(want ...byte) error {
 	return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", c.h.Type(), string(want))
 }
 
+// Err returns the connection's pending error state.
 func (c *Conn) Err() error {
 	return c.c.Err()
 }
 
+// Flush flushes any buffered writes.
 func (c *Conn) Flush() error {
 	return c.c.Flush()
 }
 
+// Message is implemented by decoded backend messages that expose their header.
 type Message interface {
 	Header() MessageHeader
 }
@@ -118,15 +135,15 @@ type MessageHeader struct {
 }
 
 // Type returns the protocol message type byte.
-func (h MessageHeader) Type() byte            { return h.msgType }
+func (h MessageHeader) Type() byte { return h.msgType }
 
 // Len returns the protocol message length from the header.
 // It includes the 4-byte length field and excludes the type byte.
-func (h MessageHeader) Len() int              { return int(h.msgLen) }
+func (h MessageHeader) Len() int { return int(h.msgLen) }
 
 // BodyLen returns the unread message body length.
 // It excludes the 4-byte length field.
-func (h MessageHeader) BodyLen() int          { return int(h.msgLen - 4) }
+func (h MessageHeader) BodyLen() int { return int(h.msgLen - 4) }
 
 // Header returns h so MessageHeader implements Message.
 func (h MessageHeader) Header() MessageHeader { return h }
@@ -141,7 +158,7 @@ func (h MessageHeader) String() string {
 // network or deserialization error if any.
 //
 // As a special case, if the message type is 'E', it will read the error
-// response and return an *ErrorFields as the error.
+// response and return an *Error.
 func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	var zero MessageHeader
 	t := traceFromContext(ctx)
@@ -264,6 +281,8 @@ func (s *sizer) addBytes(n int)      { *s += sizer(n) }
 func (s *sizer) addString(v string)  { *s += sizer(len(v) + 1) }
 func (s *sizer) size() int32         { return int32(*s) }
 
+// WriteStartupMessage writes a protocol 3.0 startup message.
+// params are encoded as "key=value" strings.
 func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 	var s sizer
 	s.addInt32() // length
@@ -286,6 +305,7 @@ func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 	return c.Err()
 }
 
+// WriteTerminate writes a frontend Terminate message.
 func (c *Conn) WriteTerminate() error {
 	c.c.WriteByte('X')
 	c.c.WriteInt32(4)
@@ -400,6 +420,7 @@ func (c *Conn) WriteSASLResponse(data []byte) error {
 	return c.Err()
 }
 
+// ReadReadyForQuery reads a ReadyForQuery response.
 func (c *Conn) ReadReadyForQuery() (ReadyForQueryResponse, error) {
 	if err := c.checkMessageHeader('Z'); err != nil {
 		return ReadyForQueryResponse{}, err
