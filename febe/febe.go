@@ -43,7 +43,7 @@ func RequestTLS(cn net.Conn) (ok bool, err error) {
 	b[2] = byte(len(b) >> 8)
 	b[3] = byte(len(b))
 
-	var sslRequest = int32(80877103)
+	sslRequest := int32(80877103)
 	b[4] = byte(sslRequest >> 24)
 	b[5] = byte(sslRequest >> 16)
 	b[6] = byte(sslRequest >> 8)
@@ -193,6 +193,15 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 					Name:  s.Name,
 					Value: s.Value,
 				})
+			}
+			continue
+		case 'A':
+			m, err := c.ReadNotification()
+			if err != nil {
+				return zero, err
+			}
+			if t.ReceivedNotification != nil {
+				t.ReceivedNotification(ctx, &m)
 			}
 			continue
 		case 'I':
@@ -398,6 +407,20 @@ type NotificationResponse struct {
 	Payload []byte
 }
 
+func (c *Conn) WriteNotification(pid int32, channel, payload string) error {
+	var s sizer
+	s.addInt32() // length
+	s.addInt32()
+	s.addString(channel)
+	s.addString(payload)
+	c.c.WriteByte('A')
+	c.c.WriteInt32(s.size())
+	c.c.WriteInt32(pid)
+	c.c.WriteString(channel)
+	c.c.WriteString(payload)
+	return c.Err()
+}
+
 func (c *Conn) ReadNotification() (NotificationResponse, error) {
 	if err := c.checkMessageHeader('A'); err != nil {
 		return NotificationResponse{}, err
@@ -435,7 +458,6 @@ func (c *Conn) WriteParse(stmt, sql string) error {
 	c.c.WriteString(sql)
 	c.c.WriteInt16(0) // 0 for no param types
 	return c.Err()
-
 }
 
 type FieldDescription struct {
