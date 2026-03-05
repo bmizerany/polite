@@ -312,33 +312,64 @@ func (c *Conn) WriteTerminate() error {
 	return c.Err()
 }
 
+// AuthenticationType identifies the authentication request in an
+// AuthenticationResponse.
 type AuthenticationType int32
 
 //go:generate go run golang.org/x/tools/cmd/stringer@latest -type=AuthenticationType
 
 const (
-	AuthenticationTypeOK            AuthenticationType = 0
-	AuthenticationTypeCleartext     AuthenticationType = 3
-	AuthenticationTypeMD5           AuthenticationType = 5
+	// AuthenticationTypeOK indicates that authentication succeeded.
+	AuthenticationTypeOK AuthenticationType = 0
+
+	// AuthenticationTypeCleartext requests a cleartext password.
+	AuthenticationTypeCleartext AuthenticationType = 3
+
+	// AuthenticationTypeMD5 requests an MD5 password response.
+	AuthenticationTypeMD5 AuthenticationType = 5
+
+	// AuthenticationTypeSCMCredential requests SCM credentials.
 	AuthenticationTypeSCMCredential AuthenticationType = 6
-	AuthenticationTypeGSS           AuthenticationType = 7
-	AuthenticationTypeGSSContinue   AuthenticationType = 8
-	AuthenticationTypeSSPI          AuthenticationType = 9
-	AuthenticationTypeSASL          AuthenticationType = 10
-	AuthenticationTypeSASLContinue  AuthenticationType = 11
-	AuthenticationTypeSASLFinal     AuthenticationType = 12
+
+	// AuthenticationTypeGSS requests GSSAPI authentication.
+	AuthenticationTypeGSS AuthenticationType = 7
+
+	// AuthenticationTypeGSSContinue carries additional GSSAPI data.
+	AuthenticationTypeGSSContinue AuthenticationType = 8
+
+	// AuthenticationTypeSSPI requests SSPI authentication.
+	AuthenticationTypeSSPI AuthenticationType = 9
+
+	// AuthenticationTypeSASL advertises the supported SASL mechanisms.
+	AuthenticationTypeSASL AuthenticationType = 10
+
+	// AuthenticationTypeSASLContinue carries a SASL challenge.
+	AuthenticationTypeSASLContinue AuthenticationType = 11
+
+	// AuthenticationTypeSASLFinal carries final SASL data.
+	AuthenticationTypeSASLFinal AuthenticationType = 12
 )
 
+// AuthenticationResponse is the backend Authentication message.
 type AuthenticationResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
+
+	// Type identifies the authentication request.
 	Type AuthenticationType
 
-	SASLData       []byte
+	// SASLData holds challenge or final data for SASL continuation messages.
+	SASLData []byte
+
+	// SASLMechanisms lists the advertised SASL mechanisms.
 	SASLMechanisms []string
 
+	// MD5Salt holds the 4-byte salt for MD5 authentication.
 	MD5Salt []byte
 }
 
+// ReadAuthentication reads an Authentication response.
+// It populates the type-specific fields that apply to the decoded message.
 func (c *Conn) ReadAuthentication() (AuthenticationResponse, error) {
 	var zero AuthenticationResponse
 	if err := c.checkMessageHeader('R'); err != nil {
@@ -388,6 +419,7 @@ func (c *Conn) ReadAuthentication() (AuthenticationResponse, error) {
 	return r, nil
 }
 
+// WritePasswordMessage writes a frontend PasswordMessage.
 func (c *Conn) WritePasswordMessage(password string) error {
 	var s sizer
 	s.addInt32() // length
@@ -398,6 +430,7 @@ func (c *Conn) WritePasswordMessage(password string) error {
 	return c.Err()
 }
 
+// WriteSASLInitialResponse writes a frontend SASLInitialResponse message.
 func (c *Conn) WriteSASLInitialResponse(mechanism string, data []byte) error {
 	var s sizer
 	s.addInt32() // length
@@ -410,6 +443,7 @@ func (c *Conn) WriteSASLInitialResponse(mechanism string, data []byte) error {
 	return c.Err()
 }
 
+// WriteSASLResponse writes a frontend SASLResponse message.
 func (c *Conn) WriteSASLResponse(data []byte) error {
 	var s sizer
 	s.addInt32() // length
@@ -435,13 +469,22 @@ func (c *Conn) ReadReadyForQuery() (ReadyForQueryResponse, error) {
 	}, nil
 }
 
+// Notification is the backend NotificationResponse message.
 type Notification struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
-	PID     int32
+
+	// PID is the backend process ID that sent the notification.
+	PID int32
+
+	// Channel is the notification channel name.
 	Channel []byte
+
+	// Payload is the notification payload.
 	Payload []byte
 }
 
+// WriteNotification writes a NotificationResponse message.
 func (c *Conn) WriteNotification(pid int32, channel, payload string) error {
 	var s sizer
 	s.addInt32() // length
@@ -480,6 +523,7 @@ func (c *Conn) readNotification() (Notification, error) {
 	}, nil
 }
 
+// WriteParse writes a frontend Parse message.
 func (c *Conn) WriteParse(stmt, sql string) error {
 	var s sizer
 	s.addInt32() // length
@@ -518,6 +562,8 @@ type RowDescriptionResponse struct {
 	Fields []FieldDescription
 }
 
+// WriteDescribe writes a frontend Describe message for the named statement
+// or portal identified by typ.
 func (c *Conn) WriteDescribe(typ byte, statment string) error {
 	var s sizer
 	s.addInt32() // length
@@ -585,11 +631,16 @@ func (c *Conn) ReadRowDescription() (RowDescriptionResponse, error) {
 	}, nil
 }
 
+// ParameterDescriptionResponse is the backend ParameterDescription message.
 type ParameterDescriptionResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
+
+	// OIDs lists the parameter type OIDs in declaration order.
 	OIDs []int32
 }
 
+// ReadParameterDescription reads a ParameterDescription response.
 func (c *Conn) ReadParameterDescription() (ParameterDescriptionResponse, error) {
 	if err := c.checkMessageHeader('t'); err != nil {
 		return ParameterDescriptionResponse{}, err
@@ -612,13 +663,20 @@ func (c *Conn) ReadParameterDescription() (ParameterDescriptionResponse, error) 
 	}, nil
 }
 
+// FormatParams holds the parameter and result format codes used by WriteBind.
 type FormatParams struct {
-	In  []int16
+	// In holds the parameter format codes.
+	In []int16
+
+	// Out holds the result-column format codes.
 	Out []int16
 }
 
 var emptyFormatParams = &FormatParams{}
 
+// WriteBind writes a frontend Bind message.
+// args are encoded as non-NULL parameter values. If p is nil, all parameter
+// and result formats default to text.
 func (c *Conn) WriteBind(portal, statement string, args []string, p *FormatParams) error {
 	p = cmp.Or(p, emptyFormatParams)
 
@@ -674,12 +732,15 @@ func (c *Conn) WriteBind(portal, statement string, args []string, p *FormatParam
 	return c.Err()
 }
 
+// WriteSync writes a frontend Sync message.
 func (c *Conn) WriteSync() error {
 	c.c.WriteByte('S')
 	c.c.WriteInt32(4)
 	return c.Err()
 }
 
+// WriteExecute writes a frontend Execute message.
+// limit is the maximum number of rows to return; 0 means no limit.
 func (c *Conn) WriteExecute(portal string, limit int) error {
 	var s sizer
 	s.addInt32() // length
