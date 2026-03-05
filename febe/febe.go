@@ -196,7 +196,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 			}
 			continue
 		case 'A':
-			m, err := c.ReadNotification()
+			m, err := c.readNotification()
 			if err != nil {
 				return zero, err
 			}
@@ -400,7 +400,7 @@ func (c *Conn) ReadReadyForQuery() (ReadyForQueryResponse, error) {
 	}, nil
 }
 
-type NotificationResponse struct {
+type Notification struct {
 	MessageHeader
 	PID     int32
 	Channel []byte
@@ -421,23 +421,23 @@ func (c *Conn) WriteNotification(pid int32, channel, payload string) error {
 	return c.Err()
 }
 
-func (c *Conn) ReadNotification() (NotificationResponse, error) {
+func (c *Conn) readNotification() (Notification, error) {
 	if err := c.checkMessageHeader('A'); err != nil {
-		return NotificationResponse{}, err
+		return Notification{}, err
 	}
 	pid, err := c.c.ReadInt32()
 	if err != nil {
-		return NotificationResponse{}, err
+		return Notification{}, err
 	}
 	channel, err := c.c.ReadString()
 	if err != nil {
-		return NotificationResponse{}, err
+		return Notification{}, err
 	}
 	payload, err := c.c.ReadString()
 	if err != nil {
-		return NotificationResponse{}, err
+		return Notification{}, err
 	}
-	return NotificationResponse{
+	return Notification{
 		MessageHeader: c.h,
 		PID:           pid,
 		Channel:       channel,
