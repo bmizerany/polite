@@ -17,7 +17,7 @@ func TestCopyFreestyle(t *testing.T) {
 
 	defer func() {
 		// Make sure the connection is still alive and in a good state.
-		if err := cn.Ping(ctx); err != nil {
+		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -47,7 +47,7 @@ func TestCopyNonBinary(t *testing.T) {
 
 	defer func() {
 		// ensure recovery
-		if err := cn.Ping(ctx); err != nil {
+		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 			t.Fatal(err)
 		}
 	}()

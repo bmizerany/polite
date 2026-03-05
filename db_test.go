@@ -182,8 +182,8 @@ func TestConnClose(t *testing.T) {
 	}
 
 	// Ensure we can't use the connection after closing.
-	if err := cn.Ping(t.Context()); !errors.Is(err, net.ErrClosed) {
-		t.Fatalf("Ping() = %v; want %v", err, ErrPoolClosed)
+	if err := cn.Exec(t.Context(), "SELECT 1"); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("query(SELECT 1) = %v; want %v", err, ErrPoolClosed)
 	}
 }
 
@@ -336,7 +336,7 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 
 	cn := newSession(t)
 	t.Cleanup(func() {
-		checkPing(t, cn)
+		checkReady(t, cn)
 	})
 
 	ctx := t.Context()
@@ -418,8 +418,8 @@ func TestErrors(t *testing.T) {
 		}
 
 		// ensure we recover
-		if err := cn.Ping(ctx); err != nil {
-			t.Fatalf("ping failed: %v", err)
+		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+			t.Fatalf("SELECT 1 failed: %v", err)
 		}
 	})
 
@@ -439,8 +439,8 @@ func TestErrors(t *testing.T) {
 		}
 
 		// ensure we recover
-		if err := cn.Ping(ctx); err != nil {
-			t.Fatalf("ping failed: %v", err)
+		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+			t.Fatalf("SELECT 1 failed: %v", err)
 		}
 	})
 }
@@ -449,7 +449,7 @@ func TestNotice(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
-	defer checkPing(t, cn) // ensure we leave in a good state
+	defer checkReady(t, cn) // ensure we leave in a good state
 
 	notice := func(ctx context.Context) {
 		t.Helper()
@@ -462,7 +462,7 @@ func TestNotice(t *testing.T) {
 
 	// no handler
 	notice(ctx)
-	checkPing(t, cn) // check notice is dropped
+	checkReady(t, cn) // check notice is dropped
 
 	var got []*febe.Notice
 	ctx = febe.WithTrace(ctx, &febe.Trace{
@@ -487,7 +487,7 @@ func TestParameterStatus(t *testing.T) {
 	t.Parallel()
 
 	cn := newSessionDB(t)
-	defer checkPing(t, cn) // ensure we leave in a good state
+	defer checkReady(t, cn) // ensure we leave in a good state
 
 	var got []febe.Parameter
 	ctx := febe.WithTrace(t.Context(), &febe.Trace{
@@ -500,7 +500,7 @@ func TestParameterStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	checkPing(t, cn) // flush out parameter status if not received by Exec
+	checkReady(t, cn) // flush out parameter status if not received by Exec
 
 	diff.Test(t, t.Errorf, got, []febe.Parameter{
 		{Name: "DateStyle", Value: "Postgres, DMY"},
@@ -511,7 +511,7 @@ func TestParameterStatusTraceCompatibility(t *testing.T) {
 	t.Parallel()
 
 	cn := newSessionDB(t)
-	defer checkPing(t, cn)
+	defer checkReady(t, cn)
 
 	var got int
 	ctx := febe.WithTrace(t.Context(), &febe.Trace{
@@ -523,7 +523,7 @@ func TestParameterStatusTraceCompatibility(t *testing.T) {
 	if err := cn.Exec(ctx, "SET datestyle TO postgres, dmy"); err != nil {
 		t.Fatal(err)
 	}
-	checkPing(t, cn)
+	checkReady(t, cn)
 	if got == 0 {
 		t.Fatal("expected ReceivedParameterStatus callback to fire")
 	}
@@ -533,7 +533,7 @@ func TestByteaString(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
-	defer checkPing(t, cn) // ensure we leave in a good state
+	defer checkReady(t, cn) // ensure we leave in a good state
 
 	ctx := t.Context()
 	var got []string
@@ -551,7 +551,7 @@ func TestRowParseTime(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
-	defer checkPing(t, cn) // ensure we leave in a good state
+	defer checkReady(t, cn) // ensure we leave in a good state
 
 	ctx := t.Context()
 	var got []time.Time
@@ -622,12 +622,12 @@ func TestUseGoTime(t *testing.T) {
 	})
 }
 
-func checkPing(t *testing.T, c *Conn) {
+func checkReady(t *testing.T, c *Conn) {
 	t.Helper()
 	if t.Failed() {
 		return
 	}
-	if err := c.Ping(t.Context()); err != nil {
+	if err := c.Exec(t.Context(), "SELECT 1"); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
 		}

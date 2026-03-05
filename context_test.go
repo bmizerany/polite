@@ -21,7 +21,7 @@ func TestDeadlineIsolation(t *testing.T) {
 
 	cancel()
 
-	if err := c.Ping(context.Background()); err != nil {
+	if err := c.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatalf("unexpected error after context cancel: %v", err)
 	}
 }

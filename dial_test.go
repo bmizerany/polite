@@ -29,7 +29,7 @@ func TestOpenAuthNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cn.Close()
-	if err := cn.Ping(context.Background()); err != nil {
+	if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -85,7 +85,7 @@ func TestOpenAuthMD5(t *testing.T) {
 			}
 			defer cn.Close()
 
-			if err := cn.Ping(context.Background()); err != nil {
+			if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -149,7 +149,7 @@ func TestOpenAuthSCRAM(t *testing.T) {
 				t.Fatal("expected error")
 			}
 
-			if err := cn.Ping(context.Background()); err != nil {
+			if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -204,7 +204,7 @@ func TestOpenTLS(t *testing.T) {
 			}
 			defer cn.Close()
 
-			if err := cn.Ping(context.Background()); err != nil {
+			if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -241,7 +241,7 @@ func TestOpenTLSSystemRootCert(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cn.Close()
-	if err := cn.Ping(context.Background()); err != nil {
+	if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
