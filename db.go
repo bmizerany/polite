@@ -74,12 +74,6 @@ type Conn struct {
 	uses int
 }
 
-// Ping verifies that c can complete a round trip to the backend by executing
-// SELECT 1. It returns errors from query execution or response reading.
-func (c *Conn) Ping(ctx context.Context) error {
-	return c.Exec(ctx, "SELECT 1")
-}
-
 func (c *Conn) Close() error {
 	if c.closed {
 		return net.ErrClosed

@@ -148,7 +148,7 @@ func TestPoolPutClosedPool(t *testing.T) {
 		t.Fatalf("unexpected error on close: %v", err)
 	}
 
-	if err := cn.Ping(ctx); err != nil {
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatalf("expected connection alive after pool close, got %v", err)
 	}
 	p.Put(cn)
