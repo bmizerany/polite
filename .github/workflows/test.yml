@@ -7,9 +7,6 @@ on:
     branches:
       - "main"
 
-env:
-  GOMODCACHE: ${{ github.workspace }}/gomodcache
-
 concurrency:
   # For PRs, later CI runs preempt previous ones. e.g. a force push on a PR
   # cancels running CI jobs and starts all new ones.
@@ -17,76 +14,19 @@ concurrency:
   # For non-PR pushes, concurrency.group needs to be unique for every distinct
   # CI run we want to have happen. Use run_id, which in practice means all
   # non-PR CI runs will be allowed to run without preempting each other.
-  group: ${{ github.workflow }}-$${{ github.pull_request.number || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
-  gomod-cache:
-    runs-on: ubuntu-20.04
-    outputs:
-      cache-key: ${{ steps.hash.outputs.key }}
-    steps:
-      - name: checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Compute cache key from go.{mod,sum}
-        id: hash
-        run: echo "key=gomod-${{ hashFiles('go.mod', 'go.sum') }}" >> "$GITHUB_OUTPUT"
-
-      # See if the cache entry already exists to avoid downloading it
-      # and doing the cache write again.
-      - name: check-cache
-        id: check-cache
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-        with:
-          path: gomodcache
-          key: ${{ steps.hash.outputs.key }}
-          lookup-only: true
-          enableCrossOsArchive: true
-
-      - name: download-modules
-        if: steps.check-cache.outputs.cache-hit != 'true'
-        run: go mod download
-
-      - name: cache-modules
-        if: steps.check-cache.outputs.cache-hit != 'true'
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-        with:
-          path: gomodcache
-          key: ${{ steps.hash.outputs.key }}
-          enableCrossOsArchive: true
 
   test:
-    runs-on: ubuntu-20.04
-    needs: gomod-cache
+    runs-on: ubuntu-22.04
     steps:
       - name: checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Restore Go module cache
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-        with:
-          path: gomodcache
-          key: ${{ needs.gomod-cache.outputs.cache-key }}
-          enableCrossOsArchive: true
-
-      - name: Restore Cache
-        id: restore-cache
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-        with:
-          # This is only restoring the build cache. Mod cache is shared across jobs.
-          path: |
-            ~/.cache/go-build
-            ~\AppData\Local\go-build
-          key: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ github.job }}-${{ github.run_id }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ github.job }}-
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-
-            ${{ runner.os }}-go-
-
       - name: setup postgres
-        uses: bmizerany/setup-postgres@v3
+        uses: bmizerany/setup-postgres@v4
 
       - name: go mod tidy
         run: go mod tidy -diff
@@ -95,18 +35,9 @@ jobs:
         run: go test -v -count=1 ./...
 
       - name: staticcheck
-        if: always() # This may contain clues to test failures that came before it, so always run it.
+        if: always()
         run: go run honnef.co/go/tools/cmd/staticcheck ./...
 
-      - name: Save Cache
-        # Always run this step, even if the previous steps failed. Failures can
-        # happen after successful builds, so save that work.
-        if: always() && steps.restore-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
-        with:
-          # This is only saving the build cache. Mod cache is shared across jobs.
-          path: |
-            ~/.cache/go-build
-            ~\AppData\Local\go-build
-          key: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ github.job }}-${{ github.run_id }}
+      - name: go fix
+        if: always()
+        run: go fix -diff ./...

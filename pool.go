@@ -43,16 +43,6 @@ func Opener(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 	}
 }
 
-// DefaultOpener opens a connection to the database using the DefaultDSN with
-// a nil config.
-func defaultOpener(context.Context) (*Conn, error) {
-	cn, err := Open(context.Background(), DefaultDSN, nil)
-	if err != nil {
-		return nil, err
-	}
-	return cn, nil
-}
-
 // TODO(bmizerany): Support multiple hosts. We can keep the DSN on the Conn
 // so that on Put, it can pass the DSN to [Pool.Open], which can take a DSN.
 // https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-TARGET-SESSION-ATTRS
