@@ -5,8 +5,12 @@ import (
 	"context"
 )
 
+// Parameter is a name/value pair from a ParameterStatus message.
 type Parameter struct {
-	Name  string
+	// Name is the parameter name.
+	Name string
+
+	// Value is the parameter value.
 	Value string
 }
 
