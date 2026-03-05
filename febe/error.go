@@ -6,26 +6,63 @@ import (
 	"unsafe"
 )
 
+// Notice holds the fields shared by PostgreSQL notice and error messages.
+// Empty strings mean the backend did not send that field.
 type Notice struct {
-	Severity   string
-	Code       string
-	Message    string
-	Detail     string
-	Hint       string
-	Position   string
-	Internal   string
-	Where      string
-	Schema     string
-	Table      string
-	Column     string
-	DataType   string
+	// Severity is the localized severity string.
+	Severity string
+
+	// Code is the SQLSTATE error code.
+	Code string
+
+	// Message is the primary human-readable message.
+	Message string
+
+	// Detail is the secondary detail message.
+	Detail string
+
+	// Hint is the optional hint text.
+	Hint string
+
+	// Position is the reported statement position, as sent by the backend.
+	Position string
+
+	// Internal is PostgreSQL protocol field 'p', the internal position.
+	Internal string
+
+	// Where is the execution context where the error occurred.
+	Where string
+
+	// Schema is the related schema name.
+	Schema string
+
+	// Table is the related table name.
+	Table string
+
+	// Column is the related column name.
+	Column string
+
+	// DataType is the related data type name.
+	DataType string
+
+	// Constraint is the related constraint name.
 	Constraint string
-	File       string
-	Line       string
-	Routine    string
-	Verbosity  string
+
+	// File is the backend source file name.
+	File string
+
+	// Line is the backend source line number.
+	Line string
+
+	// Routine is the backend source routine name.
+	Routine string
+
+	// Verbosity is PostgreSQL protocol field 'V', the non-localized severity.
+	Verbosity string
 }
 
+// Fields calls yield with each known notice field in protocol key order.
+// Fields omitted by the backend are reported as empty strings.
 func (e *Notice) Fields(yield func(fieldID byte, val string) bool) {
 	fields := []struct {
 		k byte
@@ -62,7 +99,7 @@ type Error struct {
 }
 
 // ErrorCode creates an *Error with the given code and empty message.
-// This can be conviently used to to check with errors.Is for specific error
+// This can be conveniently used to check with errors.Is for specific error
 // codes without needing to construct a full *Error.
 //
 // Example:
@@ -71,15 +108,17 @@ type Error struct {
 //	    // handle unique violation
 //	}
 //
-// Common errors are defined in the pqlite package for convienience.
+// Common errors are defined in the pqlite package for convenience.
 func ErrorCode(code string) *Error {
 	return &Error{Notice: &Notice{Code: code}}
 }
 
+// AsError returns e as an *Error without copying it.
 func (e *Notice) AsError() *Error {
 	return &Error{Notice: e}
 }
 
+// Error returns the backend message prefixed for use as an error string.
 func (e *Error) Error() string {
 	var b strings.Builder
 	b.WriteString("postgres: ")
@@ -96,8 +135,12 @@ func (e *Error) Is(target error) bool {
 	return e.Code == t.Code
 }
 
+// NoticeResponse is a backend NoticeResponse or ErrorResponse message.
 type NoticeResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
+
+	// Notice is the decoded notice body.
 	*Notice
 }
 
@@ -181,9 +224,15 @@ func (c *Conn) readNoticeResponse() (NoticeResponse, error) {
 	return n, nil
 }
 
+// ParameterStatusResponse is the backend ParameterStatus message.
 type ParameterStatusResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
-	Name  string
+
+	// Name is the parameter name.
+	Name string
+
+	// Value is the parameter value.
 	Value string
 }
 
