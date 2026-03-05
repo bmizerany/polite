@@ -109,15 +109,29 @@ type Message interface {
 	Header() MessageHeader
 }
 
+// MessageHeader is the decoded header for a single protocol message.
+// Its length uses the PostgreSQL wire format: it includes the 4-byte
+// length field and excludes the leading message type byte.
 type MessageHeader struct {
 	msgType byte
 	msgLen  int32
 }
 
+// Type returns the protocol message type byte.
 func (h MessageHeader) Type() byte            { return h.msgType }
+
+// Len returns the protocol message length from the header.
+// It includes the 4-byte length field and excludes the type byte.
 func (h MessageHeader) Len() int              { return int(h.msgLen) }
+
+// BodyLen returns the unread message body length.
+// It excludes the 4-byte length field.
 func (h MessageHeader) BodyLen() int          { return int(h.msgLen - 4) }
+
+// Header returns h so MessageHeader implements Message.
 func (h MessageHeader) Header() MessageHeader { return h }
+
+// String returns a debug representation of h.
 func (h MessageHeader) String() string {
 	return fmt.Sprintf("<MessageHeader Type:%q Len:%d>", h.msgType, h.msgLen)
 }
