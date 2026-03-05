@@ -539,26 +539,47 @@ func (c *Conn) WriteParse(stmt, sql string) error {
 	return c.Err()
 }
 
+// FieldDescription describes one column in a RowDescriptionResponse.
 type FieldDescription struct {
-	Name             string // This is a string to gurarantee that it is a copy, safe for use after a call to any later Read call
-	TableOID         int32
+	// Name is copied out of the message so it remains valid after later reads.
+	Name string
+
+	// TableOID is the source table OID, or 0 if the column is not a simple
+	// reference to a table column.
+	TableOID int32
+
+	// TableAttributeID is the source column attribute number, or 0 if the
+	// column is not a simple table reference.
 	TableAttributeID int16
-	DataTypeOID      int32
-	DataTypeSize     int16
-	TypeModifier     int32
-	FormatCode       int16
+
+	// DataTypeOID is the column data type OID.
+	DataTypeOID int32
+
+	// DataTypeSize is the column type size in bytes, or -1 for variable-width
+	// types.
+	DataTypeSize int16
+
+	// TypeModifier is the type modifier, or -1 if none was supplied.
+	TypeModifier int32
+
+	// FormatCode is the column format code: 0 for text or 1 for binary.
+	FormatCode int16
 }
 
 // This is a zero value, so it is safe to use without initialization and
 // values of FieldDescription are comparable (e.g. the underlying memory
-// cannot be changed (without unsafe) by anymore once it is returned from a
+// cannot be changed (without unsafe) by anyone once it is returned from a
 // Read call).
 //
 //lint:ignore SA4000 We're ensuring that FieldDescription is comparable
 var _ = (FieldDescription{}) == (FieldDescription{})
 
+// RowDescriptionResponse is the backend RowDescription message.
 type RowDescriptionResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
+
+	// Fields describes the returned columns in order.
 	Fields []FieldDescription
 }
 
@@ -577,6 +598,7 @@ func (c *Conn) WriteDescribe(typ byte, statment string) error {
 	return c.Err()
 }
 
+// ReadRowDescription reads a RowDescription response.
 func (c *Conn) ReadRowDescription() (RowDescriptionResponse, error) {
 	if err := c.checkMessageHeader('T'); err != nil {
 		return RowDescriptionResponse{}, err
@@ -754,11 +776,16 @@ func (c *Conn) WriteExecute(portal string, limit int) error {
 	return c.Err()
 }
 
+// CommandCompleteResponse is the backend CommandComplete message.
 type CommandCompleteResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
+
+	// Tag is the parsed command tag.
 	Tag
 }
 
+// ReadCommandComplete reads a CommandComplete response.
 func (c *Conn) ReadCommandComplete() (CommandCompleteResponse, error) {
 	var zero CommandCompleteResponse
 	if err := c.checkMessageHeader('C'); err != nil {
@@ -776,8 +803,12 @@ func (c *Conn) ReadCommandComplete() (CommandCompleteResponse, error) {
 
 var space = []byte{' '}
 
+// Tag is the parsed form of a PostgreSQL command tag.
 type Tag struct {
-	Command      string
+	// Command is the command name, such as "SELECT" or "INSERT".
+	Command string
+
+	// RowsAffected is the parsed row count, if the tag carries one.
 	RowsAffected int64
 }
 
@@ -792,6 +823,8 @@ var commands = map[string]string{
 	"MERGE":  "MERGE",
 }
 
+// ParseCommandTag parses a PostgreSQL command tag.
+// For INSERT tags, the returned row count ignores the inserted OID field.
 func ParseCommandTag(tag []byte) Tag {
 	cmd, data, _ := bytes.Cut(tag, space)
 	if bytes.Equal(cmd, []byte("INSERT")) {
@@ -815,16 +848,26 @@ func ParseCommandTag(tag []byte) Tag {
 	}
 }
 
+// DataRowResponse is the header of a DataRow or binary COPY row message.
 type DataRowResponse struct {
+	// MessageHeader is the decoded message header.
 	MessageHeader
+
+	// NumCols is the number of column values that follow.
 	NumCols int16
 }
 
+// DataRowValueResponse holds one column value from a DataRow.
 type DataRowValueResponse struct {
+	// MessageHeader is not populated by ReadDataRowValue.
 	MessageHeader
+
+	// Data is the raw bytes for the column value.
 	Data []byte
 }
 
+// ReadDataRow reads the column count for a DataRow or binary COPY row.
+// If discardBinaryHeader is true, it first discards the binary COPY header.
 func (c *Conn) ReadDataRow(discardBinaryHeader bool) (DataRowResponse, error) {
 	if err := c.checkMessageHeader('D', 'd'); err != nil {
 		return DataRowResponse{}, err
@@ -844,6 +887,7 @@ func (c *Conn) ReadDataRow(discardBinaryHeader bool) (DataRowResponse, error) {
 	}, nil
 }
 
+// ReadDataRowValue reads the next column value from the current row.
 func (c *Conn) ReadDataRowValue() (DataRowValueResponse, error) {
 	if err := c.checkMessageHeader('D', 'd'); err != nil {
 		return DataRowValueResponse{}, err
