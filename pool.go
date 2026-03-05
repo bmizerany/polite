@@ -45,7 +45,7 @@ func Opener(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 
 // DefaultOpener opens a connection to the database using the DefaultDSN with
 // a nil config.
-func DefaultOpener(context.Context) (*Conn, error) {
+func defaultOpener(context.Context) (*Conn, error) {
 	cn, err := Open(context.Background(), DefaultDSN, nil)
 	if err != nil {
 		return nil, err
@@ -217,10 +217,10 @@ func (p *Pool) openConn() *Conn {
 }
 
 func (p *Pool) open(ctx context.Context) (*Conn, error) {
-	if p.Open == nil {
-		return DefaultOpener(ctx)
+	if p.Open != nil {
+		return p.Open(ctx)
 	}
-	return p.Open(ctx)
+	return Open(ctx, DefaultDSN, nil)
 }
 
 func (p *Pool) maxOpen() int {
