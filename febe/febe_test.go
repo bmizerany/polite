@@ -163,6 +163,37 @@ func TestNoticeResponse(t *testing.T) {
 	diff.Test(t, t.Errorf, got, testNotice)
 }
 
+func TestNotificationResponseTrace(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	cn.WriteNotification(1234, "hello", "world")
+	cn.WriteTerminate()
+	cn.Flush()
+
+	var got *NotificationResponse
+	ctx := WithTrace(context.Background(), &Trace{
+		ReceivedNotification: func(ctx context.Context, n *NotificationResponse) {
+			got = n
+		},
+	})
+
+	_, err := cn.ReadHeader(ctx)
+	if !errors.Is(err, ErrTerminated) {
+		t.Fatalf("err = %v; want %v", err, ErrTerminated)
+	}
+
+	want := &NotificationResponse{
+		MessageHeader: MessageHeader{
+			msgType: 'A',
+			msgLen:  20,
+		},
+		PID:     1234,
+		Channel: []byte("hello"),
+		Payload: []byte("world"),
+	}
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func TestWriteStartupMessage(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
@@ -217,8 +248,7 @@ func TestReadReadyForQuery(t *testing.T) {
 	cn.c.WriteByte('I')
 	cn.c.Flush()
 
-	_, err := cn.ReadHeader(context.Background())
-	if err != nil {
+	if err := cn.readAndSetCurrentHeader(); err != nil {
 		t.Fatal(err)
 	}
 	got, err := cn.ReadReadyForQuery()
@@ -313,8 +343,7 @@ func TestReadCommandComplete(t *testing.T) {
 	cn.c.WriteString("SELECT 1")
 	cn.c.Flush()
 
-	_, err := cn.ReadHeader(context.Background())
-	if err != nil {
+	if err := cn.readAndSetCurrentHeader(); err != nil {
 		t.Fatal(err)
 	}
 	got, err := cn.ReadCommandComplete()
@@ -487,8 +516,7 @@ func TestReadNotification(t *testing.T) {
 	cn.c.WriteString("world")
 	cn.c.Flush()
 
-	_, err := cn.ReadHeader(context.Background())
-	if err != nil {
+	if err := cn.readAndSetCurrentHeader(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -508,7 +536,6 @@ func TestReadNotification(t *testing.T) {
 	}
 
 	diff.Test(t, t.Errorf, got, want)
-
 }
 
 func TestWriteParse(t *testing.T) {

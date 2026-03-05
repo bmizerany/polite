@@ -14,6 +14,7 @@ type Trace struct {
 	ReceivedHeader          func(context.Context, MessageHeader)
 	ReceivedNotice          func(context.Context, *Notice)
 	ReceivedError           func(context.Context, *Error)
+	ReceivedNotification    func(context.Context, *NotificationResponse)
 	ReceivedParameterStatus func(context.Context, Parameter)
 }
 
