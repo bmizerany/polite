@@ -58,6 +58,7 @@ func Slogger(t testing.TB) *slog.Logger {
 func Checker(t testing.TB) func(err, want error) {
 	t.Helper()
 	return func(got, want error) {
+		t.Helper()
 		if !errors.Is(got, want) {
 			t.Errorf("err[%[1]T] = %v, want %[2]v", got, want)
 		}

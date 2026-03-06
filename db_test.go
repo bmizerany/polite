@@ -12,10 +12,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"blake.io/pqlite/febe"
+	"blake.io/pqlite/internal/testutil"
 	"kr.dev/diff"
 )
 
@@ -588,56 +588,31 @@ func TestRowParseTime(t *testing.T) {
 }
 
 func TestUseGoTime(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		cn, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cn.Close()
+	check := testutil.Checker(t)
 
-		check := func() {
-			t.Helper()
+	cn0, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
+	check(err, nil)
+	defer cn0.Close()
+	check(cn0.Exec(t.Context(), `SET pqlite.go_time = '2024-01-02T03:04:05.123456Z'`), nil)
 
-			err := cn.Exec(t.Context(), "CREATE TEMP TABLE IF NOT EXISTS synctest (t TIMESTAMPTZ DEFAULT now())")
-			if err != nil {
-				t.Fatal(err)
+	cn1, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
+	check(err, nil)
+	defer cn1.Close()
+	check(cn1.Exec(t.Context(), `SET pqlite.go_time = '2025-01-02T03:04:05.123456Z'`), nil)
+
+	checkTime := func(cn *Conn, want time.Time) {
+		for row, err := range cn.Query(t.Context(), `SELECT now()`) {
+			check(err, nil)
+			ts, err := row.ParseTime()
+			check(err, nil)
+			if !ts.Equal(want) {
+				t.Errorf("got %v; want %v", ts, want)
 			}
-
-			const q = `
-				WITH ins AS (
-					INSERT INTO synctest DEFAULT VALUES
-					RETURNING t
-				)
-
-				-- Select all variations of now()
-				-- and check the equal the synctest bubble time.
-				SELECT now(), transaction_timestamp(), statement_timestamp(), t FROM ins
-			`
-
-			for row, err := range cn.Query(t.Context(), q) {
-				if err != nil {
-					t.Fatal(err)
-				}
-				if row.Columns() <= 0 {
-					t.Fatal("expected at least one column")
-				}
-				for i := range row.Columns() {
-					v, _ := row.ParseTime()
-					if !v.Equal(time.Now().Truncate(time.Microsecond)) {
-						t.Fatalf("[%d]: got %v; want %v", i, v, time.Now())
-					}
-				}
-
-				return
-			}
-
-			t.Fatal("expected at least one row")
 		}
+	}
 
-		check()
-		time.Sleep(1 * time.Hour)
-		check()
-	})
+	checkTime(cn0, time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC))
+	checkTime(cn1, time.Date(2025, 1, 2, 3, 4, 5, 123456000, time.UTC))
 }
 
 func checkReady(t *testing.T, c *Conn) {

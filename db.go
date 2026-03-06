@@ -122,25 +122,22 @@ func (c *Conn) LastResult() Result {
 }
 
 var allBinary = []int16{1}
-var goTimeSetPortal = "__pqlite_set_time"
 
 func formatGoTime(t time.Time) string {
 	return t.UTC().Round(time.Microsecond).Format("2006-01-02 15:04:05.999999Z07:00")
 }
 
-func (c *Conn) queueSetGoTime() error {
+func (c *Conn) updateGoTime(ctx context.Context) error {
 	if !c.useGoTime {
 		return nil
 	}
-
-	sql := "SET pqlite.go_time = '" + formatGoTime(time.Now()) + "'"
-	if err := c.fc.WriteParse("", sql); err != nil {
+	const q = `
+		SELECT set_config('pqlite.go_time', coalesce(current_setting('pqlite.go_time', true), $1), false) LIMIT 0
+	`
+	for _, err := range c.query(ctx, q, formatGoTime(time.Now())) {
 		return err
 	}
-	if err := c.fc.WriteBind(goTimeSetPortal, "", nil, nil); err != nil {
-		return err
-	}
-	return c.fc.WriteExecute(goTimeSetPortal, 0)
+	return nil
 }
 
 func (c *Conn) initGoTime(ctx context.Context) error {
@@ -163,9 +160,6 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) 
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		err = c.maybeRecoverFrom(ctx, err)
-		return err
-	}
-	if err := c.queueSetGoTime(); err != nil {
 		return err
 	}
 	fp := &febe.FormatParams{
@@ -251,6 +245,17 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // See the package section "Row Draining" for iterator cleanup behavior when
 // columns are unread or iteration stops early.
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
+	if c.useGoTime {
+		if err := c.updateGoTime(ctx); err != nil {
+			return func(yield func(*Row, error) bool) {
+				yield(nil, err)
+			}
+		}
+	}
+	return c.query(ctx, sql, args...)
+}
+
+func (c *Conn) query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
 		if err := c.prepare(ctx, "", sql, args...); err != nil {
 			yield(nil, err)
