@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"iter"
 	"net"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -56,6 +57,15 @@ func createDB(t testing.TB) string {
 	if err := cn.Exec(t.Context(), "CREATE DATABASE "+dbname); err != nil {
 		t.Fatal(err)
 	}
+	u, err := url.Parse(testDSN)
+	if err == nil && u.Scheme != "" {
+		u2 := *u
+		u2.Path = "/" + dbname
+		dsn := u2.String()
+		t.Logf("newConn: dsn: %q", dsn)
+		return dsn
+	}
+
 	dsn := testDSN + " dbname=" + dbname
 	t.Logf("newConn: dsn: %q", dsn)
 	return dsn
@@ -167,6 +177,35 @@ func TestQueryAllocations(t *testing.T) {
 	})
 	if allocs > 0 {
 		t.Errorf("expected 0 allocations; got %v", allocs)
+	}
+}
+
+func BenchmarkQueryAllocations(b *testing.B) {
+	cn := newSession(b)
+	ctx := b.Context()
+
+	run := func() {
+		const q = `SELECT 1, 'two'`
+		for row, err := range cn.Query(ctx, q) {
+			if err != nil {
+				b.Fatal(err)
+			}
+			_, err = row.ParseInt()
+			if err != nil {
+				b.Fatal(err)
+			}
+			_, err = row.View()
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+
+	run()
+
+	b.ReportAllocs()
+	for b.Loop() {
+		run()
 	}
 }
 
