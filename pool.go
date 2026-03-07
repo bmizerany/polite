@@ -1,4 +1,4 @@
-package pqlite
+package polite
 
 import (
 	"cmp"
@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"blake.io/pqlite/backoff"
+	"blake.io/polite/backoff"
 	"blake.io/wait"
 )
 
@@ -24,10 +24,10 @@ const (
 
 // Errors
 var (
-	ErrPoolFull = errors.New("pqlite: pool: too many waiting")
+	ErrPoolFull = errors.New("polite: pool: too many waiting")
 
 	// ErrPoolClosed is returned when the pool closed.
-	ErrPoolClosed = errors.New("pqlite: pool: closed")
+	ErrPoolClosed = errors.New("polite: pool: closed")
 )
 
 // Opener returns a function that opens a connection to the database with
@@ -199,7 +199,7 @@ func (p *Pool) openConn() *Conn {
 			return nil
 		}
 		if i > 3 {
-			p.log().Info("pqlite: pool: error opening new connection; retrying",
+			p.log().Info("polite: pool: error opening new connection; retrying",
 				"err", cmp.Or(context.Cause(p.cancelCtx), err))
 		}
 	}

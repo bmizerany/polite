@@ -1,4 +1,4 @@
-package pqlite
+package polite
 
 import (
 	"context"
@@ -76,7 +76,7 @@ func (c *Conn) CopyFrom(ctx context.Context, table string, columns []string, fro
 		if errors.As(err, &e) {
 			c.fc.WriteCopyFail(e.Error())
 		} else {
-			c.fc.WriteCopyFail("pqlite: frontend error copying data; see frontend logs for details")
+			c.fc.WriteCopyFail("polite: frontend error copying data; see frontend logs for details")
 		}
 		return err
 	}

@@ -1,4 +1,4 @@
-package pqlite
+package polite
 
 import (
 	"context"
@@ -9,15 +9,15 @@ import (
 	"strconv"
 	"time"
 
-	"blake.io/pqlite/febe"
+	"blake.io/polite/febe"
 )
 
 // Errors
 var (
-	ErrDone                  = errors.New("pqlite: done")
-	ErrOutOfColumns          = errors.New("pqlite: out of columns")
-	ErrTLSRefused            = errors.New("pqlite: TLS refused by backend")
-	ErrUnsupportedCopyFormat = errors.New("pqlite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
+	ErrDone                  = errors.New("polite: done")
+	ErrOutOfColumns          = errors.New("polite: out of columns")
+	ErrTLSRefused            = errors.New("polite: TLS refused by backend")
+	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 )
 
 // ConstraintViolated reports whether err represents a unique violation on the
@@ -132,7 +132,7 @@ func (c *Conn) updateGoTime(ctx context.Context) error {
 		return nil
 	}
 	const q = `
-		SELECT set_config('pqlite.go_time', coalesce(current_setting('pqlite.go_time', true), $1), false) LIMIT 0
+		SELECT set_config('polite.go_time', coalesce(current_setting('polite.go_time', true), $1), false) LIMIT 0
 	`
 	for _, err := range c.query(ctx, q, formatGoTime(time.Now())) {
 		return err
@@ -142,12 +142,12 @@ func (c *Conn) updateGoTime(ctx context.Context) error {
 
 func (c *Conn) initGoTime(ctx context.Context) error {
 	for _, sql := range []string{
-		"CREATE SCHEMA IF NOT EXISTS pqlite",
-		"CREATE OR REPLACE FUNCTION pqlite.now() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT current_setting('pqlite.go_time', false)::timestamptz $$",
-		"CREATE OR REPLACE FUNCTION pqlite.transaction_timestamp() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT current_setting('pqlite.go_time', false)::timestamptz $$",
-		"CREATE OR REPLACE FUNCTION pqlite.statement_timestamp() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT current_setting('pqlite.go_time', false)::timestamptz $$",
-		"CREATE OR REPLACE FUNCTION pqlite.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS $$ SELECT current_setting('pqlite.go_time', false)::timestamptz $$",
-		"SELECT set_config('search_path', 'pqlite,pg_catalog,' || current_setting('search_path'), false)",
+		"CREATE SCHEMA IF NOT EXISTS polite",
+		"CREATE OR REPLACE FUNCTION polite.now() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT current_setting('polite.go_time', false)::timestamptz $$",
+		"CREATE OR REPLACE FUNCTION polite.transaction_timestamp() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT current_setting('polite.go_time', false)::timestamptz $$",
+		"CREATE OR REPLACE FUNCTION polite.statement_timestamp() RETURNS timestamptz LANGUAGE sql STABLE AS $$ SELECT current_setting('polite.go_time', false)::timestamptz $$",
+		"CREATE OR REPLACE FUNCTION polite.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS $$ SELECT current_setting('polite.go_time', false)::timestamptz $$",
+		"SELECT set_config('search_path', 'polite,pg_catalog,' || current_setting('search_path'), false)",
 	} {
 		if err := c.Exec(ctx, sql); err != nil {
 			return err
@@ -284,7 +284,7 @@ func (c *Conn) query(ctx context.Context, sql string, args ...string) iter.Seq2[
 					err := c.maybeRecoverFrom(ctx, row.Close())
 					if err != nil {
 						// TODO: add "Stopped early" to trace and mark the conn as invalid for future use
-						fmt.Printf("pqlite: stopped early with error: %v\n", err)
+						fmt.Printf("polite: stopped early with error: %v\n", err)
 						return
 					}
 					_, err = c.nextRow(ctx, processed)
@@ -453,7 +453,7 @@ func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 }
 
 func unexpectedMessage(h febe.MessageHeader) error {
-	return fmt.Errorf("pqlite: unexpected message type: %q", h.Type())
+	return fmt.Errorf("polite: unexpected message type: %q", h.Type())
 }
 
 var errsWeCanRecoverFrom = errors.Join(

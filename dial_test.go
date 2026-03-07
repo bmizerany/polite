@@ -1,4 +1,4 @@
-package pqlite
+package polite
 
 import (
 	"bufio"
@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"blake.io/pqlite/backoff"
-	"blake.io/pqlite/febe"
+	"blake.io/polite/backoff"
+	"blake.io/polite/febe"
 )
 
 func TestOpenAuthNone(t *testing.T) {

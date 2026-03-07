@@ -1,4 +1,4 @@
-module blake.io/pqlite
+module blake.io/polite
 
 go 1.26.0
 

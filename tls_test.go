@@ -1,4 +1,4 @@
-package pqlite
+package polite
 
 import (
 	"crypto/tls"
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"blake.io/pqlite/dsn"
+	"blake.io/polite/dsn"
 )
 
 func TestMaybeUpgradeToTLSVerifyFullLoadsRootCertAndUsesDSNHost(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"blake.io/pqlite/febe/febeio"
+	"blake.io/polite/febe/febeio"
 )
 
 // Errors
@@ -108,7 +108,7 @@ func (c *Conn) checkMessageHeader(want ...byte) error {
 	if slices.Contains(want, c.h.Type()) {
 		return nil
 	}
-	return fmt.Errorf("pqlite: febe: unexpected message type: %q want %q", c.h.Type(), string(want))
+	return fmt.Errorf("polite: febe: unexpected message type: %q want %q", c.h.Type(), string(want))
 }
 
 // Err returns the connection's pending error state.

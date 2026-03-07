@@ -1,4 +1,4 @@
-package pqlite
+package polite
 
 import (
 	"cmp"
@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"blake.io/pqlite/dsn"
-	"blake.io/pqlite/febe"
+	"blake.io/polite/dsn"
+	"blake.io/polite/febe"
 	"github.com/lib/pq/scram"
 )
 
@@ -240,7 +240,7 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 		if strings.EqualFold(o.SSLRootCert, "system") {
 			roots, err := x509.SystemCertPool()
 			if err != nil {
-				return nil, fmt.Errorf("pqlite: failed to load system root certificates: %w", err)
+				return nil, fmt.Errorf("polite: failed to load system root certificates: %w", err)
 			}
 			tcfg.RootCAs = roots
 			tcfg.ClientCAs = roots

@@ -109,7 +109,7 @@ type Error struct {
 //	    // handle unique violation
 //	}
 //
-// Common errors are defined in the pqlite package for convenience.
+// Common errors are defined in the polite package for convenience.
 func ErrorCode(code string) *Error {
 	return &Error{Notice: &Notice{Code: code}}
 }
@@ -219,7 +219,7 @@ func (c *Conn) readNoticeResponse() (NoticeResponse, error) {
 		case 'V':
 			n.Verbosity = copyToString(v)
 		default:
-			return zero, fmt.Errorf("pqlite: unexpected error response key %q", k)
+			return zero, fmt.Errorf("polite: unexpected error response key %q", k)
 		}
 	}
 	return n, nil
