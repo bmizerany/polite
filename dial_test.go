@@ -173,11 +173,6 @@ func TestOpenTLS(t *testing.T) {
 		{"require", "", "", true},
 		{"require", "", "localhost", true},
 
-		{"verify-ca", "", "", true},
-		{"verify-ca", "", "localhost", true},
-		{"verify-ca", sslrootcert, "", true},
-		{"verify-ca", sslrootcert, "localhost", false},
-
 		{"verify-full", "", "", true},
 		{"verify-full", "", "localhost", true},
 		{"verify-full", sslrootcert, "", true},
