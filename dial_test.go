@@ -160,8 +160,7 @@ func TestOpenTLS(t *testing.T) {
 	t.Parallel()
 
 	sslrootcert, tlsargs := configureTLSOnly(t)
-	var dsn strings.Builder
-	dsn.WriteString(startPG(t, tlsargs...))
+	base := startPG(t, tlsargs...)
 
 	cases := []struct {
 		sslmode string
@@ -172,30 +171,30 @@ func TestOpenTLS(t *testing.T) {
 		{"disable", "", "", false}, //  no  TLS  required  for  local  unix  socket
 		{"disable", "", "localhost", true},
 		{"require", "", "", true},
-		{"require", "", "localhost", false},
+		{"require", "", "localhost", true},
 
 		{"verify-ca", "", "", true},
 		{"verify-ca", "", "localhost", true},
 		{"verify-ca", sslrootcert, "", true},
-		{"verify-ca", sslrootcert, "localhost", true},
+		{"verify-ca", sslrootcert, "localhost", false},
 
-		{"verify-full", "", "", false},
-		{"verify-full", "", "localhost", false},
+		{"verify-full", "", "", true},
+		{"verify-full", "", "localhost", true},
 		{"verify-full", sslrootcert, "", true},
-		{"verify-full", sslrootcert, "localhost", true},
+		{"verify-full", sslrootcert, "localhost", false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.sslmode+"-"+tc.host, func(t *testing.T) {
-			dsn.WriteString(" sslmode=" + tc.sslmode)
+			dsn := base + " sslmode=" + tc.sslmode
 			if tc.host != "" {
-				dsn.WriteString(" host=" + tc.host)
+				dsn += " host=" + tc.host
 			}
 			if tc.sslroot != "" {
-				dsn.WriteString(" sslrootcert=" + tc.sslroot)
+				dsn += " sslrootcert=" + tc.sslroot
 			}
 
-			cn, err := Open(context.Background(), dsn.String(), nil)
+			cn, err := Open(context.Background(), dsn, nil)
 			if err != nil {
 				if !tc.wantErr {
 					t.Fatal(err)

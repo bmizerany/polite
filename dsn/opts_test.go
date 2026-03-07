@@ -127,7 +127,7 @@ func TestParseOptions(t *testing.T) {
 				t.Fatal(err)
 			}
 			if tt.want.SSLMode == "" {
-				tt.want.SSLMode = "require"
+				tt.want.SSLMode = "verify-full"
 			}
 
 			slices.Sort(got.Extra)
