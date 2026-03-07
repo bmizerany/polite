@@ -357,7 +357,7 @@ func TestPoolSyncExpired(t *testing.T) {
 		p := &Pool{
 			MaxLifetime: 3 * time.Second,
 			Logger:      testutil.Slogger(t),
-			Open:        Opener(testDSN, nil),
+			Open:        Opener(testDSN, &Config{UseGoTime: true}),
 		}
 		defer p.Close()
 
