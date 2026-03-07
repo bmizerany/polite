@@ -19,7 +19,7 @@ const (
 	DefaultPoolMaxUses     = 1000
 	DefaultPoolMaxLifetime = 5 * time.Minute
 
-	DefaultDSN = "dbname=postgres host=localhost port=5432 sslmode=disable"
+	DefaultDSN = "dbname=postgres host=localhost port=5432 sslmode=verify-full"
 )
 
 // Errors

@@ -211,6 +211,16 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 	}
 }
 
+// maybeUpgradeToTLS upgrades cn according to the requested sslmode.
+//
+// verify-full uses crypto/tls hostname verification by setting ServerName and
+// leaving InsecureSkipVerify disabled.
+//
+// verify-ca is different: postgres wants CA validation without hostname
+// validation. Go does not expose that mode directly, so this function sets
+// InsecureSkipVerify and immediately replaces the built-in verifier with
+// VerifyConnection, which still checks the certificate chain, intermediates,
+// roots, and validity time, but omits the DNS name check.
 func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, error) {
 	if o.SSLMode == "disable" {
 		return cn, nil
@@ -241,7 +251,7 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 			tcfg.RootCAs = roots
 			tcfg.ClientCAs = roots
 		} else {
-			data, err := os.ReadFile(o.SSLRootCert)
+			data, err := rootedReadFile(o.SSLRootCert)
 			if err != nil {
 				return nil, fmt.Errorf("postgres: failed to read root certificate: %w", err)
 			}
@@ -256,17 +266,35 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 
 	switch o.SSLMode {
 	case "", "require", "verify-full":
-		tcfg.ServerName = o.Host
 		tcfg.InsecureSkipVerify = false
+		tcfg.ServerName = o.Host
 	case "verify-ca":
+		// Go has no built-in "verify CA, but not hostname" mode. This looks
+		// scary in isolation, but VerifyConnection below restores certificate
+		// verification while intentionally skipping only the DNS name check.
 		tcfg.InsecureSkipVerify = true
-		tcfg.VerifyConnection = verifyConnection(tcfg.RootCAs, "", now)
+		tcfg.VerifyConnection = verifyConnection(tcfg.RootCAs, "", tcfg.Time)
 	default:
 		return nil, fmt.Errorf("postgres: unsupported sslmode %q", o.SSLMode)
 	}
 	return tls.Client(cn, tcfg), nil
 }
 
+func rootedReadFile(name string) ([]byte, error) {
+	root, err := os.OpenRoot(filepath.Dir(name))
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.ReadFile(filepath.Base(name))
+}
+
+// verifyConnection returns a tls.VerifyConnection callback that validates the
+// peer certificate chain against roots at now.
+//
+// If dnsName is empty, the callback verifies only the certificate chain and
+// validity window. A non-empty dnsName additionally enables hostname
+// verification.
 func verifyConnection(roots *x509.CertPool, dnsName string, now func() time.Time) func(tls.ConnectionState) error {
 	return func(cs tls.ConnectionState) error {
 		if now == nil {

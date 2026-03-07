@@ -13,8 +13,21 @@ import (
 	"testing/synctest"
 	"time"
 
+	"blake.io/pqlite/dsn"
 	"blake.io/pqlite/internal/testutil"
 )
+
+func TestDefaultDSNUsesVerifyFull(t *testing.T) {
+	t.Parallel()
+
+	o, err := dsn.ParseOptions(DefaultDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := o.SSLMode, "verify-full"; got != want {
+		t.Fatalf("sslmode = %q; want %q", got, want)
+	}
+}
 
 func TestPoolMaxUseWithWaiter(t *testing.T) {
 	t.Parallel()
