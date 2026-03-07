@@ -255,34 +255,27 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 	}
 
 	switch o.SSLMode {
-	case "", "require":
-		tcfg.InsecureSkipVerify = true
+	case "", "require", "verify-full":
+		tcfg.ServerName = o.Host
+		tcfg.InsecureSkipVerify = false
 	case "verify-ca":
 		tcfg.InsecureSkipVerify = true
-		tcfg.VerifyPeerCertificate = verifyPeerCertificate(tcfg.RootCAs, "", now)
-	case "verify-full":
-		tcfg.ServerName = o.Host
-		tcfg.InsecureSkipVerify = true
-		tcfg.VerifyPeerCertificate = verifyPeerCertificate(tcfg.RootCAs, o.Host, now)
+		tcfg.VerifyConnection = verifyConnection(tcfg.RootCAs, "", now)
 	default:
 		return nil, fmt.Errorf("postgres: unsupported sslmode %q", o.SSLMode)
 	}
 	return tls.Client(cn, tcfg), nil
 }
 
-func verifyPeerCertificate(roots *x509.CertPool, dnsName string, now func() time.Time) func(certificates [][]byte, _ [][]*x509.Certificate) error {
-	return func(certificates [][]byte, _ [][]*x509.Certificate) error {
+func verifyConnection(roots *x509.CertPool, dnsName string, now func() time.Time) func(tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
 		if now == nil {
 			now = time.Now
 		}
 
-		certs := make([]*x509.Certificate, len(certificates))
-		for i, asn1Data := range certificates {
-			cert, err := x509.ParseCertificate(asn1Data)
-			if err != nil {
-				return fmt.Errorf("postgres: failed to parse server certificate: %w", err)
-			}
-			certs[i] = cert
+		certs := cs.PeerCertificates
+		if len(certs) == 0 {
+			return fmt.Errorf("postgres: server sent no certificates")
 		}
 
 		opts := x509.VerifyOptions{

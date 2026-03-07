@@ -45,7 +45,7 @@ func setDefaults(o *Options) error {
 	o.Host = cmp.Or(o.Host, "/tmp")
 	o.Port = cmp.Or(o.Port, "5432")
 	o.Database = cmp.Or(o.Database, "postgres")
-	o.SSLMode = cmp.Or(o.SSLMode, "require")
+	o.SSLMode = cmp.Or(o.SSLMode, "verify-full")
 
 	// Include username, and database in the extra options. We
 	// keep them on the struct for convenience, but the backend
@@ -57,7 +57,7 @@ func setDefaults(o *Options) error {
 
 // ParseOptions parses a DSN or URL string into an Options struct. The defaults are:
 //
-//	dbname=postgres user=$USER host=/tmp port=5432 sslmode=verify
+//	dbname=postgres user=$USER host=/tmp port=5432 sslmode=verify-full
 func ParseOptions(dsn string) (*Options, error) {
 	o := &Options{}
 	defer setDefaults(o)
@@ -158,7 +158,7 @@ var isWhitespace = [256]bool{
 //
 // A valid DSN looks like this:
 //
-//	host=localhost port=5432 sslmode=verify somestring='some \'quoted\' string' k = v
+//	host=localhost port=5432 sslmode=verify-full somestring='some \'quoted\' string' k = v
 //
 // The following tokens are yielded:
 //
