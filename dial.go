@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"blake.io/pqlite/dsn"
@@ -225,6 +226,11 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 	}
 
 	tcfg := cmp.Or(cfg.TLSConfig.Clone(), &tls.Config{})
+	now := tcfg.Time
+	if now == nil {
+		now = verifyTime(cfg.UseGoTime)
+		tcfg.Time = now
+	}
 
 	if o.SSLRootCert != "" {
 		if strings.EqualFold(o.SSLRootCert, "system") {
@@ -253,33 +259,59 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 		tcfg.InsecureSkipVerify = true
 	case "verify-ca":
 		tcfg.InsecureSkipVerify = true
-		tcfg.VerifyPeerCertificate = func(certificates [][]byte, _ [][]*x509.Certificate) error {
-			certs := make([]*x509.Certificate, len(certificates))
-			for i, asn1Data := range certificates {
-				cert, err := x509.ParseCertificate(asn1Data)
-				if err != nil {
-					return fmt.Errorf("postgres: failed to parse server certificate: %w", err)
-				}
-				certs[i] = cert
-			}
-
-			// Leave DNSName empty to skip hostname verification.
-			opts := x509.VerifyOptions{
-				Roots:         tcfg.RootCAs,
-				Intermediates: x509.NewCertPool(),
-			}
-			// Skip the first cert because it's the leaf. All others
-			// are intermediates.
-			for _, cert := range certs[1:] {
-				opts.Intermediates.AddCert(cert)
-			}
-			_, err := certs[0].Verify(opts)
-			return err
-		}
+		tcfg.VerifyPeerCertificate = verifyPeerCertificate(tcfg.RootCAs, "", now)
 	case "verify-full":
 		tcfg.ServerName = o.Host
+		tcfg.InsecureSkipVerify = true
+		tcfg.VerifyPeerCertificate = verifyPeerCertificate(tcfg.RootCAs, o.Host, now)
 	default:
 		return nil, fmt.Errorf("postgres: unsupported sslmode %q", o.SSLMode)
 	}
 	return tls.Client(cn, tcfg), nil
+}
+
+func verifyPeerCertificate(roots *x509.CertPool, dnsName string, now func() time.Time) func(certificates [][]byte, _ [][]*x509.Certificate) error {
+	return func(certificates [][]byte, _ [][]*x509.Certificate) error {
+		if now == nil {
+			now = time.Now
+		}
+
+		certs := make([]*x509.Certificate, len(certificates))
+		for i, asn1Data := range certificates {
+			cert, err := x509.ParseCertificate(asn1Data)
+			if err != nil {
+				return fmt.Errorf("postgres: failed to parse server certificate: %w", err)
+			}
+			certs[i] = cert
+		}
+
+		opts := x509.VerifyOptions{
+			CurrentTime:   now(),
+			Roots:         roots,
+			DNSName:       dnsName,
+			Intermediates: x509.NewCertPool(),
+		}
+
+		for _, cert := range certs[1:] {
+			opts.Intermediates.AddCert(cert)
+		}
+
+		_, err := certs[0].Verify(opts)
+		return err
+	}
+}
+
+func verifyTime(useGoTime bool) func() time.Time {
+	if !useGoTime {
+		return time.Now
+	}
+	return syscallTime
+}
+
+func syscallTime() time.Time {
+	var tv syscall.Timeval
+	if err := syscall.Gettimeofday(&tv); err != nil {
+		return time.Now()
+	}
+	return time.Unix(tv.Sec, int64(tv.Usec)*1000)
 }
