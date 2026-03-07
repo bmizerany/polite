@@ -1,6 +1,6 @@
-// Package pqlite provides PostgreSQL client primitives for Go.
+// Package polite provides PostgreSQL client primitives for Go.
 //
-// pqlite is not a database/sql driver and does not implement
+// polite is not a database/sql driver and does not implement
 // database/sql/driver.
 //
 // [Conn] represents one PostgreSQL session for queries, COPY, and
@@ -50,4 +50,4 @@
 // The public API and documented semantics are stable across minor releases.
 // Internal protocol handling, buffering strategy, and performance tuning may
 // change across releases.
-package pqlite
+package polite

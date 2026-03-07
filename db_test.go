@@ -1,4 +1,4 @@
-package pqlite
+package polite
 
 import (
 	"cmp"
@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"blake.io/pqlite/febe"
-	"blake.io/pqlite/internal/testutil"
+	"blake.io/polite/febe"
+	"blake.io/polite/internal/testutil"
 	"kr.dev/diff"
 )
 
@@ -636,12 +636,12 @@ func TestUseGoTime(t *testing.T) {
 	cn0, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
 	check(err, nil)
 	defer cn0.Close()
-	check(cn0.Exec(t.Context(), `SET pqlite.go_time = '2024-01-02T03:04:05.123456Z'`), nil)
+	check(cn0.Exec(t.Context(), `SET polite.go_time = '2024-01-02T03:04:05.123456Z'`), nil)
 
 	cn1, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
 	check(err, nil)
 	defer cn1.Close()
-	check(cn1.Exec(t.Context(), `SET pqlite.go_time = '2025-01-02T03:04:05.123456Z'`), nil)
+	check(cn1.Exec(t.Context(), `SET polite.go_time = '2025-01-02T03:04:05.123456Z'`), nil)
 
 	checkTime := func(cn *Conn, want time.Time) {
 		for row, err := range cn.Query(t.Context(), `SELECT now()`) {

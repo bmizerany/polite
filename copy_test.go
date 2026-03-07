@@ -1,4 +1,4 @@
-package pqlite
+package polite
 
 import (
 	"context"

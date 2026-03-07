@@ -1,4 +1,4 @@
-package pqlite
+package polite
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"blake.io/pqlite/dsn"
-	"blake.io/pqlite/internal/testutil"
+	"blake.io/polite/dsn"
+	"blake.io/polite/internal/testutil"
 )
 
 func TestDefaultDSNUsesVerifyFull(t *testing.T) {
@@ -471,14 +471,14 @@ func sleepUntilDeadline(ctx context.Context) {
 }
 
 func BenchmarkPool(b *testing.B) {
-	b.Run("driver=pqlite/open=1", func(b *testing.B) { benchmarkPool(b, 1) })
-	b.Run("driver=pqlite/open=2", func(b *testing.B) { benchmarkPool(b, 2) })
-	b.Run("driver=pqlite/open=4", func(b *testing.B) { benchmarkPool(b, 4) })
-	b.Run("driver=pqlite/open=8", func(b *testing.B) { benchmarkPool(b, 8) })
-	b.Run("driver=pqlite/open=16", func(b *testing.B) { benchmarkPool(b, 16) })
-	b.Run("driver=pqlite/open=32", func(b *testing.B) { benchmarkPool(b, 32) })
-	b.Run("driver=pqlite/open=48", func(b *testing.B) { benchmarkPool(b, 48) })
-	b.Run("driver=pqlite/open=64", func(b *testing.B) { benchmarkPool(b, 64) })
+	b.Run("driver=polite/open=1", func(b *testing.B) { benchmarkPool(b, 1) })
+	b.Run("driver=polite/open=2", func(b *testing.B) { benchmarkPool(b, 2) })
+	b.Run("driver=polite/open=4", func(b *testing.B) { benchmarkPool(b, 4) })
+	b.Run("driver=polite/open=8", func(b *testing.B) { benchmarkPool(b, 8) })
+	b.Run("driver=polite/open=16", func(b *testing.B) { benchmarkPool(b, 16) })
+	b.Run("driver=polite/open=32", func(b *testing.B) { benchmarkPool(b, 32) })
+	b.Run("driver=polite/open=48", func(b *testing.B) { benchmarkPool(b, 48) })
+	b.Run("driver=polite/open=64", func(b *testing.B) { benchmarkPool(b, 64) })
 }
 
 func benchmarkPool(b *testing.B, maxOpen int) {
