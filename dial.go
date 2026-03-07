@@ -215,12 +215,6 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 //
 // verify-full uses crypto/tls hostname verification by setting ServerName and
 // leaving InsecureSkipVerify disabled.
-//
-// verify-ca is different: postgres wants CA validation without hostname
-// validation. Go does not expose that mode directly, so this function sets
-// InsecureSkipVerify and immediately replaces the built-in verifier with
-// VerifyConnection, which still checks the certificate chain, intermediates,
-// roots, and validity time, but omits the DNS name check.
 func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, error) {
 	if o.SSLMode == "disable" {
 		return cn, nil
@@ -268,12 +262,6 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 	case "", "require", "verify-full":
 		tcfg.InsecureSkipVerify = false
 		tcfg.ServerName = o.Host
-	case "verify-ca":
-		// Go has no built-in "verify CA, but not hostname" mode. This looks
-		// scary in isolation, but VerifyConnection below restores certificate
-		// verification while intentionally skipping only the DNS name check.
-		tcfg.InsecureSkipVerify = true
-		tcfg.VerifyConnection = verifyConnection(tcfg.RootCAs, "", tcfg.Time)
 	default:
 		return nil, fmt.Errorf("postgres: unsupported sslmode %q", o.SSLMode)
 	}
@@ -287,39 +275,6 @@ func rootedReadFile(name string) ([]byte, error) {
 	}
 	defer root.Close()
 	return root.ReadFile(filepath.Base(name))
-}
-
-// verifyConnection returns a tls.VerifyConnection callback that validates the
-// peer certificate chain against roots at now.
-//
-// If dnsName is empty, the callback verifies only the certificate chain and
-// validity window. A non-empty dnsName additionally enables hostname
-// verification.
-func verifyConnection(roots *x509.CertPool, dnsName string, now func() time.Time) func(tls.ConnectionState) error {
-	return func(cs tls.ConnectionState) error {
-		if now == nil {
-			now = time.Now
-		}
-
-		certs := cs.PeerCertificates
-		if len(certs) == 0 {
-			return fmt.Errorf("postgres: server sent no certificates")
-		}
-
-		opts := x509.VerifyOptions{
-			CurrentTime:   now(),
-			Roots:         roots,
-			DNSName:       dnsName,
-			Intermediates: x509.NewCertPool(),
-		}
-
-		for _, cert := range certs[1:] {
-			opts.Intermediates.AddCert(cert)
-		}
-
-		_, err := certs[0].Verify(opts)
-		return err
-	}
 }
 
 func verifyTime(useGoTime bool) func() time.Time {

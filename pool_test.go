@@ -50,6 +50,7 @@ func TestPoolMaxUseWithWaiter(t *testing.T) {
 			cn, err := p.Get(ctx)
 			if err != nil {
 				t.Error(err)
+				return
 			}
 			defer p.Put(cn)
 			cc[i] = cn
