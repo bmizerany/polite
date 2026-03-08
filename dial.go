@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"context"
 	"crypto/md5"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -19,7 +18,7 @@ import (
 
 	"blake.io/polite/dsn"
 	"blake.io/polite/febe"
-	"github.com/lib/pq/scram"
+	"blake.io/polite/internal/scram"
 )
 
 type Config struct {
@@ -156,40 +155,7 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 		// ok
 		return nil
 	case febe.AuthenticationTypeSASL:
-		sc := scram.NewClient(sha256.New, o.User, o.Password)
-		sc.Step(nil)
-		if sc.Err() != nil {
-			return fmt.Errorf("SCRAM-SHA-256 error: %w", sc.Err())
-		}
-
-		// Initial response
-		if err := c.fc.WriteSASLInitialResponse("SCRAM-SHA-256", sc.Out()); err != nil {
-			return err
-		}
-		cr, err := nextResponse(febe.AuthenticationTypeSASLContinue)
-		if err != nil {
-			return err
-		}
-		sc.Step(cr.SASLData)
-		if sc.Err() != nil {
-			return fmt.Errorf("SCRAM-SHA-256 error: %w", sc.Err())
-		}
-
-		// Final response
-		if err := c.fc.WriteSASLResponse(sc.Out()); err != nil {
-			return err
-		}
-		cr, err = nextResponse(febe.AuthenticationTypeSASLFinal)
-		if err != nil {
-			return err
-		}
-		sc.Step(cr.SASLData)
-		if sc.Err() != nil {
-			return fmt.Errorf("SCRAM-SHA-256 error: %w", sc.Err())
-		}
-
-		// Success
-		return nil
+		return scram.Handshake(c.fc, cr, o.User, o.Password)
 	case febe.AuthenticationTypeMD5:
 		// See: https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-START-UP
 		md5 := func(s ...string) string {
