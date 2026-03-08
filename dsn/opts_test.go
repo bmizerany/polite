@@ -1,10 +1,10 @@
 package dsn
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
-	"golang.org/x/exp/slices"
 	"kr.dev/diff"
 )
 
