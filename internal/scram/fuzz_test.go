@@ -149,35 +149,42 @@ func FuzzSCRAMComputation(f *testing.F) {
 		clientNonce = limitString(clientNonce, 24)
 		serverSuffix = limitString(serverSuffix, 24)
 		salt = limitBytes(salt, 32)
-		iter := int(iterSeed % 8193)
+		state := state{
+			user:        user,
+			password:    password,
+			clientNonce: clientNonce,
+			serverNonce: clientNonce + serverSuffix,
+			salt:        salt,
+			iter:        int(iterSeed % 8193),
+		}
 
-		got, ok := referenceSCRAM(sha256.New, user, password, clientNonce, clientNonce+serverSuffix, salt, iter)
+		got0, ok := referenceSCRAM(sha256.New, state)
 		if !ok {
 			return
 		}
-		got2, ok := referenceSCRAM(sha256.New, user, password, clientNonce, clientNonce+serverSuffix, salt, iter)
+		got1, ok := referenceSCRAM(sha256.New, state)
 		if !ok {
 			t.Fatalf("referenceSCRAM lost validity on identical input")
 		}
-		if got.clientFinal != got2.clientFinal {
+		if got0.clientFinal != got1.clientFinal {
 			t.Fatalf("client final is not deterministic")
 		}
-		if !bytes.Equal(got.serverSig, got2.serverSig) {
+		if !bytes.Equal(got0.serverSig, got1.serverSig) {
 			t.Fatalf("server signature is not deterministic")
 		}
-		if err := verifyServerFinal(serverFinalMessage(got.serverSig), got.serverSig); err != nil {
+		if err := verifyServerFinal(serverFinalMessage(got0.serverSig), got0.serverSig); err != nil {
 			t.Fatalf("verifyServerFinal(valid signature) = %v", err)
 		}
 
-		user2, password2, clientNonce2, serverNonce2, salt2, iter2 := mutateStructuredSCRAM(user, password, clientNonce, clientNonce+serverSuffix, salt, iter, mutation)
-		got3, ok := referenceSCRAM(sha256.New, user2, password2, clientNonce2, serverNonce2, salt2, iter2)
+		state = mutateStructuredSCRAM(state, mutation)
+		got3, ok := referenceSCRAM(sha256.New, state)
 		if !ok {
 			return
 		}
-		if got.clientFinal == got3.clientFinal && bytes.Equal(got.serverSig, got3.serverSig) {
+		if got0.clientFinal == got3.clientFinal && bytes.Equal(got0.serverSig, got3.serverSig) {
 			t.Fatalf("mutation did not change proof or server signature")
 		}
-		if classifyServerFinal(verifyServerFinal(serverFinalMessage(got.serverSig), got3.serverSig)) != serverFinalMismatch {
+		if classifyServerFinal(verifyServerFinal(serverFinalMessage(got0.serverSig), got3.serverSig)) != serverFinalMismatch {
 			t.Fatalf("original signature verified against mutated transcript")
 		}
 	})
@@ -220,7 +227,15 @@ func FuzzSCRAMHandshake(f *testing.F) {
 		}
 
 		serverFirst := challengeMessage(serverNonce, salt, iter)
-		want, ok := referenceSCRAM(newHash, user, password, clientNonce, serverNonce, salt, iter)
+		state := state{
+			user:        user,
+			password:    password,
+			clientNonce: clientNonce,
+			serverNonce: serverNonce,
+			salt:        salt,
+			iter:        iter,
+		}
+		want, ok := referenceSCRAM(newHash, state)
 		if hashErr != nil || password == "" {
 			ok = false
 		}
@@ -433,20 +448,20 @@ type referenceResult struct {
 	serverSig   []byte
 }
 
-func referenceSCRAM(newHash func() hash.Hash, user, password, clientNonce, serverNonce string, salt []byte, iter int) (referenceResult, bool) {
-	if newHash == nil || clientNonce == "" || serverNonce == "" || len(salt) == 0 || iter <= 0 {
+func referenceSCRAM(newHash func() hash.Hash, state state) (referenceResult, bool) {
+	if newHash == nil || state.clientNonce == "" || state.serverNonce == "" || len(state.salt) == 0 || state.iter <= 0 {
 		return referenceResult{}, false
 	}
-	if strings.Contains(clientNonce, ",") || strings.Contains(serverNonce, ",") {
+	if strings.Contains(state.clientNonce, ",") || strings.Contains(state.serverNonce, ",") {
 		return referenceResult{}, false
 	}
-	if !strings.HasPrefix(serverNonce, clientNonce) || len(serverNonce) <= len(clientNonce) {
+	if !strings.HasPrefix(state.serverNonce, state.clientNonce) || len(state.serverNonce) <= len(state.clientNonce) {
 		return referenceResult{}, false
 	}
 
-	clientFirst := "n=" + usernameEscapes.Replace(user) + ",r=" + clientNonce
-	serverFirst := string(challengeMessage(serverNonce, salt, iter))
-	withoutProof := "c=" + channelBinding + ",r=" + serverNonce
+	clientFirst := "n=" + usernameEscapes.Replace(state.user) + ",r=" + state.clientNonce
+	serverFirst := string(challengeMessage(state.serverNonce, state.salt, state.iter))
+	withoutProof := "c=" + channelBinding + ",r=" + state.serverNonce
 	authText := clientFirst + "," + serverFirst + "," + withoutProof
 	hmacSum := func(key []byte, msg string) []byte {
 		mac := hmac.New(newHash, key)
@@ -454,7 +469,7 @@ func referenceSCRAM(newHash func() hash.Hash, user, password, clientNonce, serve
 		return mac.Sum(nil)
 	}
 
-	salted, err := pbkdf2.Key(newHash, password, salt, iter, newHash().Size())
+	salted, err := pbkdf2.Key(newHash, state.password, state.salt, state.iter, newHash().Size())
 	if err != nil {
 		return referenceResult{}, false
 	}
@@ -474,19 +489,33 @@ func referenceSCRAM(newHash func() hash.Hash, user, password, clientNonce, serve
 	}, true
 }
 
-func mutateStructuredSCRAM(user, password, clientNonce, serverNonce string, salt []byte, iter int, mutation byte) (string, string, string, string, []byte, int) {
+type state struct {
+	user        string
+	password    string
+	clientNonce string
+	serverNonce string
+	salt        []byte
+	iter        int
+}
+
+func mutateStructuredSCRAM(s state, mutation byte) state {
 	switch mutation % 5 {
 	case 0:
-		return user, flipString(password), clientNonce, serverNonce, salt, iter
+		s.password = flipString(s.password)
+		return s
 	case 1:
-		return user, password, clientNonce, serverNonce, flipBytes(salt), iter
+		s.salt = flipBytes(s.salt)
+		return s
 	case 2:
-		clientNonce = flipString(clientNonce)
-		return user, password, clientNonce, clientNonce + suffixFromNonce(serverNonce, clientNonce), salt, iter
+		s.clientNonce = flipString(s.clientNonce)
+		s.serverNonce = s.clientNonce + suffixFromNonce(s.serverNonce, s.clientNonce)
+		return s
 	case 3:
-		return user, password, clientNonce, clientNonce + flipString(suffixFromNonce(serverNonce, clientNonce)), salt, iter
+		s.serverNonce = s.clientNonce + flipString(suffixFromNonce(s.serverNonce, s.clientNonce))
+		return s
 	default:
-		return user, password, clientNonce, serverNonce, salt, iter + 1
+		s.iter++
+		return s
 	}
 }
 
@@ -559,48 +588,58 @@ func writeAuthentication(w io.Writer, typ febe.AuthenticationType, data []byte) 
 func readClientMessages(data []byte) (clientMessages, error) {
 	var got clientMessages
 
-	body, rest, ok, err := readMessage(data)
-	if err != nil || !ok {
+	msg, err := readMessage(data)
+	if err != nil || !msg.ok {
 		return got, err
 	}
-	initial, err := parseClientInitial(body)
+	initial, err := parseClientInitial(msg.body)
 	if err != nil {
 		return got, err
 	}
 	got.initial = &initial
 
-	body, rest, ok, err = readMessage(rest)
+	msg, err = readMessage(msg.rest)
 	if err != nil {
 		return got, err
 	}
-	if ok {
-		got.final = body
+	if msg.ok {
+		got.final = msg.body
 	}
-	if len(rest) != 0 {
+	if len(msg.rest) != 0 {
 		return got, io.ErrUnexpectedEOF
 	}
 	return got, nil
 }
 
-func readMessage(data []byte) ([]byte, []byte, bool, error) {
+type clientMessage struct {
+	body []byte
+	rest []byte
+	ok   bool
+}
+
+func readMessage(data []byte) (clientMessage, error) {
 	if len(data) == 0 {
-		return nil, nil, false, nil
+		return clientMessage{}, nil
 	}
 	if len(data) < 5 {
-		return nil, nil, false, io.ErrUnexpectedEOF
+		return clientMessage{}, io.ErrUnexpectedEOF
 	}
 	if data[0] != 'p' {
-		return nil, nil, false, io.ErrUnexpectedEOF
+		return clientMessage{}, io.ErrUnexpectedEOF
 	}
 	n := int(binary.BigEndian.Uint32(data[1:5]))
 	if n < 4 {
-		return nil, nil, false, io.ErrUnexpectedEOF
+		return clientMessage{}, io.ErrUnexpectedEOF
 	}
 	end := 1 + n
 	if len(data) < end {
-		return nil, nil, false, io.ErrUnexpectedEOF
+		return clientMessage{}, io.ErrUnexpectedEOF
 	}
-	return bytes.Clone(data[5:end]), data[end:], true, nil
+	return clientMessage{
+		body: bytes.Clone(data[5:end]),
+		rest: data[end:],
+		ok:   true,
+	}, nil
 }
 
 func parseClientInitial(body []byte) (clientInitial, error) {
