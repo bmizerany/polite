@@ -24,3 +24,5 @@ honnef.co/go/tools v0.7.0 h1:w6WUp1VbkqPEgLz4rkBzH/CSU6HkoqNLp6GstyTx3lU=
 honnef.co/go/tools v0.7.0/go.mod h1:pm29oPxeP3P82ISxZDgIYeOaf9ta6Pi0EWvCFoLG2vc=
 kr.dev/diff v0.3.0 h1:o/T8/tkAq9IuRIuFqCupyKPC5iSY3WXpVZ2p6ZK3Emw=
 kr.dev/diff v0.3.0/go.mod h1:XiTaLOg2/PD0cmXY7WQXUR8RAF3RwWpqIQEj910J2NY=
+rsc.io/uncover v0.0.2 h1:7anlALtBEFwvUWBBRozrEc5Yr+M929gRLsEbRT1S86o=
+rsc.io/uncover v0.0.2/go.mod h1:k7n+WMJNnpUNlhNSIwNfi8O5WK4kF9oqZpFuyOP1IFQ=
