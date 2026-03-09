@@ -27,16 +27,14 @@ func TestParseChallenge(t *testing.T) {
 			wantIter:  4096,
 		},
 		{
-			name: "first duplicate wins",
+			name: "duplicate nonce",
 			parts: []string{
 				"r=first",
 				"r=second",
 				"s=" + base64.StdEncoding.EncodeToString([]byte("salt")),
 				"i=1",
 			},
-			wantNonce: "first",
-			wantSalt:  "salt",
-			wantIter:  1,
+			wantErr: `polite: duplicate SASL attribute: "r"`,
 		},
 		{
 			name: "missing nonce",
@@ -156,11 +154,12 @@ func TestVerifyServerFinal(t *testing.T) {
 			},
 		},
 		{
-			name: "first signature wins",
+			name: "duplicate signature",
 			parts: []string{
 				"v=" + base64.StdEncoding.EncodeToString(want),
 				"v=" + base64.StdEncoding.EncodeToString([]byte("other-signature")),
 			},
+			wantErr: `polite: duplicate SASL attribute: "v"`,
 		},
 		{
 			name: "server error wins",
