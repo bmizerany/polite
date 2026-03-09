@@ -160,8 +160,8 @@ func getHasher(mechanisms []string) (using string, _ func() hash.Hash, _ error) 
 	return "", nil, fmt.Errorf("polite: unsupported SASL mechanism(s): %s", strings.Join(mechanisms, ", "))
 }
 
-func parseChallenge(data []byte) (string, []byte, int, error) {
-	nonce, _ := attr(data, 'r')
+func parseChallenge(data []byte) (nonce string, salt []byte, iter int, err error) {
+	nonce, _ = attr(data, 'r')
 	if nonce == "" {
 		return "", nil, 0, fmt.Errorf("polite: missing SCRAM server nonce")
 	}
@@ -170,7 +170,7 @@ func parseChallenge(data []byte) (string, []byte, int, error) {
 	if err != nil {
 		return "", nil, 0, err
 	}
-	salt, err := base64.StdEncoding.DecodeString(saltText)
+	salt, err = base64.StdEncoding.DecodeString(saltText)
 	if err != nil {
 		return "", nil, 0, fmt.Errorf("polite: error decoding SCRAM salt: %w", err)
 	}
@@ -182,7 +182,7 @@ func parseChallenge(data []byte) (string, []byte, int, error) {
 	if err != nil {
 		return "", nil, 0, err
 	}
-	iter, err := strconv.Atoi(iterText)
+	iter, err = strconv.Atoi(iterText)
 	if err != nil {
 		return "", nil, 0, fmt.Errorf("polite: error decoding SCRAM iteration count: %w", err)
 	}
