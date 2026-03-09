@@ -70,6 +70,9 @@ func Handshake(cn *febe.Conn, cr febe.AuthenticationResponse, user, password str
 	if err != nil {
 		return err
 	}
+	if !strings.HasPrefix(serverNonce, nonce) || len(serverNonce) <= len(nonce) {
+		return fmt.Errorf("polite: invalid SCRAM server nonce: %q", serverNonce)
+	}
 
 	withoutProof := "c=" + channelBinding + ",r=" + serverNonce
 
