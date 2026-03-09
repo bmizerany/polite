@@ -134,6 +134,10 @@ func FuzzParseServerFinal(f *testing.F) {
 	})
 }
 
+func truncate[S ~string | ~[]byte](s S, n int) S {
+	return s[:min(n, len(s))]
+}
+
 func FuzzSCRAMComputation(f *testing.F) {
 	f.Add("user", "pencil", "client", "server", []byte("salt"), uint16(4096), byte(0))
 	f.Add("user,=name", "secret", "nonce", "suffix", []byte("salt"), uint16(1), byte(1))
@@ -144,25 +148,19 @@ func FuzzSCRAMComputation(f *testing.F) {
 	f.Add("user", "password", "client", "server", []byte("salt"), uint16(0), byte(6))
 
 	f.Fuzz(func(t *testing.T, user, password, clientNonce, serverSuffix string, salt []byte, iterSeed uint16, mutation byte) {
-		user = limitString(user, 32)
-		password = limitString(password, 32)
-		clientNonce = limitString(clientNonce, 24)
-		serverSuffix = limitString(serverSuffix, 24)
-		salt = limitBytes(salt, 32)
-		state := state{
-			user:        user,
-			password:    password,
-			clientNonce: clientNonce,
-			serverNonce: clientNonce + serverSuffix,
-			salt:        salt,
-			iter:        int(iterSeed % 8193),
-		}
+		var s state
+		s.user = truncate(user, 32)
+		s.password = truncate(password, 32)
+		s.salt = truncate(salt, 32)
+		s.clientNonce = truncate(s.clientNonce, 32)
+		s.serverNonce = s.clientNonce + truncate(serverSuffix, 24)
+		s.iter = int(iterSeed % 8193)
 
-		got0, ok := referenceSCRAM(sha256.New, state)
+		got0, ok := referenceSCRAM(sha256.New, s)
 		if !ok {
 			return
 		}
-		got1, ok := referenceSCRAM(sha256.New, state)
+		got1, ok := referenceSCRAM(sha256.New, s)
 		if !ok {
 			t.Fatalf("referenceSCRAM lost validity on identical input")
 		}
@@ -176,8 +174,8 @@ func FuzzSCRAMComputation(f *testing.F) {
 			t.Fatalf("verifyServerFinal(valid signature) = %v", err)
 		}
 
-		state = mutateStructuredSCRAM(state, mutation)
-		got3, ok := referenceSCRAM(sha256.New, state)
+		s = mutateStructuredSCRAM(s, mutation)
+		got3, ok := referenceSCRAM(sha256.New, s)
 		if !ok {
 			return
 		}
@@ -508,10 +506,12 @@ func mutateStructuredSCRAM(s state, mutation byte) state {
 		return s
 	case 2:
 		s.clientNonce = flipString(s.clientNonce)
-		s.serverNonce = s.clientNonce + suffixFromNonce(s.serverNonce, s.clientNonce)
+		suffix := strings.TrimPrefix(s.serverNonce, s.clientNonce)
+		s.serverNonce = s.clientNonce + suffix
 		return s
 	case 3:
-		s.serverNonce = s.clientNonce + flipString(suffixFromNonce(s.serverNonce, s.clientNonce))
+		suffix := strings.TrimPrefix(s.serverNonce, s.clientNonce)
+		s.serverNonce = s.clientNonce + flipString(suffix)
 		return s
 	default:
 		s.iter++
@@ -696,13 +696,6 @@ func flipString(s string) string {
 	b := []byte(s)
 	b[0] ^= 1
 	return string(b)
-}
-
-func suffixFromNonce(serverNonce, clientNonce string) string {
-	if trimmed, ok := strings.CutPrefix(serverNonce, clientNonce); ok {
-		return trimmed
-	}
-	return serverNonce
 }
 
 func limitBytes(data []byte, n int) []byte {
