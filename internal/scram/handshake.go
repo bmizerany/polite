@@ -20,6 +20,7 @@ import (
 )
 
 const channelBinding = "biws"
+const maxSCRAMIterations = 1_000_000
 
 var usernameEscapes = strings.NewReplacer("=", "=3D", ",", "=2C")
 
@@ -164,7 +165,10 @@ func getHasher(mechanisms []string) (using string, _ func() hash.Hash, _ error) 
 }
 
 func parseChallenge(data []byte) (nonce string, salt []byte, iter int, err error) {
-	nonce, _ = attr(data, 'r')
+	nonce, err = attr(data, 'r')
+	if err != nil {
+		return "", nil, 0, err
+	}
 	if nonce == "" {
 		return "", nil, 0, fmt.Errorf("polite: missing SCRAM server nonce")
 	}
@@ -190,6 +194,9 @@ func parseChallenge(data []byte) (nonce string, salt []byte, iter int, err error
 		return "", nil, 0, fmt.Errorf("polite: error decoding SCRAM iteration count: %w", err)
 	}
 	if iter <= 0 {
+		return "", nil, 0, fmt.Errorf("polite: invalid SCRAM iteration count: %d", iter)
+	}
+	if iter > maxSCRAMIterations {
 		return "", nil, 0, fmt.Errorf("polite: invalid SCRAM iteration count: %d", iter)
 	}
 	return nonce, salt, iter, nil
@@ -221,6 +228,10 @@ func verifyServerFinal(data, want []byte) error {
 }
 
 func attr(data []byte, want byte) (string, error) {
+	var (
+		have string
+		seen bool
+	)
 	for part := range strings.SplitSeq(string(data), ",") {
 		if part == "" {
 			continue
@@ -230,8 +241,12 @@ func attr(data []byte, want byte) (string, error) {
 			return "", fmt.Errorf("polite: malformed SASL attribute (missing '='): %q", part)
 		}
 		if key[0] == want {
-			return attr, nil
+			if seen {
+				return "", fmt.Errorf("polite: duplicate SASL attribute: %q", key)
+			}
+			have = attr
+			seen = true
 		}
 	}
-	return "", nil
+	return have, nil
 }

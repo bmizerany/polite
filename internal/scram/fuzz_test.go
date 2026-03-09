@@ -390,7 +390,7 @@ func classifyServerFinal(err error) serverFinalClass {
 	switch {
 	case err == nil:
 		return serverFinalOK
-	case strings.Contains(err.Error(), "malformed SASL attribute"):
+	case strings.Contains(err.Error(), "malformed SASL attribute"), strings.Contains(err.Error(), "duplicate SASL attribute"):
 		return serverFinalMalformed
 	case strings.Contains(err.Error(), "server SASL error"):
 		return serverFinalServerError
@@ -406,6 +406,8 @@ func classifyServerFinal(err error) serverFinalClass {
 }
 
 func firstAttrOracle(data []byte, want byte) (string, bool) {
+	seen := false
+	var have string
 	for part := range strings.SplitSeq(string(data), ",") {
 		if part == "" {
 			continue
@@ -415,10 +417,14 @@ func firstAttrOracle(data []byte, want byte) (string, bool) {
 			return "", false
 		}
 		if key[0] == want {
-			return value, true
+			if seen {
+				return "", false
+			}
+			have = value
+			seen = true
 		}
 	}
-	return "", true
+	return have, true
 }
 
 type referenceResult struct {
