@@ -198,23 +198,24 @@ func FuzzSCRAMHandshake(f *testing.F) {
 	f.Add(byte(6), byte(3), "user", "pencil", "server", []byte("salt"), uint16(0))
 
 	f.Fuzz(func(t *testing.T, scenario, mechanismBits byte, user, password, serverSuffix string, salt []byte, iterSeed uint16) {
-		user = limitString(user, 32)
-		password = limitString(password, 32)
-		serverSuffix = limitString(serverSuffix, 24)
-		salt = limitBytes(salt, 32)
-		iter := int(iterSeed % 8193)
-		clientNonce := fixedNonce()
-		clientFirst := "n=" + usernameEscapes.Replace(user) + ",r=" + clientNonce
+		var s state
+		s.user = truncate(user, 32)
+		s.password = truncate(password, 32)
+		s.salt = truncate(salt, 32)
+		s.clientNonce = truncate(fixedNonce(), 32)
+		s.serverNonce = s.clientNonce + truncate(serverSuffix, 24)
+		s.iter = int(iterSeed % 8193)
+
+		clientFirst := "n=" + usernameEscapes.Replace(s.user) + ",r=" + s.clientNonce
 
 		mechanisms := handshakeMechanisms(mechanismBits)
 		selected, newHash, hashErr := getHasher(mechanisms)
 
 		continueType := febe.AuthenticationTypeSASLContinue
 		okType := febe.AuthenticationTypeOK
-		serverNonce := clientNonce + serverSuffix
 		switch scenario % 7 {
 		case 1:
-			serverNonce = "wrong" + serverSuffix
+			s.serverNonce = "wrong" + truncate(serverSuffix, 24)
 		case 2:
 			continueType = febe.AuthenticationTypeSASLFinal
 		case 3:
@@ -224,17 +225,9 @@ func FuzzSCRAMHandshake(f *testing.F) {
 			selected, newHash, hashErr = getHasher(mechanisms)
 		}
 
-		serverFirst := challengeMessage(serverNonce, salt, iter)
-		state := state{
-			user:        user,
-			password:    password,
-			clientNonce: clientNonce,
-			serverNonce: serverNonce,
-			salt:        salt,
-			iter:        iter,
-		}
-		want, ok := referenceSCRAM(newHash, state)
-		if hashErr != nil || password == "" {
+		serverFirst := challengeMessage(s.serverNonce, s.salt, s.iter)
+		want, ok := referenceSCRAM(newHash, s)
+		if hashErr != nil || s.password == "" {
 			ok = false
 		}
 
@@ -246,13 +239,13 @@ func FuzzSCRAMHandshake(f *testing.F) {
 		case 5:
 			finalData = serverFinalMessage(flipBytes(want.serverSig))
 		case 6:
-			serverFirst = []byte("r=" + serverNonce + ",s=%%%,i=4096")
+			serverFirst = []byte("r=" + s.serverNonce + ",s=%%%,i=4096")
 			ok = false
 		}
 
-		got, err := runHandshake(t, mechanisms, continueType, serverFirst, finalData, okType, user, password)
+		got, err := runHandshake(t, mechanisms, continueType, serverFirst, finalData, okType, s.user, s.password)
 
-		wantInitial := hashErr == nil && password != ""
+		wantInitial := hashErr == nil && s.password != ""
 		if (got.initial != nil) != wantInitial {
 			t.Fatalf("sent initial = %v; want %v", got.initial != nil, wantInitial)
 		}
@@ -696,18 +689,4 @@ func flipString(s string) string {
 	b := []byte(s)
 	b[0] ^= 1
 	return string(b)
-}
-
-func limitBytes(data []byte, n int) []byte {
-	if len(data) <= n {
-		return bytes.Clone(data)
-	}
-	return bytes.Clone(data[:n])
-}
-
-func limitString(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }
