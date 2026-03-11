@@ -14,10 +14,8 @@ import (
 
 // Defaults
 const (
-	DefaultPoolMaxConns    = 100 // Postgres default
-	DefaultPoolMaxWaiters  = 1000
-	DefaultPoolMaxUses     = 1000
-	DefaultPoolMaxLifetime = 5 * time.Minute
+	DefaultPoolMaxConns   = 100 // Postgres default
+	DefaultPoolMaxWaiters = 1000
 
 	DefaultDSN = "dbname=postgres host=localhost port=5432 sslmode=verify-full"
 )
@@ -67,20 +65,10 @@ type Pool struct {
 	// once. If MaxOpen is zero, then DefaultPoolMaxConns is used.
 	MaxOpen int
 
-	// MaxUses is the maximum number of times a connection can be used
-	// before it is closed. If MaxUses is zero, then [DefaultPoolMaxUses] is
-	// used.
-	MaxUses int
-
 	// MaxWaiting is the maximum number of waiters that can be waiting
 	// for a connection. If this number is exceeded, Get will return an
 	// error. If MaxWaiting is zero, then [DefaultPoolMaxWaiters] is used.
 	MaxWaiting int
-
-	// MaxLifetime is the maximum age of a connection since creation
-	// before it is closed. If MaxLifetime is zero, then
-	// [DefaultPoolMaxLifetime] is used.
-	MaxLifetime time.Duration
 
 	// Logger logs pool activity. If Logger is nil, slog.Default() is used.
 	Logger *slog.Logger
@@ -110,19 +98,7 @@ func (p *Pool) Put(cn *Conn) {
 		cn.Close()
 		return
 	}
-
-	expired := p.MaxLifetime > 0 && time.Since(cn.created) >= p.MaxLifetime
-	cn.uses++
-	if expired || p.maxUses() > 0 && cn.uses >= p.maxUses() {
-		cn.Close()
-		go func() {
-			if repl := p.openConn(); repl != nil {
-				p.waitlist.Put(repl)
-			}
-		}()
-	} else {
-		p.waitlist.Put(cn)
-	}
+	p.waitlist.Put(cn)
 }
 
 // Get returns a connection from the pool.
@@ -192,7 +168,6 @@ func (p *Pool) openConn() *Conn {
 	for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
 		cn, err := p.open(p.cancelCtx)
 		if err == nil {
-			cn.created = time.Now()
 			return cn
 		}
 		if p.cancelCtx.Err() != nil {
@@ -218,13 +193,6 @@ func (p *Pool) maxOpen() int {
 		return DefaultPoolMaxConns
 	}
 	return p.MaxOpen
-}
-
-func (p *Pool) maxUses() int {
-	if p.MaxUses == 0 {
-		return DefaultPoolMaxUses
-	}
-	return p.MaxUses
 }
 
 func (p *Pool) maxWaiting() int {
