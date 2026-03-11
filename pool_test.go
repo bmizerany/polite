@@ -29,39 +29,6 @@ func TestDefaultDSNUsesVerifyFull(t *testing.T) {
 	}
 }
 
-func TestPoolMaxUseWithWaiter(t *testing.T) {
-	t.Parallel()
-
-	p := &Pool{
-		MaxOpen: 1,
-		MaxUses: 1,
-		Open:    Opener(testDSN, nil),
-		Logger:  testutil.Slogger(t),
-	}
-	defer p.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	var cc [2]*Conn
-	var wg sync.WaitGroup
-	for i := range len(cc) {
-		wg.Go(func() {
-			cn, err := p.Get(ctx)
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			defer p.Put(cn)
-			cc[i] = cn
-		})
-	}
-	wg.Wait()
-	if cc[0] == cc[1] {
-		t.Fatal("expected different connections")
-	}
-}
-
 func TestPoolClose(t *testing.T) {
 	t.Parallel()
 
@@ -216,10 +183,6 @@ func TestPoolGetAllocations(t *testing.T) {
 		Open: func(context.Context) (*Conn, error) {
 			return &Conn{closed: true}, nil
 		},
-
-		// Ensure each Get results in a new connection.
-		MaxOpen: 1,
-		MaxUses: 1,
 	}
 	defer p.Close()
 
@@ -245,10 +208,8 @@ func BenchmarkPoolGetPut(b *testing.B) {
 			return closedConn, nil
 		},
 
-		MaxOpen:     1<<63 - 1,
-		MaxUses:     1<<63 - 1,
-		MaxWaiting:  1<<63 - 1,
-		MaxLifetime: 1<<63 - 1,
+		MaxOpen:    1<<63 - 1,
+		MaxWaiting: 1<<63 - 1,
 	}
 	defer p.Close()
 
@@ -269,10 +230,8 @@ func BenchmarkPoolStartNewConn(b *testing.B) {
 			return &Conn{closed: true}, nil
 		},
 
-		MaxOpen:     1<<63 - 1,
-		MaxUses:     1<<63 - 1,
-		MaxWaiting:  1<<63 - 1,
-		MaxLifetime: 1<<63 - 1,
+		MaxOpen:    1<<63 - 1,
+		MaxWaiting: 1<<63 - 1,
 	}
 	defer p.Close()
 
@@ -289,54 +248,6 @@ func BenchmarkPoolStartNewConn(b *testing.B) {
 		}
 		p.waitlist.Put(cn)
 	}
-}
-
-func TestPoolSyncExpired(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		p := &Pool{
-			MaxLifetime: 3 * time.Second,
-			Logger:      testutil.Slogger(t),
-			Open:        Opener(testDSN, &Config{UseGoTime: true}),
-		}
-		defer p.Close()
-
-		ctx := context.Background()
-
-		cn0, err := p.Get(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		sleepPutGet := func() *Conn {
-			t.Helper()
-			time.Sleep(1 * time.Second)
-			p.Put(cn0)
-			got, err := p.Get(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return got
-		}
-
-		for range 2 {
-			if sleepPutGet() != cn0 {
-				t.Fatal("expected starting *Conn")
-			}
-		}
-
-		if sleepPutGet() == cn0 {
-			t.Fatal("expected new conn")
-		}
-
-		// Recycle current Conn
-		cc := sleepPutGet()
-		p.Put(cc)
-
-		time.Sleep(3 * time.Second)
-		if sleepPutGet() == cc {
-			t.Fatal("expected new conn")
-		}
-	})
 }
 
 func TestPoolSyncGetOpenError(t *testing.T) {

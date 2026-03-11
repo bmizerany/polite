@@ -58,7 +58,6 @@ type Conn struct {
 	cn net.Conn
 	fc *febe.Conn
 
-	created   time.Time
 	useGoTime bool
 
 	nstmt int
@@ -70,8 +69,6 @@ type Conn struct {
 	row *Row
 
 	closed bool
-
-	uses int
 }
 
 func (c *Conn) Close() error {
