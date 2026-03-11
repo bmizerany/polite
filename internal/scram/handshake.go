@@ -1,3 +1,7 @@
+// Package scram implements the client side of PostgreSQL SCRAM SASL
+// authentication over febe connections.
+//
+// Note: this package has been fuzz tested.
 package scram
 
 import (
