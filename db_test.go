@@ -361,37 +361,6 @@ func TestQueryBreakInAll(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func TestQueryUnprocceedColumnsPanic(t *testing.T) {
-	t.Skip(`
-		Currently just prints the error. Panicing is also probably not the best
-		behavior. This should test the conn shoudl recover if possible, otherwise mark
-		the conn as bad and prevent future use.
-	`)
-
-	t.Parallel()
-
-	defer func() {
-		r := recover()
-		if r == nil || !strings.Contains(fmt.Sprint(r), "unprocessed columns") {
-			t.Error("expected panic about unprocessed columns; got:", r)
-		}
-	}()
-
-	cn := newSession(t)
-	var n int
-	for row, err := range cn.Query(t.Context(), "SELECT generate_series(1, 3)") {
-		if err != nil {
-			t.Fatal(err)
-		}
-		if n++; n == 1 {
-			break
-		}
-		if err := row.Close(); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 func TestQueryEmptyQueryResponse(t *testing.T) {
 	t.Parallel()
 
