@@ -247,8 +247,49 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // See the package section "Row Draining" for iterator cleanup behavior when
 // columns are unread or iteration stops early.
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
-	// TODO(bmizerany): inline
-	return c.query(ctx, sql, args...)
+	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
+		if c.useGoTime {
+			if err := c.updateGoTime(ctx); err != nil {
+				yield(nil, err)
+				return
+			}
+		}
+		if err := c.prepare(ctx, "", sql, args...); err != nil {
+			yield(nil, err)
+			return
+		}
+		if err := c.execAndSync(""); err != nil {
+			yield(nil, err)
+			return
+		}
+		var processed int
+		for {
+			row, err := c.nextRow(ctx, processed)
+			if err != nil {
+				if errors.Is(err, ErrDone) {
+					return
+				}
+				err = c.maybeRecoverFrom(ctx, err)
+				yield(nil, err)
+				return
+			}
+			processed++
+			if !yield(row, nil) {
+				for {
+					err := c.maybeRecoverFrom(ctx, row.Close())
+					if err != nil {
+						fmt.Printf("polite: stopped early with error: %v\n", err)
+						return
+					}
+					_, err = c.nextRow(ctx, processed)
+					if errors.Is(err, ErrDone) {
+						return
+					}
+					processed++
+				}
+			}
+		}
+	})
 }
 
 func (c *Conn) query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
