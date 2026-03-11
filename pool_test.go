@@ -227,61 +227,39 @@ func TestPoolGetCloseWithWaiter(t *testing.T) {
 }
 
 func TestPoolGetMaxWaiters(t *testing.T) {
-	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		p := &Pool{
+			MaxOpen:    1,
+			MaxWaiting: 1,
+			Open:       Opener(testDSN, nil),
+			Logger:     testutil.Slogger(t),
+		}
+		defer func() {
+			p.Close()       // Unblock Waiter 1
+			synctest.Wait() // Allow Waiter 1 to finish after unblocking
+		}()
 
-	const maxWaiters = 3
-
-	var shouldOpenConn atomic.Bool
-
-	var waiters sync.WaitGroup
-	waiters.Add(maxWaiters)
-	next := func(ctx context.Context) (*Conn, error) {
-		if shouldOpenConn.Load() {
-			return Opener(testDSN, nil)(ctx)
+		// take the only conn
+		_, err := p.Get(t.Context())
+		if err != nil {
+			t.Fatalf("Occupy Get() = %v; want nil", err)
 		}
 
-		// Next is never called until by a client until their waiting
-		// chan is already in line, so we know now that someone is
-		// waiting, so signal that.
-		waiters.Done()
-
-		// For the waiter to block until the pool is closed, and then
-		// only return an error.
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	p := &Pool{
-		MaxWaiting: maxWaiters,
-		Open:       next,
-		Logger:     testutil.Slogger(t),
-	}
-	defer p.Close()
-
-	var unblocked sync.WaitGroup
-	unblocked.Add(maxWaiters)
-	for range maxWaiters {
+		// occupy the only waiting slot and wait until durably blocked.
 		go func() {
-			defer unblocked.Done()
-			_, err := p.Get(ctx)
+			_, err := p.Get(t.Context())
 			if !errors.Is(err, ErrPoolClosed) {
-				panic(err)
+				t.Errorf("Waiter 1 Get() = %v; want %v", err, ErrPoolClosed)
 			}
 		}()
-	}
+		synctest.Wait()
 
-	waiters.Wait()
-
-	// Make the next Next call open a connection instead of block.
-	shouldOpenConn.Store(true)
-
-	_, err := p.Get(ctx)
-	if !errors.Is(err, ErrPoolFull) {
-		t.Fatalf("Get() = %v; want %v", err, ErrPoolFull)
-	}
+		// check any additional waiters are rejected with ErrPoolFull
+		_, err = p.Get(t.Context())
+		if !errors.Is(err, ErrPoolFull) {
+			t.Errorf("Waiter 2 Get() = %v; want %v", err, ErrPoolFull)
+		}
+	})
 }
 
 func TestPoolGetAllocations(t *testing.T) {
