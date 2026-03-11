@@ -206,7 +206,7 @@ func FuzzSCRAMHandshake(f *testing.F) {
 		s.serverNonce = s.clientNonce + truncate(serverSuffix, 24)
 		s.iter = int(iterSeed % 8193)
 
-		clientFirst := "n=" + usernameEscapes.Replace(s.user) + ",r=" + s.clientNonce
+		clientFirst := "n=" + escapeUsernameRE.Replace(s.user) + ",r=" + s.clientNonce
 
 		mechanisms := handshakeMechanisms(mechanismBits)
 		selected, newHash, hashErr := getHasher(mechanisms)
@@ -450,7 +450,7 @@ func referenceSCRAM(newHash func() hash.Hash, state state) (referenceResult, boo
 		return referenceResult{}, false
 	}
 
-	clientFirst := "n=" + usernameEscapes.Replace(state.user) + ",r=" + state.clientNonce
+	clientFirst := "n=" + escapeUsernameRE.Replace(state.user) + ",r=" + state.clientNonce
 	serverFirst := string(challengeMessage(state.serverNonce, state.salt, state.iter))
 	withoutProof := "c=" + channelBinding + ",r=" + state.serverNonce
 	authText := clientFirst + "," + serverFirst + "," + withoutProof

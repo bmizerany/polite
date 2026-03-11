@@ -19,10 +19,12 @@ import (
 	"blake.io/polite/febe"
 )
 
-const channelBinding = "biws"
-const maxSCRAMIterations = 1_000_000
+const (
+	channelBinding     = "biws"
+	maxSCRAMIterations = 1_000_000
+)
 
-var usernameEscapes = strings.NewReplacer("=", "=3D", ",", "=2C")
+var escapeUsernameRE = strings.NewReplacer("=", "=3D", ",", "=2C")
 
 func Handshake(cn *febe.Conn, cr febe.AuthenticationResponse, user, password string) error {
 	ctx := context.Background()
@@ -55,7 +57,7 @@ func Handshake(cn *febe.Conn, cr febe.AuthenticationResponse, user, password str
 	nonce := rand.Text()[:16]
 
 	// Send the client-first message with the username and client nonce.
-	clientFirst := "n=" + usernameEscapes.Replace(user) + ",r=" + nonce
+	clientFirst := "n=" + escapeUsernameRE.Replace(user) + ",r=" + nonce
 	var b bytes.Buffer
 	b.WriteString("n,,")
 	b.WriteString(clientFirst)
