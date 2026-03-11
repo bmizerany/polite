@@ -134,10 +134,12 @@ func (c *Conn) updateGoTime(ctx context.Context) error {
 	const q = `
 		SELECT set_config('polite.go_time', coalesce(current_setting('polite.go_time', true), $1), false) LIMIT 0
 	`
-	for _, err := range c.query(ctx, q, formatGoTime(time.Now())) {
-		return err
-	}
-	return nil
+	var runErr error
+	c.runQuery(ctx, q, []string{formatGoTime(time.Now())}, false, func(_ *Row, err error) bool {
+		runErr = err
+		return false
+	})
+	return runErr
 }
 
 func (c *Conn) initGoTime(ctx context.Context) error {
@@ -245,18 +247,18 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // See the package section "Row Draining" for iterator cleanup behavior when
 // columns are unread or iteration stops early.
 func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
-	if c.useGoTime {
-		if err := c.updateGoTime(ctx); err != nil {
-			return func(yield func(*Row, error) bool) {
-				yield(nil, err)
-			}
-		}
-	}
+	// TODO(bmizerany): inline
 	return c.query(ctx, sql, args...)
 }
 
 func (c *Conn) query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
 	return func(yield func(*Row, error) bool) {
+		if c.useGoTime {
+			if err := c.updateGoTime(ctx); err != nil {
+				yield(nil, err)
+				return
+			}
+		}
 		if err := c.prepare(ctx, "", sql, args...); err != nil {
 			yield(nil, err)
 			return
@@ -278,12 +280,9 @@ func (c *Conn) query(ctx context.Context, sql string, args ...string) iter.Seq2[
 			}
 			processed++
 			if !yield(row, nil) {
-				// Drain the columns, and any remaining
-				// messages until ReadyForQuery.
 				for {
 					err := c.maybeRecoverFrom(ctx, row.Close())
 					if err != nil {
-						// TODO: add "Stopped early" to trace and mark the conn as invalid for future use
 						fmt.Printf("polite: stopped early with error: %v\n", err)
 						return
 					}
@@ -293,6 +292,53 @@ func (c *Conn) query(ctx context.Context, sql string, args ...string) iter.Seq2[
 					}
 					processed++
 				}
+			}
+		}
+	}
+}
+
+func (c *Conn) runQuery(ctx context.Context, sql string, args []string, syncGoTime bool, yield func(*Row, error) bool) {
+	if syncGoTime && c.useGoTime {
+		if err := c.updateGoTime(ctx); err != nil {
+			yield(nil, err)
+			return
+		}
+	}
+	if err := c.prepare(ctx, "", sql, args...); err != nil {
+		yield(nil, err)
+		return
+	}
+	if err := c.execAndSync(""); err != nil {
+		yield(nil, err)
+		return
+	}
+	var processed int
+	for {
+		row, err := c.nextRow(ctx, processed)
+		if err != nil {
+			if errors.Is(err, ErrDone) {
+				return
+			}
+			err = c.maybeRecoverFrom(ctx, err)
+			yield(nil, err)
+			return
+		}
+		processed++
+		if !yield(row, nil) {
+			// Drain the columns, and any remaining
+			// messages until ReadyForQuery.
+			for {
+				err := c.maybeRecoverFrom(ctx, row.Close())
+				if err != nil {
+					// TODO: add "Stopped early" to trace and mark the conn as invalid for future use
+					fmt.Printf("polite: stopped early with error: %v\n", err)
+					return
+				}
+				_, err = c.nextRow(ctx, processed)
+				if errors.Is(err, ErrDone) {
+					return
+				}
+				processed++
 			}
 		}
 	}

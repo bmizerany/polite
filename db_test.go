@@ -152,9 +152,6 @@ func TestQuery(t *testing.T) {
 }
 
 func TestQueryAllocations(t *testing.T) {
-	// NOTE: We cannot use t.Parallel() because it seems to interfere with
-	// AllocsPerRun.
-
 	cn := newSession(t)
 	allocs := testing.AllocsPerRun(1000, func() {
 		const q = `SELECT 1, 'two'`
@@ -175,12 +172,9 @@ func TestQueryAllocations(t *testing.T) {
 			}
 		}
 	})
-	// Query now ranges over an iter.Seq2 closure, which costs a small fixed
-	// amount of iterator setup on current Go toolchains. Keep a regression
-	// guard here without asserting an unattainable zero-allocation path.
-	const maxAllocs = 4
-	if allocs > maxAllocs {
-		t.Errorf("expected <= %d allocations; got %v", maxAllocs, allocs)
+
+	if allocs > 0 {
+		t.Errorf("unexpected allocations: %.2f", allocs)
 	}
 }
 
