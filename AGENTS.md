@@ -1,5 +1,13 @@
 # AGENTS Instructions
 
+## Overview
+
+This codebase is name `polite` because it is for `postgres` and `lite` on API
+surface area, so we must be diligent in keeping its API surface area small and
+focused on one thing: Providing the simplest possible API for executing SQL
+queries and handling results, without any additional features or abstractions
+that could complicate its usage.
+
 ## Commit message rules for this repository
 
 - For commits that touch the root package (`package polite`), use the
@@ -44,7 +52,7 @@ EOF
 
 ## Documentation
 
-- Always include whitespace between fields of a struct and preceeding fields.
+- Always include white space between fields of a struct and preceding fields.
 
 Good:
 
@@ -69,4 +77,8 @@ type Foo struct {
 }
 ```
 
-B
+## Nomenclature
+
+When the user uses "SQL" casually in a sentence, unless otherwise noted, it
+should be interpreted to mean specifically SQL as defined by Postgres, not ANSI
+SQL or some other dialect of SQL.
