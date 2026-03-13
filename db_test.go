@@ -467,6 +467,37 @@ func TestErrors(t *testing.T) {
 			t.Fatalf("SELECT 1 failed: %v", err)
 		}
 	})
+
+	t.Run("terminal error is sticky", func(t *testing.T) {
+		ctx := t.Context()
+		cn, err := Open(ctx, testDSN, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := cn.cn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+				t.Fatal(err)
+			}
+		})
+
+		terminal := cn.Exec(ctx, "SELECT pg_terminate_backend(pg_backend_pid())")
+		if terminal == nil {
+			t.Fatal("expected error")
+		}
+
+		sticky := cn.fc.Err()
+		if sticky == nil {
+			t.Fatal("expected sticky terminal error")
+		}
+		if !errors.Is(terminal, sticky) {
+			t.Fatalf("Query(pg_terminate_backend) = %v; want error matching %v", terminal, sticky)
+		}
+
+		err = cn.Exec(ctx, "SELECT 1")
+		if !errors.Is(err, sticky) {
+			t.Fatalf("Exec(SELECT 1) = %v; want error matching %v", err, sticky)
+		}
+	})
 }
 
 func TestNotice(t *testing.T) {

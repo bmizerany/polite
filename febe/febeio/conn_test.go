@@ -151,6 +151,27 @@ func TestN(t *testing.T) {
 	checkN(0)
 }
 
+func TestErrStickyAfterTruncatedRead(t *testing.T) {
+	cn := NewConn(strings.NewReader("\x00"), io.Discard)
+
+	_, err := cn.ReadInt32()
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("ReadInt32() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+	err = cn.Err()
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("Err() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+	err = cn.Flush()
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("Flush() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+	_, err = cn.ReadByte()
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("ReadByte() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+}
+
 func connReadString(c *Conn) (string, error) {
 	m, err := c.ReadString()
 	return string(m), err

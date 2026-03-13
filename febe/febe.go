@@ -90,6 +90,8 @@ type Conn struct {
 	h MessageHeader // the last header read
 
 	parameterStatusHook func(Parameter)
+
+	err error
 }
 
 // New returns a Conn that reads from r and writes to w.
@@ -104,6 +106,13 @@ func (c *Conn) SetParameterStatusHook(fn func(Parameter)) {
 	c.parameterStatusHook = fn
 }
 
+func (c *Conn) setErr(err error) error {
+	if err != nil && c.err == nil {
+		c.err = err
+	}
+	return c.err
+}
+
 func (c *Conn) checkMessageHeader(want ...byte) error {
 	if slices.Contains(want, c.h.Type()) {
 		return nil
@@ -113,11 +122,17 @@ func (c *Conn) checkMessageHeader(want ...byte) error {
 
 // Err returns the connection's pending error state.
 func (c *Conn) Err() error {
+	if c.err != nil {
+		return c.err
+	}
 	return c.c.Err()
 }
 
 // Flush flushes any buffered writes.
 func (c *Conn) Flush() error {
+	if err := c.Err(); err != nil {
+		return err
+	}
 	return c.c.Flush()
 }
 
@@ -163,6 +178,10 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	var zero MessageHeader
 	t := traceFromContext(ctx)
 	for {
+		if err := c.Err(); err != nil {
+			return zero, err
+		}
+
 		// TODO(bmizerany): We need to thread ctx through to the
 		// febeio so we can cancel the read if the user cancels the
 		// context. This works for now:
@@ -238,9 +257,9 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		case 'I':
 			return zero, ErrEmptyQuery
 		case 'X':
-			return zero, ErrTerminated
+			return zero, c.setErr(ErrTerminated)
 		default:
-			return c.h, c.c.Err()
+			return c.h, c.Err()
 		}
 	}
 }

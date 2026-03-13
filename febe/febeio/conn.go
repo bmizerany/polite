@@ -20,6 +20,8 @@ type Conn struct {
 	r *byteReader
 	w *bufio.Writer
 	n int // number of bytes read
+
+	err error
 }
 
 // NewConn returns a Conn ready for use.
@@ -39,19 +41,32 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 func (c *Conn) N() int  { return c.n }
 func (c *Conn) ResetN() { c.n = 0 }
 
+func (c *Conn) setErr(err error) error {
+	if err != nil && c.err == nil {
+		c.err = err
+	}
+	return c.err
+}
+
 func (c *Conn) Err() error {
+	if c.err != nil {
+		return c.err
+	}
 	_, err := c.w.Write(nil)
 	if err != nil {
-		return err
+		return c.setErr(err)
 	}
-	return c.r.err
+	return nil
 }
 
 func (c *Conn) peek(n int) ([]byte, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
 	w := c.r.window()
 	for len(w) < n {
 		if c.r.extend() == 0 {
-			return nil, io.ErrUnexpectedEOF
+			return nil, c.setErr(io.ErrUnexpectedEOF)
 		}
 		w = c.r.window()
 	}
@@ -161,6 +176,9 @@ func (c *Conn) ReadBytes() ([]byte, error) {
 // ReadString does not continue looking for a null byte after encountering an
 // error.
 func (c *Conn) ReadString() ([]byte, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
 	w := c.r.window()
 	for {
 		// TODO(bmizerany): track position in window to avoid
@@ -172,13 +190,16 @@ func (c *Conn) ReadString() ([]byte, error) {
 			return w[:i], nil
 		}
 		if c.r.extend() == 0 {
-			return nil, io.ErrUnexpectedEOF
+			return nil, c.setErr(io.ErrUnexpectedEOF)
 		}
 		w = c.r.window()
 	}
 }
 
 func (c *Conn) Discard(n int) error {
+	if c.err != nil {
+		return c.err
+	}
 	w := c.r.window()
 	for {
 		rel := min(n, len(w))
@@ -188,7 +209,7 @@ func (c *Conn) Discard(n int) error {
 			return nil
 		}
 		if c.r.extend() == 0 {
-			return io.ErrUnexpectedEOF
+			return c.setErr(io.ErrUnexpectedEOF)
 		}
 		w = c.r.window()
 	}
@@ -196,5 +217,8 @@ func (c *Conn) Discard(n int) error {
 
 // Flush calls the underlying bufio.Writer's Flush method.
 func (c *Conn) Flush() error {
-	return c.w.Flush()
+	if c.err != nil {
+		return c.err
+	}
+	return c.setErr(c.w.Flush())
 }
