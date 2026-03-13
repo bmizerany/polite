@@ -133,6 +133,35 @@ func TestReadHeaderDiscard(t *testing.T) {
 	}
 }
 
+func TestTerminatedSticky(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	cn.c.WriteByte('X')
+	cn.c.WriteInt32(4)
+	cn.c.Flush()
+
+	_, err := cn.ReadHeader(context.Background())
+	if !errors.Is(err, ErrTerminated) {
+		t.Fatalf("ReadHeader() = %v; want %v", err, ErrTerminated)
+	}
+	_, err = cn.ReadHeader(context.Background())
+	if !errors.Is(err, ErrTerminated) {
+		t.Fatalf("ReadHeader() = %v; want %v", err, ErrTerminated)
+	}
+	err = cn.Flush()
+	if !errors.Is(err, ErrTerminated) {
+		t.Fatalf("Flush() = %v; want %v", err, ErrTerminated)
+	}
+	err = cn.WriteSync()
+	if !errors.Is(err, ErrTerminated) {
+		t.Fatalf("WriteSync() = %v; want %v", err, ErrTerminated)
+	}
+	err = cn.Err()
+	if !errors.Is(err, ErrTerminated) {
+		t.Fatalf("Err() = %v; want %v", err, ErrTerminated)
+	}
+}
+
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)

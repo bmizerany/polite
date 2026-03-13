@@ -99,15 +99,11 @@ type Result struct {
 //
 // After Exec returns, call [Conn.LastResult] to get the number of rows
 // affected (not the number of rows matched).
-//
-// Exec uses [Conn.Query] internally, so row draining follows the package
-// section "Row Draining".
 func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
-	for row, err := range c.Query(ctx, sql, args...) {
+	for _, err := range c.Query(ctx, sql, args...) {
 		if err != nil {
 			return err
 		}
-		return row.Close()
 	}
 	return nil
 }
@@ -273,8 +269,15 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[
 						return
 					}
 					_, err = c.nextRow(ctx, processed)
-					if errors.Is(err, ErrDone) {
-						return
+					if err != nil {
+						if errors.Is(err, ErrDone) {
+							return
+						}
+						err = c.maybeRecoverFrom(ctx, err)
+						if err != nil {
+							fmt.Printf("polite: stopped early with error: %v\n", err)
+							return
+						}
 					}
 					processed++
 				}
