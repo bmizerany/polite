@@ -43,8 +43,19 @@ func shutThisDownAfterMyDeath(p *os.Process) {
 	if err != nil {
 		panic(err)
 	}
-	sup := exec.Command(exe)
-	sup.Env = append(os.Environ(), "_PQX_SUP_PID="+strconv.Itoa(p.Pid))
+
+	coverdir, err := os.MkdirTemp("", "polite")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(coverdir)
+
+	sup := exec.Command(exe, "-test.run=^$")
+	env := os.Environ()
+	sup.Env = append(env,
+		"GOCOVERDIR="+coverdir,
+		"_PQX_SUP_PID="+strconv.Itoa(p.Pid),
+	)
 	sup.Stdout = os.Stdout
 	sup.Stderr = os.Stderr
 

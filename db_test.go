@@ -1,12 +1,14 @@
 package polite
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"iter"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -297,6 +299,409 @@ func TestQueryExtended(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestQueryExtendedBytes(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+
+	var got []string
+	for row, err := range cn.Query(t.Context(), "SELECT $1::bytea", []byte{0x12, 0x34, 0x35}) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, must(row.ParseString()))
+	}
+
+	diff.Test(t, t.Errorf, got, []string{"\x12\x345"})
+}
+
+func TestQueryExtendedNullBytes(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+
+	for row, err := range cn.Query(t.Context(), "SELECT $1::bytea", nil) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := row.View()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != nil {
+			t.Fatalf("unexpected non-nil got: %v", got)
+		}
+		return
+	}
+
+	t.Fatal("expected 1 row")
+}
+
+func TestQueryExtendedTime(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+
+	in := time.Date(2024, 7, 8, 9, 10, 11, 123456789, time.FixedZone("UTC-4", -4*60*60))
+	want := in.UTC().Round(time.Microsecond)
+
+	var got []time.Time
+	for row, err := range cn.Query(t.Context(), "SELECT $1::timestamptz", in) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, must(row.ParseTime()))
+	}
+
+	diff.Test(t, t.Errorf, got, []time.Time{want})
+}
+
+func TestQueryExtendedNumbers(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+
+	const q = `
+		SELECT
+			encode(int2send($1::int2), 'hex'),
+			encode(int2send($2::int2), 'hex'),
+			encode(int4send($3::int4), 'hex'),
+			encode(int4send($4::int4), 'hex'),
+			encode(int8send($5::int8), 'hex'),
+			encode(int8send($6::int8), 'hex'),
+			encode(int8send($7::int8), 'hex'),
+			encode(float4send($8::real), 'hex'),
+			encode(float8send($9::double precision), 'hex')
+	`
+
+	args := []any{
+		int8(-7),
+		uint8(200),
+		int32(-123456),
+		uint16(60000),
+		int64(1234567890123),
+		int(-1234567890123),
+		uint32(math.MaxUint32),
+		float32(1.5),
+		float64(-2.25),
+	}
+
+	var got [][]string
+	for row, err := range cn.Query(t.Context(), q, args...) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, collectValues(row))
+	}
+
+	want := [][]string{{
+		"fff9",
+		"00c8",
+		"fffe1dc0",
+		"0000ea60",
+		"0000011f71fb04cb",
+		"fffffee08e04fb35",
+		"00000000ffffffff",
+		"3fc00000",
+		"c002000000000000",
+	}}
+	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestEncodeArg(t *testing.T) {
+	t.Parallel()
+
+	type customInt int64
+
+	tests := []struct {
+		name    string
+		dst     []byte
+		arg     any
+		wantFmt int16
+		want    []byte
+		wantErr string
+	}{
+		{
+			name:    "nil arg",
+			dst:     []byte("unused"),
+			arg:     nil,
+			want:    nil,
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "nil bytes arg",
+			dst:     []byte("unused"),
+			arg:     []byte(nil),
+			want:    nil,
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "byte slice arg",
+			dst:     []byte("prefix:"),
+			arg:     []byte("hello"),
+			want:    []byte{'p', 'r', 'e', 'f', 'i', 'x', ':', 'h', 'e', 'l', 'l', 'o'},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "string arg",
+			dst:     []byte("prefix:"),
+			arg:     "hello",
+			want:    []byte{'p', 'r', 'e', 'f', 'i', 'x', ':', 'h', 'e', 'l', 'l', 'o'},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "int8 arg",
+			dst:     []byte{},
+			arg:     int8(-8),
+			want:    []byte{0xff, 0xf8},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "uint8 arg",
+			dst:     []byte{},
+			arg:     uint8(200),
+			want:    []byte{0x00, 0xc8},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "int16 arg",
+			dst:     []byte{},
+			arg:     int16(-123),
+			want:    []byte{0xff, 0x85},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "uint16 arg",
+			dst:     []byte{},
+			arg:     uint16(60000),
+			want:    []byte{0x00, 0x00, 0xea, 0x60},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "int32 arg",
+			dst:     []byte{},
+			arg:     int32(-123456789),
+			want:    []byte{0xf8, 0xa4, 0x32, 0xeb},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "float32 arg",
+			dst:     []byte{},
+			arg:     float32(1.5),
+			want:    []byte{0x3f, 0xc0, 0x00, 0x00},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "int64 arg",
+			dst:     []byte{},
+			arg:     int64(-7),
+			want:    []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf9},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "float64 arg",
+			dst:     []byte{},
+			arg:     float64(-2.25),
+			want:    []byte{0xc0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "time arg",
+			dst:     []byte{},
+			arg:     time.Date(2024, 2, 3, 4, 5, 6, 987654321, time.FixedZone("UTC+2", 2*60*60)),
+			want:    []byte{0x00, 0x02, 0xb3, 0x6f, 0x6d, 0x20, 0x2a, 0x86},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "int arg",
+			dst:     []byte{},
+			arg:     int(-123456),
+			want:    []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x1d, 0xc0},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "uint32 arg",
+			dst:     []byte{},
+			arg:     uint32(math.MaxUint32),
+			want:    []byte{0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "uint arg",
+			dst:     []byte{},
+			arg:     uint(42),
+			want:    []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2a},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "uint64 arg",
+			dst:     []byte{},
+			arg:     uint64(42),
+			want:    []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2a},
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "unsupported arg type bool",
+			dst:     []byte{},
+			arg:     true,
+			wantErr: "polite: unsupported argument type bool",
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "unsupported alias int",
+			dst:     []byte{},
+			arg:     customInt(7),
+			wantErr: "polite: unsupported argument type",
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "unsigned overflow",
+			dst:     []byte{},
+			arg:     uint64(math.MaxUint64),
+			want:    []byte("18446744073709551615"),
+			wantFmt: formatText,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Helper()
+
+			got, gotFmt, err := appendArg(tt.dst, tt.arg)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("got error %v", err)
+				}
+				if !bytes.Equal(got, tt.want) {
+					t.Fatalf("got=%v want=%v", got, tt.want)
+				}
+				if gotFmt != tt.wantFmt {
+					t.Fatalf("format got=%v want=%v", gotFmt, tt.wantFmt)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("got err %v want substring %q", err, tt.wantErr)
+			}
+			if tt.want != nil {
+				t.Fatalf("expected no successful value; got %v", got)
+			}
+		})
+	}
+}
+
+func TestAppendArgUintOverflow(t *testing.T) {
+	t.Parallel()
+
+	u := ^uint(0)
+	if uint64(u) <= maxInt64 {
+		t.Skip("uint does not overflow signed 64-bit on this platform")
+	}
+
+	got, gotFmt, err := appendArg(nil, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotFmt != formatText {
+		t.Fatalf("format got=%v want=%v", gotFmt, formatText)
+	}
+	want := fmt.Appendf(nil, "%d", uint64(u))
+	if !bytes.Equal(got, want) {
+		t.Fatalf("got=%q want=%q", got, want)
+	}
+}
+
+func TestQueryExtendedMixedArguments(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+
+	in := time.Date(2026, 1, 2, 3, 4, 5, 987654321, time.FixedZone("UTC+3", 3*60*60))
+	wantTime := in.UTC().Round(time.Microsecond)
+
+	const q = `
+		SELECT
+			$1::text,
+			$2::bytea,
+			$3::timestamptz,
+			$4::int8,
+			$5::double precision
+	`
+
+	var gotText string
+	var gotBytes []byte
+	var gotTime time.Time
+	var gotInt int
+	var gotFloat []byte
+	for row, err := range cn.Query(t.Context(), q, "hello", []byte("world"), in, uint(42), float64(3.5)) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotText = must(row.ParseString())
+		gotBytes = must(row.View())
+		gotTime = must(row.ParseTime())
+		gotInt = must(row.ParseInt())
+		gotFloat = must(row.View())
+	}
+
+	diff.Test(t, t.Errorf, gotText, "hello")
+	diff.Test(t, t.Errorf, string(gotBytes), "world")
+	diff.Test(t, t.Errorf, gotTime, wantTime)
+	diff.Test(t, t.Errorf, gotInt, 42)
+	diff.Test(t, t.Errorf, gotFloat, []byte{0x40, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+}
+
+func TestQueryExtendedUnsupportedType(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+
+	var got []error
+	for _, err := range cn.Query(t.Context(), "SELECT $1", true) {
+		got = append(got, err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 error; got %d", len(got))
+	}
+	if got[0] == nil || !strings.Contains(got[0].Error(), "polite:") {
+		t.Fatalf("expected polite error; got %v", got[0])
+	}
+}
+
+func TestQueryExtendedUnsignedOverflow(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+
+	var got string
+	for row, err := range cn.Query(t.Context(), "SELECT $1", uint64(math.MaxUint64)) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = must(row.ParseString())
+	}
+	if got != "18446744073709551615" {
+		t.Fatalf("got %q want %q", got, "18446744073709551615")
+	}
+}
+
+func TestQueryExtendedComplex(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+
+	var got []error
+	for _, err := range cn.Query(t.Context(), "SELECT $1", complex128(1+2i)) {
+		got = append(got, err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 error; got %d", len(got))
+	}
+	if got[0] == nil || !strings.Contains(got[0].Error(), "polite:") {
+		t.Fatalf("expected polite error; got %v", got[0])
+	}
+}
+
 func collectRows(t testing.TB, rows iter.Seq2[*Row, error]) [][]string {
 	var got [][]string
 	for row, err := range rows {
@@ -422,6 +827,26 @@ func TestExec(t *testing.T) {
 		RowsAffected: 1,
 	}
 	diff.Test(t, t.Errorf, cn.LastResult(), want)
+}
+
+func TestExecExtended(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	if err := cn.Exec(t.Context(), "CREATE TEMP TABLE foo_any (name TEXT, payload BYTEA, n BIGINT)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Exec(t.Context(), "INSERT INTO foo_any VALUES ($1, $2, $3)", "hello", []byte("world"), uint32(7)); err != nil {
+		t.Fatal(err)
+	}
+
+	want := Result{
+		RowsAffected: 1,
+	}
+	diff.Test(t, t.Errorf, cn.LastResult(), want)
+
+	got := collectRows(t, cn.Query(t.Context(), "SELECT name, payload, n FROM foo_any"))
+	diff.Test(t, t.Errorf, got, [][]string{{"hello", "world", "\x00\x00\x00\x00\x00\x00\x00\a"}})
 }
 
 func TestErrors(t *testing.T) {
@@ -630,12 +1055,16 @@ func TestUseGoTime(t *testing.T) {
 	cn0, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
 	check(err, nil)
 	defer cn0.Close()
-	check(cn0.Exec(t.Context(), `SET polite.go_time = '2024-01-02T03:04:05.123456Z'`), nil)
+
+	err = cn0.Exec(t.Context(), `SET polite.go_time = '2024-01-02T03:04:05.123456Z'`)
+	check(err, nil)
 
 	cn1, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
 	check(err, nil)
 	defer cn1.Close()
-	check(cn1.Exec(t.Context(), `SET polite.go_time = '2025-01-02T03:04:05.123456Z'`), nil)
+
+	err = cn1.Exec(t.Context(), `SET polite.go_time = '2025-01-02T03:04:05.123456Z'`)
+	check(err, nil)
 
 	checkTime := func(cn *Conn, want time.Time) {
 		for row, err := range cn.Query(t.Context(), `SELECT now()`) {
