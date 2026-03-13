@@ -2,6 +2,7 @@ package polite
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"iter"
@@ -99,7 +100,7 @@ type Result struct {
 //
 // After Exec returns, call [Conn.LastResult] to get the number of rows
 // affected (not the number of rows matched).
-func (c *Conn) Exec(ctx context.Context, sql string, args ...string) error {
+func (c *Conn) Exec(ctx context.Context, sql string, args ...any) error {
 	for _, err := range c.Query(ctx, sql, args...) {
 		if err != nil {
 			return err
@@ -115,9 +116,78 @@ func (c *Conn) LastResult() Result {
 }
 
 var allBinary = []int16{1}
+var (
+	formatText   int16 = 0
+	formatBinary int16 = 1
+)
+
+const maxInt64 = uint64(^uint64(0) >> 1)
 
 func formatGoTime(t time.Time) string {
 	return t.UTC().Round(time.Microsecond).Format("2006-01-02 15:04:05.999999Z07:00")
+}
+
+func appendBinaryArg(dst []byte, arg any) ([]byte, int16, error) {
+	dst, err := binary.Append(dst, binary.BigEndian, arg)
+	if err != nil {
+		return nil, 0, err
+	}
+	return dst, formatBinary, nil
+}
+
+func appendArg(dst []byte, arg any) ([]byte, int16, error) {
+	switch v := arg.(type) {
+	case nil:
+		return nil, formatBinary, nil
+	// Variable-width values.
+	case []byte:
+		if v == nil {
+			return nil, formatBinary, nil
+		}
+		return append(dst, v...), formatBinary, nil
+	case string:
+		return append(dst, v...), formatBinary, nil
+	// 2-byte wire values.
+	case uint8:
+		return appendBinaryArg(dst, int16(v))
+	case int8:
+		return appendBinaryArg(dst, int16(v))
+	case int16:
+		return appendBinaryArg(dst, v)
+	// 4-byte wire values.
+	case uint16:
+		return appendBinaryArg(dst, int32(v))
+	case int32, float32:
+		return appendBinaryArg(dst, v)
+	// 8-byte wire values.
+	case time.Time:
+		// PostgreSQL timestamps are represented at microsecond
+		// precision. Round instead of truncate so we choose the
+		// nearest representable PostgreSQL timestamp; truncate would
+		// always bias earlier than round.
+		t := v.UTC().Round(time.Microsecond)
+		return appendBinaryArg(dst, t.Sub(pgEpoch).Microseconds())
+	case uint32:
+		return appendBinaryArg(dst, int64(v))
+	case uint:
+		u := uint64(v)
+		if u > maxInt64 {
+			return fmt.Appendf(dst, "%d", u), formatText, nil
+		}
+		return appendBinaryArg(dst, int64(u))
+	case uint64:
+		// Encode as NUMERIC text only for values that overflow signed 64-bit.
+		if v > maxInt64 {
+			return fmt.Appendf(dst, "%d", v), formatText, nil
+		}
+		return appendBinaryArg(dst, int64(v))
+	case int:
+		return appendBinaryArg(dst, int64(v))
+	case int64, float64:
+		return appendBinaryArg(dst, v)
+	default:
+		return nil, formatBinary, fmt.Errorf("polite: unsupported argument type %T", v)
+	}
 }
 
 func (c *Conn) updateGoTime(ctx context.Context) error {
@@ -145,17 +215,37 @@ func (c *Conn) initGoTime(ctx context.Context) error {
 	return nil
 }
 
-func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...string) (err error) {
+func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (err error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
 		err = c.maybeRecoverFrom(ctx, err)
 		return err
 	}
+
+	bindArgs := make([][]byte, len(args))
+	in := make([]int16, len(args))
+	scratch := make([]byte, 0, len(args)*8)
+	for i, arg := range args {
+		start := len(scratch)
+		encoded, format, err := appendArg(scratch, arg)
+		if err != nil {
+			return err
+		}
+		if encoded == nil {
+			bindArgs[i] = nil
+			in[i] = formatBinary
+			continue
+		}
+		in[i] = format
+		scratch = encoded
+		bindArgs[i] = scratch[start:]
+	}
+
 	fp := &febe.FormatParams{
-		In:  allBinary,
+		In:  in,
 		Out: allBinary,
 	}
-	return c.fc.WriteBind(portal, stmt.name, args, fp)
+	return c.fc.WriteBind(portal, stmt.name, bindArgs, fp)
 }
 
 func (c *Conn) newStmtName() string {
@@ -233,7 +323,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 //
 // See the package section "Row Draining" for iterator cleanup behavior when
 // columns are unread or iteration stops early.
-func (c *Conn) Query(ctx context.Context, sql string, args ...string) iter.Seq2[*Row, error] {
+func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
 	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
 		if c.useGoTime {
 			if err := c.updateGoTime(ctx); err != nil {

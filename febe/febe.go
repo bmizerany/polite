@@ -716,9 +716,9 @@ type FormatParams struct {
 var emptyFormatParams = &FormatParams{}
 
 // WriteBind writes a frontend Bind message.
-// args are encoded as non-NULL parameter values. If p is nil, all parameter
+// Nil args are encoded as NULL parameter values. If p is nil, all parameter
 // and result formats default to text.
-func (c *Conn) WriteBind(portal, statement string, args []string, p *FormatParams) error {
+func (c *Conn) WriteBind(portal, statement string, args [][]byte, p *FormatParams) error {
 	p = cmp.Or(p, emptyFormatParams)
 
 	var s sizer
@@ -735,7 +735,10 @@ func (c *Conn) WriteBind(portal, statement string, args []string, p *FormatParam
 	// parameter values
 	s.addInt16()
 	for _, arg := range args {
-		s.addSizedBytes(len(arg))
+		s.addInt32()
+		if arg != nil {
+			s.addBytes(len(arg))
+		}
 	}
 
 	// result format codes
@@ -756,12 +759,17 @@ func (c *Conn) WriteBind(portal, statement string, args []string, p *FormatParam
 
 	c.c.WriteInt16(int16(len(args)))
 	for _, arg := range args {
-		if err := c.c.WriteInt32(int32(len(arg))); err != nil {
+		n := int32(-1)
+		if arg != nil {
+			n = int32(len(arg))
+		}
+		if err := c.c.WriteInt32(n); err != nil {
 			return err
 		}
-		_, err := io.WriteString(c.c, arg)
-		if err != nil {
-			return err
+		if arg != nil {
+			if _, err := c.c.Write(arg); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -911,7 +919,17 @@ func (c *Conn) ReadDataRowValue() (DataRowValueResponse, error) {
 	if err := c.checkMessageHeader('D', 'd'); err != nil {
 		return DataRowValueResponse{}, err
 	}
-	data, err := c.c.ReadBytes()
+	n, err := c.c.ReadInt32()
+	if err != nil {
+		return DataRowValueResponse{}, err
+	}
+	if n == -1 {
+		return DataRowValueResponse{}, nil
+	}
+	if n < 0 {
+		return DataRowValueResponse{}, errors.New("invalid message length")
+	}
+	data, err := c.c.ReadByteN(int(n))
 	if err != nil {
 		return DataRowValueResponse{}, err
 	}
