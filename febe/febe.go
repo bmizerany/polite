@@ -214,6 +214,9 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 				return zero, err
 			}
 			e := m.Notice.AsError()
+			if e.IsFatal() {
+				c.setErr(e)
+			}
 			if t.ReceivedError != nil {
 				t.ReceivedError(ctx, e)
 			}
@@ -515,6 +518,28 @@ func (c *Conn) WriteNotification(pid int32, channel, payload string) error {
 	c.c.WriteInt32(pid)
 	c.c.WriteString(channel)
 	c.c.WriteString(payload)
+	return c.Err()
+}
+
+// WriteNotice writes a backend NoticeResponse ('N') or ErrorResponse ('E')
+// message containing the fields from n. The msgType argument selects the
+// message type byte.
+func (c *Conn) WriteNotice(msgType byte, n *Notice) error {
+	var s sizer
+	s.addInt32() // length
+	for _, v := range n.Fields {
+		s.addByte()
+		s.addString(v)
+	}
+	s.addByte() // terminating zero
+
+	c.c.WriteByte(msgType)
+	c.c.WriteInt32(s.size())
+	for k, v := range n.Fields {
+		c.c.WriteByte(k)
+		c.c.WriteString(v)
+	}
+	c.c.WriteByte(0)
 	return c.Err()
 }
 
