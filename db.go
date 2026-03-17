@@ -546,7 +546,16 @@ func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
 	}
 	// TODO(bmizerany): add "IsRecovering" to trace
 	var fe *febe.Error
-	if errors.As(initErr, &fe) || errors.Is(errsWeCanRecoverFrom, initErr) {
+	if errors.As(initErr, &fe) {
+		// FATAL and PANIC mean the backend closed the connection;
+		// no ReadyForQuery will follow, so skip recovery.
+		if fe.IsFatal() {
+			return initErr
+		}
+		if err := c.discardUntilReady(ctx); err != nil {
+			return err
+		}
+	} else if errors.Is(errsWeCanRecoverFrom, initErr) {
 		if err := c.discardUntilReady(ctx); err != nil {
 			return err
 		}

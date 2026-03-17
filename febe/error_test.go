@@ -11,7 +11,8 @@ func BenchmarkReadErrorAllocs(b *testing.B) {
 
 	buf := new(bytes.Buffer)
 	cn := New(buf, buf)
-	writeNoticeResponse(b, 'E', cn)
+	cn.WriteNotice('E', testNotice)
+	cn.Flush()
 	ctx := context.Background()
 
 	msg := buf.Bytes()

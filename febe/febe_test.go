@@ -51,31 +51,11 @@ var testNotice = &Notice{
 	Verbosity:  "VERBOSITY",
 }
 
-func writeNoticeResponse(t testing.TB, EorN byte, c *Conn) {
-	t.Helper()
-
-	var s sizer
-	s.addInt32()
-	for _, v := range testNotice.Fields {
-		s.addByte()
-		s.addString(v)
-	}
-	s.addByte() // terminating byte
-
-	c.c.WriteByte(EorN)
-	c.c.WriteInt32(s.size())
-	for t, v := range testNotice.Fields {
-		c.c.WriteByte(t)
-		c.c.WriteString(v)
-	}
-	c.c.WriteByte(0)
-	c.c.Flush()
-}
-
 func TestReadHeaderReadErrorResponse(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	writeNoticeResponse(t, 'E', cn)
+	cn.WriteNotice('E', testNotice)
+	cn.Flush()
 	ctx := context.Background()
 	h, err := cn.ReadHeader(ctx)
 	diff.Test(t, t.Errorf, h, MessageHeader{})
@@ -162,10 +142,122 @@ func TestTerminatedSticky(t *testing.T) {
 	}
 }
 
+func TestFatalErrorSticky(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	cn.WriteNotice('E', &Notice{
+		Severity:  "FATAL",
+		Code:      "25P03",
+		Message:   "terminating connection due to idle-in-transaction timeout",
+		Verbosity: "FATAL",
+	})
+	cn.Flush()
+
+	ctx := context.Background()
+
+	// First ReadHeader should return the FATAL *Error.
+	_, err := cn.ReadHeader(ctx)
+	var fe *Error
+	if !errors.As(err, &fe) {
+		t.Fatalf("ReadHeader() = %v; want *febe.Error", err)
+	}
+	if fe.Code != "25P03" {
+		t.Fatalf("error code = %q; want 25P03", fe.Code)
+	}
+	if !fe.IsFatal() {
+		t.Fatalf("IsFatal() = false; want true")
+	}
+
+	// Subsequent ReadHeader calls should return the same sticky error.
+	_, err = cn.ReadHeader(ctx)
+	if !errors.As(err, &fe) || fe.Code != "25P03" {
+		t.Fatalf("second ReadHeader() = %v; want sticky FATAL *febe.Error with code 25P03", err)
+	}
+
+	// Flush and WriteSync should also return the sticky error.
+	if err := cn.Flush(); !errors.As(err, &fe) || fe.Code != "25P03" {
+		t.Fatalf("Flush() = %v; want sticky FATAL error", err)
+	}
+	if err := cn.WriteSync(); !errors.As(err, &fe) || fe.Code != "25P03" {
+		t.Fatalf("WriteSync() = %v; want sticky FATAL error", err)
+	}
+}
+
+func TestPanicErrorSticky(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	cn.WriteNotice('E', &Notice{
+		Severity:  "PANIC",
+		Code:      "XX000",
+		Message:   "could not write to file",
+		Verbosity: "PANIC",
+	})
+	cn.Flush()
+
+	ctx := context.Background()
+	_, err := cn.ReadHeader(ctx)
+	var fe *Error
+	if !errors.As(err, &fe) {
+		t.Fatalf("ReadHeader() = %v; want *febe.Error", err)
+	}
+	if !fe.IsFatal() {
+		t.Fatalf("IsFatal() = false; want true for PANIC")
+	}
+
+	// Should be sticky
+	_, err = cn.ReadHeader(ctx)
+	if !errors.As(err, &fe) {
+		t.Fatalf("second ReadHeader() = %v; want sticky PANIC *febe.Error", err)
+	}
+}
+
+func TestErrorSeverityNotSticky(t *testing.T) {
+	// ERROR severity should NOT be latched — the connection remains usable.
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	cn.WriteNotice('E', &Notice{
+		Severity:  "ERROR",
+		Code:      "42601",
+		Message:   "syntax error",
+		Verbosity: "ERROR",
+	})
+	cn.Flush()
+
+	// Write a ReadyForQuery + Terminate after the error so the conn has more to read.
+	cn.c.WriteByte('Z')
+	cn.c.WriteInt32(5)
+	cn.c.WriteByte('I')
+	cn.c.WriteByte('X')
+	cn.c.WriteInt32(4)
+	cn.c.Flush()
+
+	ctx := context.Background()
+
+	// First call returns the ERROR.
+	_, err := cn.ReadHeader(ctx)
+	var fe *Error
+	if !errors.As(err, &fe) {
+		t.Fatalf("ReadHeader() = %v; want *febe.Error", err)
+	}
+	if fe.IsFatal() {
+		t.Fatalf("IsFatal() = true; want false for ERROR severity")
+	}
+
+	// Connection should NOT be sticky — next ReadHeader should succeed (returns 'Z').
+	h, err := cn.ReadHeader(ctx)
+	if err != nil {
+		t.Fatalf("second ReadHeader() = %v; want nil (got 'Z')", err)
+	}
+	if h.Type() != 'Z' {
+		t.Fatalf("h.Type() = %c; want Z", h.Type())
+	}
+}
+
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	writeNoticeResponse(t, 'N', cn)
+	cn.WriteNotice('N', testNotice)
+	cn.Flush()
 	cn.c.WriteByte('X') // Terminate
 	cn.c.WriteInt32(4)
 	cn.c.Flush()

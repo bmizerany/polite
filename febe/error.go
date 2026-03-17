@@ -1,6 +1,7 @@
 package febe
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 	"unsafe"
@@ -134,6 +135,16 @@ func (e *Error) Is(target error) bool {
 		return false
 	}
 	return e.Code == t.Code
+}
+
+// IsFatal reports whether the error has FATAL or PANIC severity.
+// Per the PostgreSQL wire protocol, FATAL and PANIC mean the backend
+// has closed (or is closing) the connection and no ReadyForQuery will follow.
+func (e *Error) IsFatal() bool {
+	// Prefer the non-localized severity field ('V') when available;
+	// fall back to the localized severity field ('S').
+	s := cmp.Or(e.Verbosity, e.Severity)
+	return s == "FATAL" || s == "PANIC"
 }
 
 // NoticeResponse is a backend NoticeResponse or ErrorResponse message.
