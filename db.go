@@ -434,8 +434,8 @@ type Row struct {
 	err     error // if set, View returns this immediately
 }
 
-// Columns returns the number of columns in a row.
-func (r *Row) Columns() int {
+// NumColumns returns the number of columns in a row.
+func (r *Row) NumColumns() int {
 	return int(r.numCols)
 }
 
