@@ -715,7 +715,7 @@ func collectRows(t testing.TB, rows iter.Seq2[*Row, error]) [][]string {
 
 func collectValues(row *Row) []string {
 	var got []string
-	for range row.Columns() {
+	for range row.NumColumns() {
 		got = append(got, must(row.ParseString()))
 	}
 	return got
