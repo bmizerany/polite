@@ -350,9 +350,9 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	}
 }
 
-// Query executes sql and yields rows as an iterator.
-//
-// Query uses Conn's per-connection prepared statement cache.
+// Query executes sql and returns the sequence of rows returned by the query.
+// Each iteration is either (row, nil) or (nil, err).
+// A non-nil err ends iteration.
 //
 // See the package section "Row Draining" for iterator cleanup behavior when
 // columns are unread or iteration stops early.
