@@ -19,6 +19,7 @@ var (
 	ErrOutOfColumns          = errors.New("polite: out of columns")
 	ErrTLSRefused            = errors.New("polite: TLS refused by backend")
 	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
+	ErrCopyFrom              = errors.New("polite: COPY FROM in progress; use Exec(ctx, \"\", args...) to send rows")
 )
 
 // ConstraintViolated reports whether err represents a unique violation on the
@@ -48,8 +49,7 @@ type statement struct {
 // Conn prepares SQL on first use and caches prepared statements per connection
 // by exact SQL text. Calls with the same SQL reuse the cached statement.
 //
-// This statement cache is used by [Conn.Query], [Conn.Exec], [Conn.CopyTo],
-// and [Conn.CopyFrom].
+// This statement cache is used by [Conn.Query] and [Conn.Exec].
 //
 // If a context is canceled or times out during an in-flight operation, Conn
 // sends a cancel request to PostgreSQL. The returned error wraps
@@ -68,6 +68,10 @@ type Conn struct {
 
 	// current row
 	row *Row
+
+	// COPY FROM state
+	inCopyFrom        bool
+	copyHeaderWritten bool
 
 	closed bool
 }
@@ -100,12 +104,42 @@ type Result struct {
 //
 // After Exec returns, call [Conn.LastResult] to get the number of rows
 // affected (not the number of rows matched).
+//
+// When a COPY FROM is in progress (see [ErrCopyFrom]), calling Exec with
+// an empty sql string sends a single COPY data row encoded from args.
 func (c *Conn) Exec(ctx context.Context, sql string, args ...any) error {
+	if c.inCopyFrom && sql == "" {
+		return c.copyFromRow(args...)
+	}
 	for _, err := range c.Query(ctx, sql, args...) {
 		if err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func (c *Conn) copyFromRow(args ...any) error {
+	values := make([][]byte, len(args))
+	scratch := make([]byte, 0, len(args)*8)
+	for i, arg := range args {
+		start := len(scratch)
+		encoded, _, err := appendArg(scratch, arg)
+		if err != nil {
+			return err
+		}
+		if encoded == nil {
+			values[i] = nil
+			continue
+		}
+		scratch = encoded
+		values[i] = scratch[start:]
+	}
+	err := c.fc.WriteCopyDataRow(values, !c.copyHeaderWritten)
+	if err != nil {
+		return err
+	}
+	c.copyHeaderWritten = true
 	return nil
 }
 
@@ -115,7 +149,6 @@ func (c *Conn) LastResult() Result {
 	return Result{RowsAffected: int(c.rowsAffected)}
 }
 
-var allBinary = []int16{1}
 var (
 	formatText   int16 = 0
 	formatBinary int16 = 1
@@ -243,7 +276,7 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (er
 
 	fp := &febe.FormatParams{
 		In:  in,
-		Out: allBinary,
+		Out: []int16{formatBinary}, // return all columns in binary format
 	}
 	return c.fc.WriteBind(portal, stmt.name, bindArgs, fp)
 }
@@ -352,6 +385,12 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 			}
 			processed++
 			if !yield(row, nil) {
+				if c.inCopyFrom {
+					if err := c.finalizeCopyFrom(ctx); err != nil {
+						fmt.Printf("polite: COPY FROM cleanup error: %v\n", err)
+					}
+					return
+				}
 				for {
 					err := c.maybeRecoverFrom(ctx, row.Close())
 					if err != nil {
@@ -372,6 +411,12 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 					processed++
 				}
 			}
+			if c.inCopyFrom {
+				if err := c.finalizeCopyFrom(ctx); err != nil {
+					yield(nil, err)
+				}
+				return
+			}
 		}
 	})
 }
@@ -386,6 +431,7 @@ type Row struct {
 	c       *Conn
 	numCols int
 	rem     int
+	err     error // if set, View returns this immediately
 }
 
 // Columns returns the number of columns in a row.
@@ -396,6 +442,9 @@ func (r *Row) Columns() int {
 // View returns the raw bytes for the next column in the row.
 // It advances the row cursor by one column.
 func (r *Row) View() ([]byte, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
 	if r.rem == 0 {
 		return nil, ErrOutOfColumns
 	}
@@ -452,12 +501,15 @@ func (r *Row) ParseString() (string, error) {
 
 // Close discards any remaining columns in the row.
 //
-// Query and Copy iterators drain unread row columns automatically when
-// iteration advances or stops. See the package section "Row Draining".
+// Query iterators drain unread row columns automatically when iteration
+// advances or stops. See the package section "Row Draining".
 //
 // Call Close when you want to force that drain immediately and observe its
 // error at the call site.
 func (r *Row) Close() error {
+	if r.err != nil {
+		return nil
+	}
 	for {
 		_, err := r.View()
 		if err != nil {
@@ -494,6 +546,18 @@ func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 			if m.Format != febe.CopyFormatBinary {
 				return nil, ErrUnsupportedCopyFormat
 			}
+		case 'G':
+			_, err := c.fc.ReadCopyIn()
+			if err != nil {
+				return nil, err
+			}
+			c.inCopyFrom = true
+			c.copyHeaderWritten = false
+			if c.row == nil {
+				c.row = &Row{}
+			}
+			*c.row = Row{c: c, err: ErrCopyFrom}
+			return c.row, nil
 		case 'D', 'd':
 			discardBinaryHeader := processed == 0 && h.Type() == 'd'
 			m, err := c.fc.ReadDataRow(discardBinaryHeader)
@@ -526,6 +590,35 @@ func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 			return nil, ErrDone
 		default:
 			return nil, unexpectedMessage(h)
+		}
+	}
+}
+
+func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
+	c.inCopyFrom = false
+	c.fc.WriteCopyDataRow(nil, !c.copyHeaderWritten)
+	c.fc.WriteCopyDone()
+	c.fc.WriteSync()
+	if err := c.fc.Flush(); err != nil {
+		return err
+	}
+	for {
+		h, err := c.fc.ReadHeader(ctx)
+		if err != nil {
+			return err
+		}
+		switch h.Type() {
+		case 'C':
+			m, err := c.fc.ReadCommandComplete()
+			if err != nil {
+				return err
+			}
+			c.rowsAffected = int(m.RowsAffected)
+		case 'Z':
+			_, err := c.fc.ReadReadyForQuery()
+			return err
+		default:
+			return unexpectedMessage(h)
 		}
 	}
 }
