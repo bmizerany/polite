@@ -3,7 +3,6 @@ package polite
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"kr.dev/diff"
@@ -87,39 +86,39 @@ func TestCopyTo(t *testing.T) {
 	}
 
 	cases := []struct {
-		columns []string
-		want    [][]string // values in binary
+		sql  string
+		want [][]string
 	}{
 		{
-			columns: nil,
+			sql: "COPY foo TO STDOUT WITH (FORMAT binary)",
 			want: [][]string{
 				{"\x00\x00\x00\x04", "qux"},
 				{"\x00\x00\x00\x05", "quux"},
 			},
 		},
 		{
-			columns: []string{"id"},
+			sql: `COPY foo (id) TO STDOUT WITH (FORMAT binary)`,
 			want: [][]string{
 				{"\x00\x00\x00\x04"},
 				{"\x00\x00\x00\x05"},
 			},
 		},
 		{
-			columns: []string{"name"},
+			sql: `COPY foo (name) TO STDOUT WITH (FORMAT binary)`,
 			want: [][]string{
 				{"qux"},
 				{"quux"},
 			},
 		},
 		{
-			columns: []string{"id", "name"},
+			sql: `COPY foo (id, name) TO STDOUT WITH (FORMAT binary)`,
 			want: [][]string{
 				{"\x00\x00\x00\x04", "qux"},
 				{"\x00\x00\x00\x05", "quux"},
 			},
 		},
 		{
-			columns: []string{"name", "id"},
+			sql: `COPY foo (name, id) TO STDOUT WITH (FORMAT binary)`,
 			want: [][]string{
 				{"qux", "\x00\x00\x00\x04"},
 				{"quux", "\x00\x00\x00\x05"},
@@ -128,8 +127,8 @@ func TestCopyTo(t *testing.T) {
 	}
 
 	for _, tt := range cases {
-		t.Run(fmt.Sprintf("%v", tt.columns), func(t *testing.T) {
-			got := collectRows(t, cn.CopyTo(ctx, "foo", tt.columns))
+		t.Run(tt.sql, func(t *testing.T) {
+			got := collectRows(t, cn.Query(ctx, tt.sql))
 			diff.Test(t, t.Errorf, got, tt.want)
 		})
 	}
@@ -164,13 +163,19 @@ func TestCopyFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	columns := []string{"id", "name"}
-	err = cn.CopyFrom(ctx, "foo", columns, func(yield func([][]byte, error) bool) {
-		yield([][]byte{[]byte("\x00\x00\x00\x04"), []byte("qux")}, nil)
-		yield([][]byte{[]byte("\x00\x00\x00\x05"), []byte("quux")}, nil)
-	})
-	if err != nil {
-		t.Fatal(err)
+	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, verr := row.View(); !errors.Is(verr, ErrCopyFrom) {
+			t.Fatalf("View() = %v, want ErrCopyFrom", verr)
+		}
+		if err := cn.Exec(ctx, "", int32(4), "qux"); err != nil {
+			t.Fatal(err)
+		}
+		if err := cn.Exec(ctx, "", int32(5), "quux"); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	type G struct {
@@ -179,7 +184,7 @@ func TestCopyFrom(t *testing.T) {
 	}
 
 	var got []G
-	for row, err := range cn.Query(ctx, "SELECT * FROM foo") {
+	for row, err := range cn.Query(ctx, "SELECT * FROM foo ORDER BY id") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -187,6 +192,55 @@ func TestCopyFrom(t *testing.T) {
 			ID:   must(row.ParseInt()),
 			Name: must(row.ParseString()),
 		})
+	}
+
+	want := []G{
+		{ID: 4, Name: "qux"},
+		{ID: 5, Name: "quux"},
+	}
+	diff.Test(t, t.Errorf, got, want)
+
+	// Make sure the connection is still usable.
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCopyFromEmpty(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+
+	err := cn.Exec(ctx, "CREATE TEMP TABLE foo (id INT, name TEXT)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, verr := row.View(); !errors.Is(verr, ErrCopyFrom) {
+			t.Fatalf("View() = %v, want ErrCopyFrom", verr)
+		}
+		// Send no rows, just let the iterator end.
+	}
+
+	// Verify no rows were inserted.
+	var count int
+	for row, err := range cn.Query(ctx, "SELECT count(*) FROM foo") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		count = must(row.ParseInt())
+	}
+	if count != 0 {
+		t.Fatalf("count = %d, want 0", count)
+	}
+
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -196,3 +250,4 @@ func must[T any](v T, err error) T {
 	}
 	return v
 }
+

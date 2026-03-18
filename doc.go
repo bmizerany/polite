@@ -31,8 +31,8 @@
 //
 // # Row Iteration
 //
-// [Conn.Query] and [Conn.CopyTo] return [iter.Seq2[*Row, error]]. Each
-// iteration is either (row, nil) or (nil, err). A non-nil err ends iteration.
+// [Conn.Query] returns [iter.Seq2[*Row, error]]. Each iteration is either
+// (row, nil) or (nil, err). A non-nil err ends iteration.
 //
 // # Row Draining
 //
@@ -46,6 +46,35 @@
 //
 // Call [Row.Close] to force draining of unread columns immediately and observe
 // drain errors at that call site.
+//
+// # COPY TO
+//
+// Use [Conn.Query] with a COPY ... TO STDOUT statement:
+//
+//	// Error handling elided for brevity.
+//	for row, err := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
+//		id, ... := row.ParseInt()
+//		name, ... := row.ParseString()
+//		fmt.Println(id, name)
+//	}
+//
+// # COPY FROM
+//
+// Use [Conn.Query] to start a COPY ... FROM STDIN, then [Conn.Exec] with
+// an empty sql string to send each data row:
+//
+//	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+//		if err != nil { return err }
+//		// row.View() returns ErrCopyFrom to signal COPY FROM mode.
+//		for _, item := range items {
+//			if err := cn.Exec(ctx, "", item.ID, item.Name); err != nil {
+//				return err
+//			}
+//		}
+//	}
+//
+// The iterator handles the COPY protocol: it sends the binary trailer,
+// CopyDone, and reads CommandComplete + ReadyForQuery when the loop exits.
 //
 // The public API and documented semantics are stable across minor releases.
 // Internal protocol handling, buffering strategy, and performance tuning may
