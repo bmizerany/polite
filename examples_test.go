@@ -3,6 +3,7 @@ package polite
 import (
 	"context"
 	"fmt"
+	"log"
 )
 
 func ExampleOpen() {
@@ -45,16 +46,16 @@ func ExampleConn_Query() {
 func ExamplePool_Get() {
 	ctx := context.Background()
 
-	p := &Pool{Open: Opener(DefaultDSN, nil)}
+	p := new(Pool) // use default settings
 	defer p.Close()
 
 	cn, err := p.Get(ctx)
 	if err != nil {
-		return
+		log.Fatal(err)
 	}
 	defer p.Put(cn)
 
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
-		return
+		log.Fatal(err)
 	}
 }
