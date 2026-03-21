@@ -31,10 +31,7 @@ func ExampleConn_Query() {
 	}
 	defer cn.Close()
 
-	for row, err := range cn.Query(ctx, "SELECT 1") {
-		if err != nil {
-			return
-		}
+	for row := range cn.Query(ctx, "SELECT 1") {
 		n, err := row.ParseInt()
 		if err != nil {
 			return

@@ -24,10 +24,7 @@ func TestCopyFreestyle(t *testing.T) {
 	const q = `
 		COPY (SELECT 1 AS id, 'foo' AS name) TO STDOUT WITH (FORMAT binary)
 	`
-	for row, err := range cn.Query(ctx, q) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(ctx, q) {
 		if g := must(row.ParseInt()); g != 1 {
 			t.Fatalf("id = %v, want 1", g)
 		}
@@ -35,7 +32,6 @@ func TestCopyFreestyle(t *testing.T) {
 			t.Fatalf("name = %q, want 'foo'", g)
 		}
 	}
-
 }
 
 func TestCopyNonBinary(t *testing.T) {
@@ -55,10 +51,11 @@ func TestCopyNonBinary(t *testing.T) {
 		COPY (SELECT 1) TO STDOUT WITH (FORMAT text)
 	`
 	var got []error
-	for row, err := range cn.Query(ctx, q) {
+	for row := range cn.Query(ctx, q) {
+		_, err := row.View()
 		got = append(got, err)
-		if row != nil {
-			row.Close()
+		if err := row.Close(); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if len(got) != 1 {
@@ -163,10 +160,7 @@ func TestCopyFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
 		if _, verr := row.View(); !errors.Is(verr, ErrCopyFrom) {
 			t.Fatalf("View() = %v, want ErrCopyFrom", verr)
 		}
@@ -184,10 +178,7 @@ func TestCopyFrom(t *testing.T) {
 	}
 
 	var got []G
-	for row, err := range cn.Query(ctx, "SELECT * FROM foo ORDER BY id") {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(ctx, "SELECT * FROM foo ORDER BY id") {
 		got = append(got, G{
 			ID:   must(row.ParseInt()),
 			Name: must(row.ParseString()),
@@ -217,10 +208,7 @@ func TestCopyFromEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
 		if _, verr := row.View(); !errors.Is(verr, ErrCopyFrom) {
 			t.Fatalf("View() = %v, want ErrCopyFrom", verr)
 		}
@@ -229,10 +217,7 @@ func TestCopyFromEmpty(t *testing.T) {
 
 	// Verify no rows were inserted.
 	var count int
-	for row, err := range cn.Query(ctx, "SELECT count(*) FROM foo") {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(ctx, "SELECT count(*) FROM foo") {
 		count = must(row.ParseInt())
 	}
 	if count != 0 {
@@ -250,4 +235,3 @@ func must[T any](v T, err error) T {
 	}
 	return v
 }
-

@@ -15,12 +15,12 @@
 //
 // # Queries and Results
 //
-// [Conn.Query] returns [iter.Seq2][*[Row], error], so results are consumed
-// with a range loop. Each iteration yields either a row or an error; a non-nil
-// error ends the sequence.
+// [Conn.Query] returns [iter.Seq][*Row]. Each iteration yields a [Row].
+// Call [Row.View] to retrieve the first value and observe any error for that
+// iteration.
 //
-//	for row, err := range cn.Query(ctx, "SELECT id, name FROM users WHERE active") {
-//		if err != nil { return err }
+//	for row := range cn.Query(ctx, "SELECT id, name FROM users WHERE active") {
+//		if _, err := row.View(); err != nil { return err }
 //		id, _ := row.ParseInt()
 //		name, _ := row.ParseString()
 //		fmt.Println(id, name)
@@ -70,8 +70,8 @@
 // Each iteration yields a row whose columns can be read the same way as a
 // SELECT result:
 //
-//	for row, err := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
-//		if err != nil { return err }
+//	for row := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
+//		if _, err := row.View(); err != nil { return err }
 //		id, _ := row.ParseInt()
 //		name, _ := row.ParseString()
 //		fmt.Println(id, name)
@@ -82,8 +82,8 @@
 // row. The iterator yields a single sentinel row whose [Row.View] returns
 // [ErrCopyFrom] to signal that the connection is in COPY FROM mode:
 //
-//	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-//		if err != nil { return err }
+//	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+//		if _, err := row.View(); err != nil { return err }
 //		// row.View() returns ErrCopyFrom to signal COPY FROM mode.
 //		for _, item := range items {
 //			if err := cn.Exec(ctx, "", item.ID, item.Name); err != nil {

@@ -111,9 +111,9 @@ func (c *Conn) Exec(ctx context.Context, sql string, args ...any) error {
 	if c.inCopyFrom && sql == "" {
 		return c.copyFromRow(args...)
 	}
-	for _, err := range c.Query(ctx, sql, args...) {
-		if err != nil {
-			return err
+	for row := range c.Query(ctx, sql, args...) {
+		if row.err != nil {
+			return row.err
 		}
 	}
 	return nil
@@ -351,25 +351,26 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 }
 
 // Query executes sql and returns the sequence of rows returned by the query.
-// Each iteration is either (row, nil) or (nil, err).
-// A non-nil err ends iteration.
+// Each iteration yields a [Row], which may itself report an error when
+// consumed. Call [Row.View] to retrieve the first column and observe any
+// iteration error.
 //
 // See the package section "Row Draining" for iterator cleanup behavior when
 // columns are unread or iteration stops early.
-func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
-	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
+func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
+	return iter.Seq[*Row](func(yield func(*Row) bool) {
 		if c.useGoTime {
 			if err := c.updateGoTime(ctx); err != nil {
-				yield(nil, err)
+				yield(&Row{err: err})
 				return
 			}
 		}
 		if err := c.prepare(ctx, "", sql, args...); err != nil {
-			yield(nil, err)
+			yield(&Row{c: c, err: err})
 			return
 		}
 		if err := c.execAndSync(""); err != nil {
-			yield(nil, err)
+			yield(&Row{c: c, err: err})
 			return
 		}
 		var processed int
@@ -380,11 +381,11 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 					return
 				}
 				err = c.maybeRecoverFrom(ctx, err)
-				yield(nil, err)
+				yield(&Row{c: c, err: err})
 				return
 			}
 			processed++
-			if !yield(row, nil) {
+			if !yield(row) {
 				if c.inCopyFrom {
 					if err := c.finalizeCopyFrom(ctx); err != nil {
 						fmt.Printf("polite: COPY FROM cleanup error: %v\n", err)
@@ -413,7 +414,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 			}
 			if c.inCopyFrom {
 				if err := c.finalizeCopyFrom(ctx); err != nil {
-					yield(nil, err)
+					yield(&Row{c: c, err: err})
 				}
 				return
 			}
