@@ -16,12 +16,15 @@ func ExampleConn_Query_copyTo() {
 	}
 	defer cn.Close()
 
-	for row, err := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
+	for row := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
+		id, err := row.ParseInt()
 		if err != nil {
 			log.Fatal(err)
 		}
-		id, _ := row.ParseInt()
-		name, _ := row.ParseString()
+		name, err := row.ParseString()
+		if err != nil {
+			log.Fatal(err)
+		}
 		fmt.Println(id, name)
 	}
 }
@@ -42,7 +45,8 @@ func ExampleConn_Query_copyFrom() {
 		{2, "bob"},
 	}
 
-	for _, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		_, err := row.View()
 		if err != nil {
 			log.Fatal(err)
 		}

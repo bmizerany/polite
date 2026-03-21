@@ -138,10 +138,7 @@ func TestQuery(t *testing.T) {
 	for range 3 {
 		const q = `SELECT 1, 2, 'three'`
 		var got [][]any
-		for row, err := range cn.Query(t.Context(), q) {
-			if err != nil {
-				t.Fatal(err)
-			}
+		for row := range cn.Query(t.Context(), q) {
 			got = append(got, []any{
 				must(row.ParseInt()),
 				must(row.ParseInt()),
@@ -157,19 +154,14 @@ func TestQueryAllocations(t *testing.T) {
 	cn := newSession(t)
 	allocs := testing.AllocsPerRun(1000, func() {
 		const q = `SELECT 1, 'two'`
-		for row, err := range cn.Query(t.Context(), q) {
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err := row.ParseInt()
-			if err != nil {
+		for row := range cn.Query(t.Context(), q) {
+			if _, err := row.ParseInt(); err != nil {
 				t.Fatal(err)
 			}
 
 			// We use View because ParseString will allocate by
 			// allocate by design.
-			_, err = row.View()
-			if err != nil {
+			if _, err := row.View(); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -186,16 +178,11 @@ func BenchmarkQueryAllocations(b *testing.B) {
 
 	run := func() {
 		const q = `SELECT 1, 'two'`
-		for row, err := range cn.Query(ctx, q) {
-			if err != nil {
+		for row := range cn.Query(ctx, q) {
+			if _, err := row.ParseInt(); err != nil {
 				b.Fatal(err)
 			}
-			_, err = row.ParseInt()
-			if err != nil {
-				b.Fatal(err)
-			}
-			_, err = row.View()
-			if err != nil {
+			if _, err := row.View(); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -252,10 +239,7 @@ func TestRowClose(t *testing.T) {
 	cn := newSession(t)
 
 	t.Run("with remaining values", func(t *testing.T) {
-		for row, err := range cn.Query(t.Context(), q) {
-			if err != nil {
-				t.Fatal(err)
-			}
+		for row := range cn.Query(t.Context(), q) {
 			if err := row.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -263,10 +247,7 @@ func TestRowClose(t *testing.T) {
 	})
 
 	t.Run("without remaining values", func(t *testing.T) {
-		for row, err := range cn.Query(t.Context(), q) {
-			if err != nil {
-				t.Fatal(err)
-			}
+		for row := range cn.Query(t.Context(), q) {
 			_, err := row.View()
 			if err != nil {
 				t.Fatal(err)
@@ -288,10 +269,7 @@ func TestQueryExtended(t *testing.T) {
 		SELECT $2
 	`
 	var got []string
-	for row, err := range cn.Query(t.Context(), q, "hello", "world") {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), q, "hello", "world") {
 		got = append(got, must(row.ParseString()))
 	}
 
@@ -305,10 +283,7 @@ func TestQueryExtendedBytes(t *testing.T) {
 	cn := newSession(t)
 
 	var got []string
-	for row, err := range cn.Query(t.Context(), "SELECT $1::bytea", []byte{0x12, 0x34, 0x35}) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), "SELECT $1::bytea", []byte{0x12, 0x34, 0x35}) {
 		got = append(got, must(row.ParseString()))
 	}
 
@@ -320,10 +295,7 @@ func TestQueryExtendedNullBytes(t *testing.T) {
 
 	cn := newSession(t)
 
-	for row, err := range cn.Query(t.Context(), "SELECT $1::bytea", nil) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), "SELECT $1::bytea", nil) {
 		got, err := row.View()
 		if err != nil {
 			t.Fatal(err)
@@ -346,10 +318,7 @@ func TestQueryExtendedTime(t *testing.T) {
 	want := in.UTC().Round(time.Microsecond)
 
 	var got []time.Time
-	for row, err := range cn.Query(t.Context(), "SELECT $1::timestamptz", in) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), "SELECT $1::timestamptz", in) {
 		got = append(got, must(row.ParseTime()))
 	}
 
@@ -387,10 +356,7 @@ func TestQueryExtendedNumbers(t *testing.T) {
 	}
 
 	var got [][]string
-	for row, err := range cn.Query(t.Context(), q, args...) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), q, args...) {
 		got = append(got, collectValues(row))
 	}
 
@@ -633,10 +599,7 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 	var gotTime time.Time
 	var gotInt int
 	var gotFloat []byte
-	for row, err := range cn.Query(t.Context(), q, "hello", []byte("world"), in, uint(42), float64(3.5)) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), q, "hello", []byte("world"), in, uint(42), float64(3.5)) {
 		gotText = must(row.ParseString())
 		gotBytes = must(row.View())
 		gotTime = must(row.ParseTime())
@@ -657,7 +620,8 @@ func TestQueryExtendedUnsupportedType(t *testing.T) {
 	cn := newSession(t)
 
 	var got []error
-	for _, err := range cn.Query(t.Context(), "SELECT $1", true) {
+	for row := range cn.Query(t.Context(), "SELECT $1", true) {
+		_, err := row.View()
 		got = append(got, err)
 	}
 	if len(got) != 1 {
@@ -674,10 +638,7 @@ func TestQueryExtendedUnsignedOverflow(t *testing.T) {
 	cn := newSession(t)
 
 	var got string
-	for row, err := range cn.Query(t.Context(), "SELECT $1", uint64(math.MaxUint64)) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), "SELECT $1", uint64(math.MaxUint64)) {
 		got = must(row.ParseString())
 	}
 	if got != "18446744073709551615" {
@@ -691,7 +652,8 @@ func TestQueryExtendedComplex(t *testing.T) {
 	cn := newSession(t)
 
 	var got []error
-	for _, err := range cn.Query(t.Context(), "SELECT $1", complex128(1+2i)) {
+	for row := range cn.Query(t.Context(), "SELECT $1", complex128(1+2i)) {
+		_, err := row.View()
 		got = append(got, err)
 	}
 	if len(got) != 1 {
@@ -702,12 +664,9 @@ func TestQueryExtendedComplex(t *testing.T) {
 	}
 }
 
-func collectRows(t testing.TB, rows iter.Seq2[*Row, error]) [][]string {
+func collectRows(t testing.TB, rows iter.Seq[*Row]) [][]string {
 	var got [][]string
-	for row, err := range rows {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range rows {
 		got = append(got, collectValues(row))
 	}
 	return got
@@ -726,10 +685,7 @@ func TestQueryAll(t *testing.T) {
 
 	cn := newSession(t)
 	var got [][]string
-	for row, err := range cn.Query(t.Context(), "SELECT * FROM generate_series(1, 5)") {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), "SELECT * FROM generate_series(1, 5)") {
 		got = append(got, collectValues(row))
 	}
 	want := [][]string{
@@ -747,10 +703,7 @@ func TestQueryBreakInAll(t *testing.T) {
 
 	cn := newSession(t)
 	var got [][]string
-	for row, err := range cn.Query(t.Context(), "SELECT * FROM generate_series(1, 5)") {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), "SELECT * FROM generate_series(1, 5)") {
 		got = append(got, collectValues(row))
 		break
 	}
@@ -771,7 +724,8 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 	ctx := t.Context()
 
 	var got []error
-	for _, err := range cn.Query(ctx, "") {
+	for row := range cn.Query(ctx, "") {
+		_, err := row.View()
 		got = append(got, err)
 	}
 	if len(got) != 1 {
@@ -1017,10 +971,7 @@ func TestByteaString(t *testing.T) {
 
 	ctx := t.Context()
 	var got []string
-	for row, err := range cn.Query(ctx, "SELECT '\x12\x345'::bytea") {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(ctx, "SELECT '\x12\x345'::bytea") {
 		got = append(got, must(row.ParseString()))
 	}
 	want := []string{"\x12\x345"}
@@ -1035,10 +986,7 @@ func TestRowParseTime(t *testing.T) {
 
 	ctx := t.Context()
 	var got []time.Time
-	for row, err := range cn.Query(ctx, `SELECT '2021-01-01 00:00:00'::timestamp`) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(ctx, `SELECT '2021-01-01 00:00:00'::timestamp`) {
 		ts, err := row.ParseTime()
 		if err != nil {
 			t.Fatal(err)
@@ -1067,8 +1015,7 @@ func TestUseGoTime(t *testing.T) {
 	check(err, nil)
 
 	checkTime := func(cn *Conn, want time.Time) {
-		for row, err := range cn.Query(t.Context(), `SELECT now()`) {
-			check(err, nil)
+		for row := range cn.Query(t.Context(), `SELECT now()`) {
 			ts, err := row.ParseTime()
 			check(err, nil)
 			if !ts.Equal(want) {
