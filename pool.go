@@ -28,10 +28,10 @@ var (
 	ErrPoolClosed = errors.New("polite: pool: closed")
 )
 
-// Opener returns a function that opens a connection to the database with
+// Dial returns a function that opens a connection to the database with
 // the provided DSN and configuration. The returned function can be assigned
-// to the Open field of a [Pool].
-func Opener(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
+// to the Dial field of a [Pool].
+func Dial(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 	return func(ctx context.Context) (*Conn, error) {
 		cn, err := Open(ctx, dsn, cfg)
 		if err != nil {
@@ -42,7 +42,7 @@ func Opener(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 }
 
 // TODO(bmizerany): Support multiple hosts. We can keep the DSN on the Conn
-// so that on Put, it can pass the DSN to [Pool.Open], which can take a DSN.
+// so that on Put, it can pass the DSN to [Pool.Dial], which can take a DSN.
 // https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-TARGET-SESSION-ATTRS
 
 // Pool is a pool of connections. It is safe for concurrent use by multiple
@@ -55,11 +55,12 @@ func Opener(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 // The zero value is ready for use and uses [DefaultPoolMaxWaiters] as the
 // waiting limit.
 type Pool struct {
-	// Open is a function that is called to open a new connection when
+	// Dial is a function that is called to open a new connection when
 	// the pool is empty.
 	//
-	// If Open is nil then DefaultOpener is used.
-	Open func(ctx context.Context) (*Conn, error)
+	// If Dial is nil then the package-level Open function is used with
+	// [DefaultDSN] and nil config.
+	Dial func(ctx context.Context) (*Conn, error)
 
 	// MaxOpen is the maximum number of connections that can be open at
 	// once. If MaxOpen is zero, then DefaultPoolMaxConns is used.
@@ -182,8 +183,8 @@ func (p *Pool) openConn() *Conn {
 }
 
 func (p *Pool) open(ctx context.Context) (*Conn, error) {
-	if p.Open != nil {
-		return p.Open(ctx)
+	if p.Dial != nil {
+		return p.Dial(ctx)
 	}
 	return Open(ctx, DefaultDSN, nil)
 }

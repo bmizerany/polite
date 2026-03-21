@@ -10,8 +10,8 @@
 // [Open] dials a PostgreSQL server, performs startup and authentication, and
 // waits for ReadyForQuery before returning a [Conn]. The dsnOrURL parameter
 // accepts DSN key=value pairs or a postgres:// URL; see the [dsn] subpackage
-// for the full grammar. [Opener] wraps Open into a func suitable for
-// [Pool.Open], so that the pool can create connections on demand.
+// for the full grammar. [Dial] wraps Open into a func suitable for
+// [Pool.Dial], so that the pool can create connections on demand.
 //
 // # Queries and Results
 //
@@ -59,14 +59,16 @@
 // Call [Row.Close] to force draining of unread columns immediately and
 // observe drain errors at that call site.
 //
-// # COPY
+// # Bulk Import/Export (COPY FROM/TO)
 //
-// COPY TO and COPY FROM do not have separate APIs. They reuse [Conn.Query]
-// and [Conn.Exec] because the wire protocol's COPY messages map naturally
-// onto the same iteration pattern.
+// Bulk operations use PostgreSQL's COPY protocol. There are no special
+// helpers — callers write standard COPY SQL and use [Conn.Query] and
+// [Conn.Exec] directly, because the wire protocol's COPY messages map
+// naturally onto the same iteration pattern used for ordinary queries.
 //
-// COPY TO uses Query with a COPY ... TO STDOUT statement. Each iteration
-// yields a row whose columns can be read the same way as a SELECT result:
+// To export rows in bulk, pass a COPY ... TO STDOUT statement to Query.
+// Each iteration yields a row whose columns can be read the same way as a
+// SELECT result:
 //
 //	for row, err := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
 //		if err != nil { return err }
@@ -75,10 +77,10 @@
 //		fmt.Println(id, name)
 //	}
 //
-// COPY FROM uses Query to start a COPY ... FROM STDIN, then Exec with an
-// empty sql string to send each data row. The iterator yields a single
-// sentinel row whose [Row.View] returns [ErrCopyFrom] to signal that the
-// connection is in COPY FROM mode:
+// To import rows in bulk, pass a COPY ... FROM STDIN statement to Query to
+// begin the COPY, then call Exec with an empty SQL string to send each data
+// row. The iterator yields a single sentinel row whose [Row.View] returns
+// [ErrCopyFrom] to signal that the connection is in COPY FROM mode:
 //
 //	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
 //		if err != nil { return err }
@@ -118,7 +120,7 @@
 // receives the most recently returned connection so that per-connection state
 // stays warm. In particular, the prepared statement cache is per-connection, so
 // reusing the same connection avoids re-preparing statements that have already
-// been cached. When [Pool.Open] fails, the pool retries with exponential
+// been cached. When [Pool.Dial] fails, the pool retries with exponential
 // backoff and jitter rather than returning an error to a single caller.
 //
 // # Concurrency
