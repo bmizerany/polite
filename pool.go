@@ -125,15 +125,15 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	}
 
 	cn, err := p.waitlist.Take(ctx, p.loadFunc)
-
-	if errors.Is(err, wait.ErrMaxWaiters) {
+	switch {
+	case errors.Is(err, wait.ErrMaxWaiters):
 		return nil, ErrPoolFull
-	}
-	if errors.Is(err, wait.ErrClosed) {
+	case errors.Is(err, wait.ErrClosed):
 		// Pool was closed while waiting
 		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
+	default:
+		return cn, err
 	}
-	return cn, err
 }
 
 func (p *Pool) Close() error {
