@@ -33,7 +33,7 @@ func TestPoolClose(t *testing.T) {
 	t.Parallel()
 
 	p := &Pool{
-		Open:   Opener(testDSN, nil),
+		Dial:   Dial(testDSN, nil),
 		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -58,7 +58,7 @@ func TestPoolGetReady(t *testing.T) {
 	t.Parallel()
 
 	p := &Pool{
-		Open:   Opener(testDSN, nil),
+		Dial:   Dial(testDSN, nil),
 		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -86,7 +86,7 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 
 	p := &Pool{
 		MaxOpen: 1,
-		Open:    func(context.Context) (*Conn, error) { return nil, errors.New("test") },
+		Dial:    func(context.Context) (*Conn, error) { return nil, errors.New("test") },
 		Logger:  testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -113,7 +113,7 @@ func TestPoolPutClosedPool(t *testing.T) {
 
 	p := &Pool{
 		Logger: testutil.Slogger(t),
-		Open:   Opener(testDSN, nil),
+		Dial:   Dial(testDSN, nil),
 	}
 	defer p.Close()
 
@@ -143,7 +143,7 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 		p := &Pool{
 			MaxOpen:    1,
 			MaxWaiting: 1,
-			Open:       Opener(testDSN, nil),
+			Dial:       Dial(testDSN, nil),
 			Logger:     testutil.Slogger(t),
 		}
 		defer func() {
@@ -180,7 +180,7 @@ func TestPoolGetAllocations(t *testing.T) {
 	t.Skip("TODO: unskip and fix after synctest problems are fixed")
 
 	p := &Pool{
-		Open: func(context.Context) (*Conn, error) {
+		Dial: func(context.Context) (*Conn, error) {
 			return &Conn{closed: true}, nil
 		},
 	}
@@ -204,7 +204,7 @@ func BenchmarkPoolGetPut(b *testing.B) {
 	closedConn := &Conn{closed: true}
 
 	p := &Pool{
-		Open: func(context.Context) (*Conn, error) {
+		Dial: func(context.Context) (*Conn, error) {
 			return closedConn, nil
 		},
 
@@ -226,7 +226,7 @@ func BenchmarkPoolStartNewConn(b *testing.B) {
 	b.ReportAllocs()
 
 	p := &Pool{
-		Open: func(context.Context) (*Conn, error) {
+		Dial: func(context.Context) (*Conn, error) {
 			return &Conn{closed: true}, nil
 		},
 
@@ -256,7 +256,7 @@ func TestPoolSyncGetOpenError(t *testing.T) {
 
 		p := &Pool{
 			Logger: testutil.Slogger(t),
-			Open: func(context.Context) (*Conn, error) {
+			Dial: func(context.Context) (*Conn, error) {
 				retries.Add(1)
 				return nil, errors.New("test")
 			},
@@ -320,7 +320,7 @@ func BenchmarkPool(b *testing.B) {
 func benchmarkPool(b *testing.B, maxOpen int) {
 	p := &Pool{
 		MaxOpen: maxOpen,
-		Open:    Opener(testDSN, nil),
+		Dial:    Dial(testDSN, nil),
 		Logger:  testutil.Slogger(b),
 	}
 	defer p.Close()
