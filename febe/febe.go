@@ -87,6 +87,20 @@ func (s ReadyStatus) InTransaction() bool {
 	return inTransaction[s]
 }
 
+var statusNames = [255]string{
+	ReadyStatusIdle:   "ReadyStatusIdle",
+	ReadyStatusBusy:   "ReadyStatusBusy",
+	ReadyStatusFailed: "ReadyStatusFailed",
+}
+
+// String returns a debug representation of s.
+func (s ReadyStatus) String() string {
+	if name := statusNames[s]; name != "" {
+		return name
+	}
+	return fmt.Sprintf("ReadyStatus(<unknown %q>)", byte(s))
+}
+
 // ReadyForQueryResponse is the backend ReadyForQuery message.
 type ReadyForQueryResponse struct {
 	// MessageHeader is the decoded message header.
@@ -233,7 +247,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 			if err != nil {
 				return zero, err
 			}
-			e := m.Notice.AsError()
+			e := m.AsError()
 			if e.IsFatal() {
 				c.setErr(e)
 			}

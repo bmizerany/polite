@@ -1065,6 +1065,9 @@ func checkReady(t *testing.T, c *Conn) {
 	if t.Failed() {
 		return
 	}
+	if got := c.Status(); got != febe.ReadyStatusIdle {
+		t.Fatalf("Status() = %q; want %q", got, febe.ReadyStatusIdle)
+	}
 	if err := c.Exec(t.Context(), "SELECT 1"); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return
