@@ -75,6 +75,18 @@ const (
 	ReadyStatusFailed ReadyStatus = 'E'
 )
 
+var inTransaction = [255]bool{
+	ReadyStatusIdle:   false,
+	ReadyStatusBusy:   true,
+	ReadyStatusFailed: true,
+}
+
+// InTransaction reports whether s indicates the backend is inside a
+// transaction block, including a failed transaction block.
+func (s ReadyStatus) InTransaction() bool {
+	return inTransaction[s]
+}
+
 // ReadyForQueryResponse is the backend ReadyForQuery message.
 type ReadyForQueryResponse struct {
 	// MessageHeader is the decoded message header.
@@ -88,6 +100,8 @@ type ReadyForQueryResponse struct {
 type Conn struct {
 	c *febeio.Conn
 	h MessageHeader // the last header read
+
+	readyStatus ReadyStatus
 
 	parameterStatusHook func(Parameter)
 
@@ -126,6 +140,12 @@ func (c *Conn) Err() error {
 		return c.err
 	}
 	return c.c.Err()
+}
+
+// Status reports the backend status from the most recent ReadyForQuery
+// message.
+func (c *Conn) Status() ReadyStatus {
+	return c.readyStatus
 }
 
 // Flush flushes any buffered writes.
@@ -485,9 +505,11 @@ func (c *Conn) ReadReadyForQuery() (ReadyForQueryResponse, error) {
 	if err != nil {
 		return ReadyForQueryResponse{}, err
 	}
+	status := ReadyStatus(b)
+	c.readyStatus = status
 	return ReadyForQueryResponse{
 		MessageHeader: c.h,
-		Status:        ReadyStatus(b),
+		Status:        status,
 	}, nil
 }
 
