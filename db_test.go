@@ -963,6 +963,38 @@ func TestParameterStatusTraceCompatibility(t *testing.T) {
 	}
 }
 
+func TestStatus(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	if got := cn.Status(); got != febe.ReadyStatusIdle {
+		t.Fatalf("initial Status() = %q; want %q", got, febe.ReadyStatusIdle)
+	}
+
+	if err := cn.Exec(t.Context(), "BEGIN"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cn.Status(); got != febe.ReadyStatusBusy {
+		t.Fatalf("after BEGIN Status() = %q; want %q", got, febe.ReadyStatusBusy)
+	}
+
+	if err := cn.Exec(t.Context(), "SELECT 1/0"); err == nil {
+		t.Fatal("expected error from SELECT 1/0")
+	}
+	if got := cn.Status(); got != febe.ReadyStatusFailed {
+		t.Fatalf("after failed statement Status() = %q; want %q", got, febe.ReadyStatusFailed)
+	}
+
+	if err := cn.Exec(t.Context(), "ROLLBACK"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cn.Status(); got != febe.ReadyStatusIdle {
+		t.Fatalf("after ROLLBACK Status() = %q; want %q", got, febe.ReadyStatusIdle)
+	}
+}
+
 func TestByteaString(t *testing.T) {
 	t.Parallel()
 

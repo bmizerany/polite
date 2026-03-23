@@ -362,28 +362,50 @@ func TestWriteTerminate(t *testing.T) {
 }
 
 func TestReadReadyForQuery(t *testing.T) {
-	var b bytes.Buffer
-	cn := New(&b, &b)
-	cn.c.WriteByte('Z')
-	cn.c.WriteInt32(5)
-	cn.c.WriteByte('I')
-	cn.c.Flush()
+	t.Parallel()
 
-	if err := cn.readAndSetCurrentHeader(); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name   string
+		status ReadyStatus
+		inTx   bool
+	}{
+		{name: "idle", status: ReadyStatusIdle},
+		{name: "busy", status: ReadyStatusBusy, inTx: true},
+		{name: "failed", status: ReadyStatusFailed, inTx: true},
 	}
-	got, err := cn.ReadReadyForQuery()
-	if err != nil {
-		t.Fatal(err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b bytes.Buffer
+			cn := New(&b, &b)
+			cn.c.WriteByte('Z')
+			cn.c.WriteInt32(5)
+			cn.c.WriteByte(byte(tt.status))
+			cn.c.Flush()
+
+			if err := cn.readAndSetCurrentHeader(); err != nil {
+				t.Fatal(err)
+			}
+			got, err := cn.ReadReadyForQuery()
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := ReadyForQueryResponse{
+				MessageHeader: MessageHeader{
+					msgType: 'Z',
+					msgLen:  5,
+				},
+				Status: tt.status,
+			}
+			diff.Test(t, t.Errorf, got, want)
+			if got := cn.Status(); got != tt.status {
+				t.Fatalf("Status() = %q; want %q", got, tt.status)
+			}
+			if got := cn.Status().InTransaction(); got != tt.inTx {
+				t.Fatalf("Status().InTransaction() = %v; want %v", got, tt.inTx)
+			}
+		})
 	}
-	want := ReadyForQueryResponse{
-		MessageHeader: MessageHeader{
-			msgType: 'Z',
-			msgLen:  5,
-		},
-		Status: 'I',
-	}
-	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestReadAuthentication(t *testing.T) {

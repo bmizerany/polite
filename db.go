@@ -55,6 +55,9 @@ type statement struct {
 // sends a cancel request to PostgreSQL. The returned error wraps
 // [context.Canceled] or [context.DeadlineExceeded]. Conn returns to
 // ReadyForQuery and can be reused.
+//
+// Use [Conn.Status] to inspect the backend's most recently
+// observed ReadyForQuery transaction state.
 type Conn struct {
 	cn net.Conn
 	fc *febe.Conn
@@ -147,6 +150,12 @@ func (c *Conn) copyFromRow(args ...any) error {
 // After [Conn.Exec], this includes the number of rows affected.
 func (c *Conn) LastResult() Result {
 	return Result{RowsAffected: int(c.rowsAffected)}
+}
+
+// Status reports the backend transaction status from the most recent
+// ReadyForQuery message.
+func (c *Conn) Status() febe.ReadyStatus {
+	return c.fc.Status()
 }
 
 var (
@@ -664,7 +673,8 @@ func (c *Conn) discardUntilReady(ctx context.Context) error {
 			return err
 		}
 		if h.Type() == 'Z' {
-			return nil
+			_, err := c.fc.ReadReadyForQuery()
+			return err
 		}
 	}
 }
