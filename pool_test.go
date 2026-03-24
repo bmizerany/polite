@@ -17,6 +17,15 @@ import (
 	"blake.io/polite/internal/testutil"
 )
 
+func newTestPool(t *testing.T) *Pool {
+	p := &Pool{
+		Logger: testutil.Slogger(t),
+		Dial:   testDialer,
+	}
+	t.Cleanup(func() { p.Close() })
+	return p
+}
+
 func TestDefaultDSNUsesVerifyFull(t *testing.T) {
 	t.Parallel()
 
@@ -32,11 +41,7 @@ func TestDefaultDSNUsesVerifyFull(t *testing.T) {
 func TestPoolClose(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{
-		Dial:   Dialer(testDSN, nil),
-		Logger: testutil.Slogger(t),
-	}
-	defer p.Close()
+	p := newTestPool(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -57,11 +62,7 @@ func TestPoolClose(t *testing.T) {
 func TestPoolGetReady(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{
-		Dial:   Dialer(testDSN, nil),
-		Logger: testutil.Slogger(t),
-	}
-	defer p.Close()
+	p := newTestPool(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -111,11 +112,7 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 func TestPoolPutClosedPool(t *testing.T) {
 	t.Parallel()
 
-	p := &Pool{
-		Logger: testutil.Slogger(t),
-		Dial:   Dialer(testDSN, nil),
-	}
-	defer p.Close()
+	p := newTestPool(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
@@ -140,12 +137,9 @@ func TestPoolPutClosedPool(t *testing.T) {
 
 func TestPoolGetMaxWaiters(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		p := &Pool{
-			MaxOpen:    1,
-			MaxWaiting: 1,
-			Dial:       Dialer(testDSN, nil),
-			Logger:     testutil.Slogger(t),
-		}
+		p := newTestPool(t)
+		p.MaxOpen = 1
+		p.MaxWaiting = 1
 		defer func() {
 			p.Close()       // Unblock Waiter 1
 			synctest.Wait() // Allow Waiter 1 to finish after unblocking
@@ -320,7 +314,7 @@ func BenchmarkPool(b *testing.B) {
 func benchmarkPool(b *testing.B, maxOpen int) {
 	p := &Pool{
 		MaxOpen: maxOpen,
-		Dial:    Dialer(testDSN, nil),
+		Dial:    testDialer,
 		Logger:  testutil.Slogger(b),
 	}
 	defer p.Close()
@@ -365,4 +359,8 @@ func benchmarkPool(b *testing.B, maxOpen int) {
 
 	b.ReportMetric(float64(putns.Load())/float64(b.N), "ns/put")
 	b.ReportMetric(float64(slices.Max(maxputs)), "ns/putmax")
+}
+
+func testDialer(ctx context.Context) (*Conn, error) {
+	return Dial(ctx, testDSN, nil)
 }
