@@ -33,7 +33,7 @@ func TestPoolClose(t *testing.T) {
 	t.Parallel()
 
 	p := &Pool{
-		Dial:   Dial(testDSN, nil),
+		Dial:   Dialer(testDSN, nil),
 		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -58,7 +58,7 @@ func TestPoolGetReady(t *testing.T) {
 	t.Parallel()
 
 	p := &Pool{
-		Dial:   Dial(testDSN, nil),
+		Dial:   Dialer(testDSN, nil),
 		Logger: testutil.Slogger(t),
 	}
 	defer p.Close()
@@ -113,7 +113,7 @@ func TestPoolPutClosedPool(t *testing.T) {
 
 	p := &Pool{
 		Logger: testutil.Slogger(t),
-		Dial:   Dial(testDSN, nil),
+		Dial:   Dialer(testDSN, nil),
 	}
 	defer p.Close()
 
@@ -143,7 +143,7 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 		p := &Pool{
 			MaxOpen:    1,
 			MaxWaiting: 1,
-			Dial:       Dial(testDSN, nil),
+			Dial:       Dialer(testDSN, nil),
 			Logger:     testutil.Slogger(t),
 		}
 		defer func() {
@@ -320,7 +320,7 @@ func BenchmarkPool(b *testing.B) {
 func benchmarkPool(b *testing.B, maxOpen int) {
 	p := &Pool{
 		MaxOpen: maxOpen,
-		Dial:    Dial(testDSN, nil),
+		Dial:    Dialer(testDSN, nil),
 		Logger:  testutil.Slogger(b),
 	}
 	defer p.Close()

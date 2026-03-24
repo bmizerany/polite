@@ -28,12 +28,12 @@ var (
 	ErrPoolClosed = errors.New("polite: pool: closed")
 )
 
-// Dial returns a function that opens a connection to the database with
+// Dialer returns a function that opens a connection to the database with
 // the provided DSN and configuration. The returned function can be assigned
 // to the Dial field of a [Pool].
-func Dial(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
+func Dialer(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 	return func(ctx context.Context) (*Conn, error) {
-		cn, err := Open(ctx, dsn, cfg)
+		cn, err := Dial(ctx, dsn, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -58,7 +58,7 @@ type Pool struct {
 	// Dial is a function that is called to open a new connection when
 	// the pool is empty.
 	//
-	// If Dial is nil then the package-level Open function is used with
+	// If Dial is nil then the package-level Dial function is used with
 	// [DefaultDSN] and nil config.
 	Dial func(ctx context.Context) (*Conn, error)
 
@@ -186,7 +186,7 @@ func (p *Pool) open(ctx context.Context) (*Conn, error) {
 	if p.Dial != nil {
 		return p.Dial(ctx)
 	}
-	return Open(ctx, DefaultDSN, nil)
+	return Dial(ctx, DefaultDSN, nil)
 }
 
 func (p *Pool) maxOpen() int {

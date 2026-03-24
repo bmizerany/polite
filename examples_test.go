@@ -6,10 +6,10 @@ import (
 	"log"
 )
 
-func ExampleOpen() {
+func ExampleDial() {
 	ctx := context.Background()
 
-	cn, err := Open(ctx, DefaultDSN, nil)
+	cn, err := Dial(ctx, DefaultDSN, nil)
 	if err != nil {
 		return
 	}
@@ -25,7 +25,7 @@ func ExampleOpen() {
 func ExampleConn_Query() {
 	ctx := context.Background()
 
-	cn, err := Open(ctx, DefaultDSN, nil)
+	cn, err := Dial(ctx, DefaultDSN, nil)
 	if err != nil {
 		return
 	}

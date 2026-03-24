@@ -10,7 +10,7 @@ import (
 
 func ExampleConn_Query_copyTo() {
 	ctx := context.Background()
-	cn, err := polite.Open(ctx, "postgres://localhost/mydb", nil)
+	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func ExampleConn_Query_copyTo() {
 
 func ExampleConn_Query_copyFrom() {
 	ctx := context.Background()
-	cn, err := polite.Open(ctx, "postgres://localhost/mydb", nil)
+	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
 	if err != nil {
 		log.Fatal(err)
 	}

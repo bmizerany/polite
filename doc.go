@@ -7,10 +7,10 @@
 //
 // # Opening Connections
 //
-// [Open] dials a PostgreSQL server, performs startup and authentication, and
+// [Dial] dials a PostgreSQL server, performs startup and authentication, and
 // waits for ReadyForQuery before returning a [Conn]. The dsnOrURL parameter
 // accepts DSN key=value pairs or a postgres:// URL; see the [dsn] subpackage
-// for the full grammar. [Dial] wraps Open into a func suitable for
+// for the full grammar. [Dialer] wraps Dial into a func suitable for
 // [Pool.Dial], so that the pool can create connections on demand.
 //
 // # Queries and Results

@@ -48,7 +48,7 @@ const (
 func createDB(t testing.TB) string {
 	t.Helper()
 
-	cn, err := Open(t.Context(), testDSN, nil)
+	cn, err := Dial(t.Context(), testDSN, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func newSessionDB(t testing.TB) *Conn {
 		t.FailNow()
 	}
 
-	cn, err := Open(ctx, dsn, nil)
+	cn, err := Dial(ctx, dsn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ var funcsCreated atomic.Bool
 
 func newSession(t testing.TB) *Conn {
 	ctx := t.Context()
-	cn, err := Open(ctx, testDSN, nil)
+	cn, err := Dial(ctx, testDSN, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestDeadlineIsolation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	c, err := Open(ctx, testDSN, nil)
+	c, err := Dial(ctx, testDSN, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -849,7 +849,7 @@ func TestErrors(t *testing.T) {
 
 	t.Run("terminal error is sticky", func(t *testing.T) {
 		ctx := t.Context()
-		cn, err := Open(ctx, testDSN, nil)
+		cn, err := Dial(ctx, testDSN, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1032,14 +1032,14 @@ func TestRowParseTime(t *testing.T) {
 func TestUseGoTime(t *testing.T) {
 	check := testutil.Checker(t)
 
-	cn0, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
+	cn0, err := Dial(t.Context(), testDSN, &Config{UseGoTime: true})
 	check(err, nil)
 	defer cn0.Close()
 
 	err = cn0.Exec(t.Context(), `SET polite.go_time = '2024-01-02T03:04:05.123456Z'`)
 	check(err, nil)
 
-	cn1, err := Open(t.Context(), testDSN, &Config{UseGoTime: true})
+	cn1, err := Dial(t.Context(), testDSN, &Config{UseGoTime: true})
 	check(err, nil)
 	defer cn1.Close()
 
