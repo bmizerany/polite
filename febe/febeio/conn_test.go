@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+var errTest = errors.New("febeio_test: test error")
+
 type readCase[I comparable] struct {
 	in                    string
 	want                  I
@@ -169,6 +171,29 @@ func TestErrStickyAfterTruncatedRead(t *testing.T) {
 	_, err = cn.ReadByte()
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("ReadByte() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+}
+
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) {
+	return 0, errTest
+}
+
+func TestErrStickyAfterWriteError(t *testing.T) {
+	cn := NewConn(strings.NewReader(""), errWriter{})
+
+	if err := cn.WriteByte('x'); err != nil {
+		t.Fatalf("WriteByte() = %v; want nil", err)
+	}
+	if err := cn.Flush(); !errors.Is(err, errTest) {
+		t.Fatalf("Flush() = %v; want %v", err, errTest)
+	}
+	if err := cn.Err(); !errors.Is(err, errTest) {
+		t.Fatalf("Err() = %v; want %v", err, errTest)
+	}
+	if err := cn.Flush(); !errors.Is(err, errTest) {
+		t.Fatalf("second Flush() = %v; want %v", err, errTest)
 	}
 }
 

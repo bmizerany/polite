@@ -72,6 +72,39 @@ func TestReadHeaderEmpty(t *testing.T) {
 	diff.Test(t, t.Errorf, gotErr, io.ErrUnexpectedEOF)
 }
 
+func TestReadHeaderStickyTerminalError(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	cn.c.WriteByte('N')
+	cn.c.WriteInt32(4)
+	cn.c.Flush()
+
+	ctx := context.Background()
+	_, err := cn.ReadHeader(ctx)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("ReadHeader() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+	if !errors.Is(cn.Err(), io.ErrUnexpectedEOF) {
+		t.Fatalf("Err() = %v; want %v", cn.Err(), io.ErrUnexpectedEOF)
+	}
+
+	// Replace the buffer with a valid message so the next ReadHeader has
+	// real data available; if it still returns the sticky error, we know the
+	// error is coming from the latched state, not from an empty buffer.
+	b.Reset()
+	b.WriteByte('Z')
+	b.Write([]byte{0, 0, 0, 5})
+	b.WriteByte('I')
+
+	_, err = cn.ReadHeader(ctx)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("second ReadHeader() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+	if got := b.Len(); got != 6 {
+		t.Fatalf("buffer len after sticky read = %d; want 6", got)
+	}
+}
+
 func TestReadHeaderDiscard(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)

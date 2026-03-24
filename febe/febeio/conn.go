@@ -24,6 +24,26 @@ type Conn struct {
 	err error
 }
 
+type setErrReadWriter struct {
+	r io.Reader
+	w io.Writer
+
+	// setErr is called with any error returned by the underlying reader or
+	// writer, and should return the error to be returned by the Read or
+	// Write method.
+	setErr func(error) error
+}
+
+func (rw *setErrReadWriter) Read(p []byte) (int, error) {
+	n, err := rw.r.Read(p)
+	return n, rw.setErr(err)
+}
+
+func (rw *setErrReadWriter) Write(p []byte) (int, error) {
+	n, err := rw.w.Write(p)
+	return n, rw.setErr(err)
+}
+
 // NewConn returns a Conn ready for use.
 //
 // The provided reader and writer will be wrapped in a bufio.Reader and
@@ -31,10 +51,14 @@ type Conn struct {
 // clients may use a buffer size larger than the default by passing
 // bufio.Reader and bufio.Writer.
 func NewConn(r io.Reader, w io.Writer) *Conn {
-	cn := &Conn{
-		r: &byteReader{r: r},
-		w: bufio.NewWriterSize(w, postgresBufferSize),
+	cn := &Conn{}
+	rw := &setErrReadWriter{
+		r:      r,
+		w:      w,
+		setErr: cn.setErr,
 	}
+	cn.r = &byteReader{r: rw}
+	cn.w = bufio.NewWriterSize(rw, postgresBufferSize)
 	return cn
 }
 
@@ -42,7 +66,12 @@ func (c *Conn) N() int  { return c.n }
 func (c *Conn) ResetN() { c.n = 0 }
 
 func (c *Conn) setErr(err error) error {
-	if err != nil && c.err == nil {
+	if err == nil || errors.Is(err, io.EOF) {
+		// Ignore nil and EOF errors, since EOF is expected when the
+		// connection is closed, and nil is not an error.
+		return err
+	}
+	if c.err == nil {
 		c.err = err
 	}
 	return c.err
