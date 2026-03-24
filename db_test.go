@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"iter"
 	"math"
 	"net"
@@ -228,6 +229,49 @@ func TestConnClose(t *testing.T) {
 	// Ensure we can't use the connection after closing.
 	if err := cn.Exec(t.Context(), "SELECT 1"); !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("query(SELECT 1) = %v; want %v", err, ErrPoolClosed)
+	}
+}
+
+type closeFailConn struct {
+	writeErr error
+	closeErr error
+	closed   bool
+}
+
+func (c *closeFailConn) Read([]byte) (int, error)         { return 0, io.EOF }
+func (c *closeFailConn) Write([]byte) (int, error)        { return 0, c.writeErr }
+func (c *closeFailConn) Close() error                     { c.closed = true; return c.closeErr }
+func (c *closeFailConn) LocalAddr() net.Addr              { return dummyAddr("local") }
+func (c *closeFailConn) RemoteAddr() net.Addr             { return dummyAddr("remote") }
+func (c *closeFailConn) SetDeadline(time.Time) error      { return nil }
+func (c *closeFailConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *closeFailConn) SetWriteDeadline(time.Time) error { return nil }
+
+type dummyAddr string
+
+func (a dummyAddr) Network() string { return string(a) }
+func (a dummyAddr) String() string  { return string(a) }
+
+func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
+	t.Parallel()
+
+	flushErr := errors.New("flush")
+	closeErr := errors.New("close")
+	raw := &closeFailConn{
+		writeErr: flushErr,
+		closeErr: closeErr,
+	}
+	cn := &Conn{
+		cn: raw,
+		fc: febe.New(raw, raw),
+	}
+
+	err := cn.Close()
+	if !errors.Is(err, flushErr) {
+		t.Fatalf("Close() = %v; want %v", err, flushErr)
+	}
+	if !raw.closed {
+		t.Fatal("underlying connection was not closed")
 	}
 }
 

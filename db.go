@@ -79,20 +79,32 @@ type Conn struct {
 	closed bool
 }
 
-func (c *Conn) Close() error {
+// Close sends a Terminate message, flushes it, and then closes the underlying
+// connection.
+//
+// If WriteTerminate or Flush fails, that error is returned. The underlying
+// connection is still closed, and any error from that final Close is only
+// returned when the shutdown path succeeds.
+func (c *Conn) Close() (err error) {
 	if c.closed {
 		return net.ErrClosed
 	}
 
 	c.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
-	if err := c.fc.WriteTerminate(); err != nil {
+	defer func() {
+		c.closed = true
+		if cerr := c.cn.Close(); err == nil && cerr != nil {
+			err = cerr
+		}
+	}()
+
+	if err = c.fc.WriteTerminate(); err != nil {
 		return err
 	}
-	if err := c.fc.Flush(); err != nil {
+	if err = c.fc.Flush(); err != nil {
 		return err
 	}
-	c.closed = true
-	return c.cn.Close()
+	return nil
 }
 
 // Result reports metadata from the most recent completed command.
