@@ -33,11 +33,7 @@ var (
 // to the Dial field of a [Pool].
 func Dialer(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
 	return func(ctx context.Context) (*Conn, error) {
-		cn, err := Dial(ctx, dsn, cfg)
-		if err != nil {
-			return nil, err
-		}
-		return cn, nil
+		return Dial(ctx, dsn, cfg)
 	}
 }
 
