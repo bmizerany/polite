@@ -28,19 +28,6 @@ var (
 	ErrPoolClosed = errors.New("polite: pool: closed")
 )
 
-// Dialer returns a function that opens a connection to the database with
-// the provided DSN and configuration. The returned function can be assigned
-// to the Dial field of a [Pool].
-func Dialer(dsn string, cfg *Config) func(context.Context) (*Conn, error) {
-	return func(ctx context.Context) (*Conn, error) {
-		return Dial(ctx, dsn, cfg)
-	}
-}
-
-// TODO(bmizerany): Support multiple hosts. We can keep the DSN on the Conn
-// so that on Put, it can pass the DSN to [Pool.Dial], which can take a DSN.
-// https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNECT-TARGET-SESSION-ATTRS
-
 // Pool is a pool of connections. It is safe for concurrent use by multiple
 // goroutines.
 //
