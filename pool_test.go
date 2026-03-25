@@ -86,9 +86,9 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 	t.Parallel()
 
 	p := &Pool{
-		MaxOpen: 1,
-		Dial:    func(context.Context) (*Conn, error) { return nil, errors.New("test") },
-		Logger:  testutil.Slogger(t),
+		MaxItems: 1,
+		Dial:     func(context.Context) (*Conn, error) { return nil, errors.New("test") },
+		Logger:   testutil.Slogger(t),
 	}
 	defer p.Close()
 
@@ -138,8 +138,8 @@ func TestPoolPutClosedPool(t *testing.T) {
 func TestPoolGetMaxWaiters(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		p := newTestPool(t)
-		p.MaxOpen = 1
-		p.MaxWaiting = 1
+		p.MaxItems = 1
+		p.MaxWaiters = 1
 		defer func() {
 			p.Close()       // Unblock Waiter 1
 			synctest.Wait() // Allow Waiter 1 to finish after unblocking
@@ -202,8 +202,8 @@ func BenchmarkPoolGetPut(b *testing.B) {
 			return closedConn, nil
 		},
 
-		MaxOpen:    1<<63 - 1,
-		MaxWaiting: 1<<63 - 1,
+		MaxItems:   1<<63 - 1,
+		MaxWaiters: 1<<63 - 1,
 	}
 	defer p.Close()
 
@@ -224,8 +224,8 @@ func BenchmarkPoolStartNewConn(b *testing.B) {
 			return &Conn{closed: true}, nil
 		},
 
-		MaxOpen:    1<<63 - 1,
-		MaxWaiting: 1<<63 - 1,
+		MaxItems:   1<<63 - 1,
+		MaxWaiters: 1<<63 - 1,
 	}
 	defer p.Close()
 
@@ -311,11 +311,11 @@ func BenchmarkPool(b *testing.B) {
 	b.Run("driver=polite/open=64", func(b *testing.B) { benchmarkPool(b, 64) })
 }
 
-func benchmarkPool(b *testing.B, maxOpen int) {
+func benchmarkPool(b *testing.B, maxItems int) {
 	p := &Pool{
-		MaxOpen: maxOpen,
-		Dial:    testDialer,
-		Logger:  testutil.Slogger(b),
+		MaxItems: maxItems,
+		Dial:     testDialer,
+		Logger:   testutil.Slogger(b),
 	}
 	defer p.Close()
 

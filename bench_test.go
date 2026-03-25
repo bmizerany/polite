@@ -15,8 +15,8 @@ func BenchmarkPoolContention(b *testing.B) {
 		Dial: func(context.Context) (*Conn, error) {
 			return &Conn{closed: true}, nil
 		},
-		MaxOpen:    10,
-		MaxWaiting: 100,
+		MaxItems:   10,
+		MaxWaiters: 100,
 	}
 	defer p.Close()
 

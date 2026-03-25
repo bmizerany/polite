@@ -45,14 +45,14 @@ type Pool struct {
 	// [DefaultDSN] and nil config.
 	Dial func(ctx context.Context) (*Conn, error)
 
-	// MaxOpen is the maximum number of connections that can be open at
-	// once. If MaxOpen is zero, then DefaultPoolMaxConns is used.
-	MaxOpen int
+	// MaxItems is the maximum number of connections that can be open at
+	// once. If MaxItems is zero, then [DefaultPoolMaxConns] is used.
+	MaxItems int
 
-	// MaxWaiting is the maximum number of waiters that can be waiting
+	// MaxWaiters is the maximum number of waiters that can be waiting
 	// for a connection. If this number is exceeded, Get will return an
-	// error. If MaxWaiting is zero, then [DefaultPoolMaxWaiters] is used.
-	MaxWaiting int
+	// error. If MaxWaiters is zero, then [DefaultPoolMaxWaiters] is used.
+	MaxWaiters int
 
 	// Logger logs pool activity. If Logger is nil, slog.Default() is used.
 	Logger *slog.Logger
@@ -67,8 +67,8 @@ type Pool struct {
 func (p *Pool) init() {
 	p.initOnce.Do(func() {
 		p.cancelCtx, p.cancel = context.WithCancelCause(context.Background())
-		p.waitlist.MaxItems = p.maxOpen()
-		p.waitlist.MaxWaiters = p.maxWaiting()
+		p.waitlist.MaxItems = p.maxItems()
+		p.waitlist.MaxWaiters = p.maxWaiters()
 		p.loadFunc = p.openConn // create method value once during init
 	})
 }
@@ -172,18 +172,18 @@ func (p *Pool) open(ctx context.Context) (*Conn, error) {
 	return Dial(ctx, DefaultDSN, nil)
 }
 
-func (p *Pool) maxOpen() int {
-	if p.MaxOpen == 0 {
+func (p *Pool) maxItems() int {
+	if p.MaxItems == 0 {
 		return DefaultPoolMaxConns
 	}
-	return p.MaxOpen
+	return p.MaxItems
 }
 
-func (p *Pool) maxWaiting() int {
-	if p.MaxWaiting == 0 {
+func (p *Pool) maxWaiters() int {
+	if p.MaxWaiters == 0 {
 		return DefaultPoolMaxWaiters
 	}
-	return p.MaxWaiting
+	return p.MaxWaiters
 }
 
 func (p *Pool) log() *slog.Logger {
