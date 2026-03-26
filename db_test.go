@@ -805,7 +805,8 @@ func TestExecSelectTag(t *testing.T) {
 	if err := cn.Exec(t.Context(), "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
-	want := Result{
+	want := febe.Tag{
+		Command:      "SELECT",
 		RowsAffected: 1,
 	}
 	diff.Test(t, t.Errorf, cn.LastResult(), want)
@@ -839,7 +840,8 @@ func TestExec(t *testing.T) {
 	if err := cn.Exec(t.Context(), "INSERT INTO foo VALUES (1)"); err != nil {
 		t.Fatal(err)
 	}
-	want := Result{
+	want := febe.Tag{
+		Command:      "INSERT",
 		RowsAffected: 1,
 	}
 	diff.Test(t, t.Errorf, cn.LastResult(), want)
@@ -856,7 +858,8 @@ func TestExecExtended(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := Result{
+	want := febe.Tag{
+		Command:      "INSERT",
 		RowsAffected: 1,
 	}
 	diff.Test(t, t.Errorf, cn.LastResult(), want)

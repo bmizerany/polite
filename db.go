@@ -68,7 +68,7 @@ type Conn struct {
 	nstmt int
 	cache map[string]*statement
 
-	rowsAffected int
+	tag febe.Tag
 
 	// current row
 	row *Row
@@ -111,13 +111,6 @@ func (c *Conn) Close() (err error) {
 		return err
 	}
 	return nil
-}
-
-// Result reports metadata from the most recent completed command.
-// Use [Conn.LastResult] to retrieve it.
-type Result struct {
-	// RowsAffected is the number of rows affected by the command.
-	RowsAffected int
 }
 
 // Exec executes a query that is not intended to return rows, such as an
@@ -165,9 +158,10 @@ func (c *Conn) copyFromRow(args ...any) error {
 }
 
 // LastResult returns the result of the most recent completed command on c.
-// After [Conn.Exec], this includes the number of rows affected.
-func (c *Conn) LastResult() Result {
-	return Result{RowsAffected: int(c.rowsAffected)}
+// After [Conn.Exec], this includes the command name and the number of rows
+// affected.
+func (c *Conn) LastResult() febe.Tag {
+	return c.tag
 }
 
 // Status reports the backend transaction status from the most recent
@@ -564,7 +558,7 @@ func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 			if err != nil {
 				return nil, err
 			}
-			c.rowsAffected = int(m.RowsAffected)
+			c.tag = m.Tag
 		case 'H':
 			// TODO(bmizerany): maybe save NumCols for comparing against 'd' messages?
 			m, err := c.fc.ReadCopyOut()
@@ -641,7 +635,7 @@ func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			c.rowsAffected = int(m.RowsAffected)
+			c.tag = m.Tag
 		case 'Z':
 			_, err := c.fc.ReadReadyForQuery()
 			return err

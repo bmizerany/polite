@@ -27,8 +27,8 @@
 //	}
 //
 // [Conn.Exec] executes a command that returns no rows, such as an INSERT,
-// UPDATE, or DELETE. Call [Conn.LastResult] afterward for the number of rows
-// affected.
+// UPDATE, or DELETE. Call [Conn.LastResult] afterward for the command name
+// and number of rows affected.
 //
 // # Prepared Statement Cache
 //
