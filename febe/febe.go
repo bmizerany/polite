@@ -527,6 +527,38 @@ func (c *Conn) ReadReadyForQuery() (ReadyForQueryResponse, error) {
 	}, nil
 }
 
+// BackendKeyDataResponse is the backend BackendKeyData message.
+type BackendKeyDataResponse struct {
+	// MessageHeader is the decoded message header.
+	MessageHeader
+
+	// PID is the backend process ID.
+	PID int32
+
+	// SecretKey is the backend secret key used for cancellation.
+	SecretKey int32
+}
+
+// ReadBackendKeyData reads a BackendKeyData response.
+func (c *Conn) ReadBackendKeyData() (BackendKeyDataResponse, error) {
+	if err := c.checkMessageHeader('K'); err != nil {
+		return BackendKeyDataResponse{}, err
+	}
+	pid, err := c.c.ReadInt32()
+	if err != nil {
+		return BackendKeyDataResponse{}, err
+	}
+	secretKey, err := c.c.ReadInt32()
+	if err != nil {
+		return BackendKeyDataResponse{}, err
+	}
+	return BackendKeyDataResponse{
+		MessageHeader: c.h,
+		PID:           pid,
+		SecretKey:     secretKey,
+	}, nil
+}
+
 // Notification is the backend NotificationResponse message.
 type Notification struct {
 	// MessageHeader is the decoded message header.

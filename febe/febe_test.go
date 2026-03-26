@@ -441,6 +441,38 @@ func TestReadReadyForQuery(t *testing.T) {
 	}
 }
 
+func TestReadBackendKeyData(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	defer cn.checkDone(t)
+
+	cn.c.WriteByte('K')
+	cn.c.WriteInt32(12)
+	cn.c.WriteInt32(1234) // pid
+	cn.c.WriteInt32(5678) // secret key
+	cn.c.Flush()
+
+	if err := cn.readAndSetCurrentHeader(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := cn.ReadBackendKeyData()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := BackendKeyDataResponse{
+		MessageHeader: MessageHeader{
+			msgType: 'K',
+			msgLen:  12,
+		},
+		PID:       1234,
+		SecretKey: 5678,
+	}
+
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func TestReadAuthentication(t *testing.T) {
 	cases := []struct {
 		typ AuthenticationType
