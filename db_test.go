@@ -1120,5 +1120,7 @@ func checkReady(t *testing.T, c *Conn) {
 	}
 }
 
-var testDSN = cmp.Or(os.Getenv("DATABASE_URL"),
-	"dbname=postgres host=/tmp port=5411 sslmode=disable user=postgres password=postgres")
+var testDSN = cmp.Or(
+	os.Getenv("DATABASE_URL"),
+	"dbname=postgres host=/tmp port=5411 sslmode=disable user=postgres password=postgres",
+)
