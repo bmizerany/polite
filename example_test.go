@@ -2,6 +2,7 @@ package polite_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -16,14 +17,22 @@ func ExampleConn_Query_copyTo() {
 	}
 	defer cn.Close()
 
-	for row := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
-		id, err := row.ParseInt()
+	for row, err := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
 		if err != nil {
 			log.Fatal(err)
 		}
-		name, err := row.ParseString()
-		if err != nil {
-			log.Fatal(err)
+		var id int
+		var name string
+		for i, col := range row.Columns() {
+			switch i {
+			case 0:
+				id, err = col.ParseInt()
+			case 1:
+				name, err = col.ParseString()
+			}
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 		fmt.Println(id, name)
 	}
@@ -45,9 +54,8 @@ func ExampleConn_Query_copyFrom() {
 		{2, "bob"},
 	}
 
-	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		_, err := row.View()
-		if err != nil {
+	for _, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		if !errors.Is(err, polite.ErrCopyFrom) {
 			log.Fatal(err)
 		}
 		for _, item := range items {

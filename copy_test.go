@@ -24,12 +24,21 @@ func TestCopyFreestyle(t *testing.T) {
 	const q = `
 		COPY (SELECT 1 AS id, 'foo' AS name) TO STDOUT WITH (FORMAT binary)
 	`
-	for row := range cn.Query(ctx, q) {
-		if g := must(row.ParseInt()); g != 1 {
-			t.Fatalf("id = %v, want 1", g)
+	for row, err := range cn.Query(ctx, q) {
+		if err != nil {
+			t.Fatal(err)
 		}
-		if g := must(row.ParseString()); g != "foo" {
-			t.Fatalf("name = %q, want 'foo'", g)
+		for i, col := range row.Columns() {
+			switch i {
+			case 0:
+				if g := must(col.ParseInt()); g != 1 {
+					t.Fatalf("id = %v, want 1", g)
+				}
+			case 1:
+				if g := must(col.ParseString()); g != "foo" {
+					t.Fatalf("name = %q, want 'foo'", g)
+				}
+			}
 		}
 	}
 }
@@ -51,12 +60,8 @@ func TestCopyNonBinary(t *testing.T) {
 		COPY (SELECT 1) TO STDOUT WITH (FORMAT text)
 	`
 	var got []error
-	for row := range cn.Query(ctx, q) {
-		_, err := row.View()
+	for _, err := range cn.Query(ctx, q) {
 		got = append(got, err)
-		if err := row.Close(); err != nil {
-			t.Fatal(err)
-		}
 	}
 	if len(got) != 1 {
 		t.Fatalf("got %v, want 1 error", len(got))
@@ -160,9 +165,9 @@ func TestCopyFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if _, verr := row.View(); !errors.Is(verr, ErrCopyFrom) {
-			t.Fatalf("View() = %v, want ErrCopyFrom", verr)
+	for _, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("Query() = %v, want ErrCopyFrom", err)
 		}
 		if err := cn.Exec(ctx, "", int32(4), "qux"); err != nil {
 			t.Fatal(err)
@@ -178,13 +183,21 @@ func TestCopyFrom(t *testing.T) {
 	}
 
 	var got []G
-	for row := range cn.Query(ctx, "SELECT * FROM foo ORDER BY id") {
-		got = append(got, G{
-			ID:   must(row.ParseInt()),
-			Name: must(row.ParseString()),
-		})
+	for row, err := range cn.Query(ctx, "SELECT * FROM foo ORDER BY id") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		var g G
+		for i, col := range row.Columns() {
+			switch i {
+			case 0:
+				g.ID = must(col.ParseInt())
+			case 1:
+				g.Name = must(col.ParseString())
+			}
+		}
+		got = append(got, g)
 	}
-
 	want := []G{
 		{ID: 4, Name: "qux"},
 		{ID: 5, Name: "quux"},
@@ -208,17 +221,22 @@ func TestCopyFromEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if _, verr := row.View(); !errors.Is(verr, ErrCopyFrom) {
-			t.Fatalf("View() = %v, want ErrCopyFrom", verr)
+	for _, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("Query() = %v, want ErrCopyFrom", err)
 		}
 		// Send no rows, just let the iterator end.
 	}
 
 	// Verify no rows were inserted.
 	var count int
-	for row := range cn.Query(ctx, "SELECT count(*) FROM foo") {
-		count = must(row.ParseInt())
+	for row, err := range cn.Query(ctx, "SELECT count(*) FROM foo") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, col := range row.Columns() {
+			count = must(col.ParseInt())
+		}
 	}
 	if count != 0 {
 		t.Fatalf("count = %d, want 0", count)

@@ -16,7 +16,6 @@ import (
 // Errors
 var (
 	ErrDone                  = errors.New("polite: done")
-	ErrOutOfColumns          = errors.New("polite: out of columns")
 	ErrTLSRefused            = errors.New("polite: TLS refused by backend")
 	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 	ErrCopyFrom              = errors.New("polite: COPY FROM in progress; use Exec(ctx, \"\", args...) to send rows")
@@ -125,9 +124,9 @@ func (c *Conn) Exec(ctx context.Context, sql string, args ...any) error {
 	if c.inCopyFrom && sql == "" {
 		return c.copyFromRow(args...)
 	}
-	for row := range c.Query(ctx, sql, args...) {
-		if row.err != nil {
-			return row.err
+	for _, err := range c.Query(ctx, sql, args...) {
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -269,11 +268,10 @@ func (c *Conn) initGoTime(ctx context.Context) error {
 	return nil
 }
 
-func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (err error) {
+func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (*statement, error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
-		err = c.maybeRecoverFrom(ctx, err)
-		return err
+		return nil, c.maybeRecoverFrom(ctx, err)
 	}
 
 	bindArgs := make([][]byte, len(args))
@@ -283,7 +281,7 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (er
 		start := len(scratch)
 		encoded, format, err := appendArg(scratch, arg)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if encoded == nil {
 			bindArgs[i] = nil
@@ -299,7 +297,10 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (er
 		In:  in,
 		Out: []int16{formatBinary}, // return all columns in binary format
 	}
-	return c.fc.WriteBind(portal, stmt.name, bindArgs, fp)
+	if err := c.fc.WriteBind(portal, stmt.name, bindArgs, fp); err != nil {
+		return nil, err
+	}
+	return stmt, nil
 }
 
 func (c *Conn) newStmtName() string {
@@ -372,54 +373,52 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 }
 
 // Query executes sql and returns the sequence of rows returned by the query.
-// Each iteration yields a [Row], which may itself report an error when
-// consumed. Call [Row.View] to retrieve the first column and observe any
-// iteration error.
-//
-// See the package section "Row Draining" for iterator cleanup behavior when
-// columns are unread or iteration stops early.
-func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
-	return iter.Seq[*Row](func(yield func(*Row) bool) {
+// Each iteration yields a [Row] and an error. Query errors, COPY mode
+// transitions, and row materialization errors are reported in the range body.
+func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
+	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
 		if c.useGoTime {
 			if err := c.updateGoTime(ctx); err != nil {
-				yield(&Row{err: err})
+				yield(nil, err)
 				return
 			}
 		}
-		if err := c.prepare(ctx, "", sql, args...); err != nil {
-			yield(&Row{c: c, err: err})
+		stmt, err := c.prepare(ctx, "", sql, args...)
+		if err != nil {
+			yield(nil, err)
 			return
 		}
 		if err := c.execAndSync(""); err != nil {
-			yield(&Row{c: c, err: err})
+			yield(nil, err)
 			return
 		}
 		var processed int
 		for {
-			row, err := c.nextRow(ctx, processed)
+			row, err := c.nextRow(ctx, processed, stmt.out.Fields)
 			if err != nil {
 				if errors.Is(err, ErrDone) {
 					return
 				}
-				err = c.maybeRecoverFrom(ctx, err)
-				yield(&Row{c: c, err: err})
-				return
-			}
-			processed++
-			if !yield(row) {
-				if c.inCopyFrom {
+				if errors.Is(err, ErrCopyFrom) {
+					if !yield(nil, err) {
+						if err := c.finalizeCopyFrom(ctx); err != nil {
+							fmt.Printf("polite: COPY FROM cleanup error: %v\n", err)
+						}
+						return
+					}
 					if err := c.finalizeCopyFrom(ctx); err != nil {
-						fmt.Printf("polite: COPY FROM cleanup error: %v\n", err)
+						yield(nil, err)
 					}
 					return
 				}
+				err = c.maybeRecoverFrom(ctx, err)
+				yield(nil, err)
+				return
+			}
+			processed++
+			if !yield(row, nil) {
 				for {
-					err := c.maybeRecoverFrom(ctx, row.Close())
-					if err != nil {
-						fmt.Printf("polite: stopped early with error: %v\n", err)
-						return
-					}
-					_, err = c.nextRow(ctx, processed)
+					_, err := c.nextRow(ctx, processed, stmt.out.Fields)
 					if err != nil {
 						if errors.Is(err, ErrDone) {
 							return
@@ -429,15 +428,10 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 							fmt.Printf("polite: stopped early with error: %v\n", err)
 							return
 						}
+						continue
 					}
 					processed++
 				}
-			}
-			if c.inCopyFrom {
-				if err := c.finalizeCopyFrom(ctx); err != nil {
-					yield(&Row{c: c, err: err})
-				}
-				return
 			}
 		}
 	})
@@ -450,41 +444,45 @@ func (c *Conn) execAndSync(portal string) error {
 }
 
 type Row struct {
-	c       *Conn
-	numCols int
-	rem     int
-	err     error // if set, View returns this immediately
+	data    []byte
+	columns []Column
 }
 
-// NumColumns returns the number of columns in a row.
-func (r *Row) NumColumns() int {
-	return int(r.numCols)
+// Columns returns the columns in the row.
+func (r *Row) Columns() iter.Seq2[int, Column] {
+	return iter.Seq2[int, Column](func(yield func(int, Column) bool) {
+		for i, col := range r.columns {
+			if !yield(i, col) {
+				return
+			}
+		}
+	})
 }
 
-// View returns the raw bytes for the next column in the row.
-// It advances the row cursor by one column.
-func (r *Row) View() ([]byte, error) {
-	if r.err != nil {
-		return nil, r.err
-	}
-	if r.rem == 0 {
-		return nil, ErrOutOfColumns
-	}
-	r.rem--
-	v, err := r.c.fc.ReadDataRowValue()
-	if err != nil {
-		return nil, err
-	}
-	return v.Data, nil
+// Close is retained for compatibility and does nothing.
+func (r *Row) Close() error {
+	return nil
 }
 
-// ParseInt reads the next column with [Row.View] and decodes it as a binary
-// integer. Supported widths are 1, 2, 4, and 8 bytes.
-func (r *Row) ParseInt() (int, error) {
-	v, err := r.View()
-	if err != nil {
-		return 0, err
-	}
+// Column is a borrowed view of one row column.
+type Column struct {
+	desc febe.FieldDescription
+	data []byte
+}
+
+// Name returns the column name from the row description.
+func (c Column) Name() string { return c.desc.Name }
+
+// OID returns the column type OID from the row description.
+func (c Column) OID() int32 { return c.desc.DataTypeOID }
+
+// Bytes returns the raw bytes for the column value.
+func (c Column) Bytes() []byte { return c.data }
+
+// ParseInt decodes the column bytes as a binary integer.
+// Supported widths are 1, 2, 4, and 8 bytes.
+func (c Column) ParseInt() (int, error) {
+	v := c.Bytes()
 	// TODO(bmizerany): test coverage for all cases
 	switch len(v) {
 	case 1:
@@ -502,48 +500,22 @@ func (r *Row) ParseInt() (int, error) {
 
 var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
-// ParseTime reads the next column with [Row.ParseInt] and decodes it as a
-// PostgreSQL timestamp-without-timezone value.
-func (r *Row) ParseTime() (time.Time, error) {
-	microseconds, err := r.ParseInt()
+// ParseTime decodes the column bytes as a PostgreSQL
+// timestamp-without-timezone value.
+func (c Column) ParseTime() (time.Time, error) {
+	microseconds, err := c.ParseInt()
 	if err != nil {
 		return time.Time{}, err
 	}
 	return pgEpoch.Add(time.Duration(microseconds) * time.Microsecond), nil
 }
 
-// ParseString reads the next column with [Row.View] and returns it as a string.
-func (r *Row) ParseString() (string, error) {
-	v, err := r.View()
-	if err != nil {
-		return "", err
-	}
-	return string(v), nil
+// ParseString returns the column bytes as a string.
+func (c Column) ParseString() (string, error) {
+	return string(c.Bytes()), nil
 }
 
-// Close discards any remaining columns in the row.
-//
-// Query iterators drain unread row columns automatically when iteration
-// advances or stops. See the package section "Row Draining".
-//
-// Call Close when you want to force that drain immediately and observe its
-// error at the call site.
-func (r *Row) Close() error {
-	if r.err != nil {
-		return nil
-	}
-	for {
-		_, err := r.View()
-		if err != nil {
-			if errors.Is(err, ErrOutOfColumns) {
-				return nil
-			}
-			return err
-		}
-	}
-}
-
-func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
+func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDescription) (*Row, error) {
 	for {
 		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
@@ -575,11 +547,7 @@ func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 			}
 			c.inCopyFrom = true
 			c.copyHeaderWritten = false
-			if c.row == nil {
-				c.row = &Row{}
-			}
-			*c.row = Row{c: c, err: ErrCopyFrom}
-			return c.row, nil
+			return nil, ErrCopyFrom
 		case 'D', 'd':
 			discardBinaryHeader := processed == 0 && h.Type() == 'd'
 			m, err := c.fc.ReadDataRow(discardBinaryHeader)
@@ -592,11 +560,11 @@ func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 			if c.row == nil {
 				c.row = &Row{}
 			}
-			*c.row = Row{
-				c:       c,
-				numCols: int(m.NumCols),
-				rem:     int(m.NumCols),
+			columns, err := buildColumns(c.fc, c.row, fields, int(m.NumCols))
+			if err != nil {
+				return nil, err
 			}
+			c.row.columns = columns
 			return c.row, nil
 		case 'c':
 			_, err := c.fc.ReadCopyDone()
@@ -614,6 +582,38 @@ func (c *Conn) nextRow(ctx context.Context, processed int) (*Row, error) {
 			return nil, unexpectedMessage(h)
 		}
 	}
+}
+
+func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCols int) ([]Column, error) {
+	var columns []Column
+	if row != nil {
+		columns = row.columns
+	}
+	if cap(columns) < numCols {
+		columns = make([]Column, numCols)
+	} else {
+		columns = columns[:numCols]
+	}
+	data := row.data[:0]
+	for i := range numCols {
+		v, err := fc.ReadDataRowValue()
+		if err != nil {
+			return nil, err
+		}
+		desc := febe.FieldDescription{}
+		if i < len(fields) {
+			desc = fields[i]
+		}
+		if v.Data == nil {
+			columns[i] = Column{desc: desc}
+			continue
+		}
+		start := len(data)
+		data = append(data, v.Data...)
+		columns[i] = Column{desc: desc, data: data[start:]}
+	}
+	row.data = data
+	return columns, nil
 }
 
 func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
@@ -651,7 +651,6 @@ func unexpectedMessage(h febe.MessageHeader) error {
 
 var errsWeCanRecoverFrom = errors.Join(
 	ErrUnsupportedCopyFormat,
-	ErrOutOfColumns,
 	febe.ErrEmptyQuery,
 )
 

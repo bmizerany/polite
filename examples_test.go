@@ -31,12 +31,17 @@ func ExampleConn_Query() {
 	}
 	defer cn.Close()
 
-	for row := range cn.Query(ctx, "SELECT 1") {
-		n, err := row.ParseInt()
+	for row, err := range cn.Query(ctx, "SELECT 1") {
 		if err != nil {
 			return
 		}
-		fmt.Println(n)
+		for _, col := range row.Columns() {
+			n, err := col.ParseInt()
+			if err != nil {
+				return
+			}
+			fmt.Println(n)
+		}
 	}
 }
 

@@ -1,9 +1,9 @@
 // Package polite provides PostgreSQL client primitives for Go.
 //
 // polite is not a database/sql driver and does not implement
-// database/sql/driver. It exposes three types — [Conn], [Pool], and [Row] —
-// that cover connections, queries, COPY, and pooling directly against the
-// PostgreSQL wire protocol.
+// database/sql/driver. It exposes four types — [Conn], [Pool], [Row], and
+// [Column] — that cover connections, queries, COPY, and pooling directly
+// against the PostgreSQL wire protocol.
 //
 // # Opening Connections
 //
@@ -15,14 +15,22 @@
 //
 // # Queries and Results
 //
-// [Conn.Query] returns [iter.Seq][*Row]. Each iteration yields a [Row].
-// Call [Row.View] to retrieve the first value and observe any error for that
-// iteration.
+// [Conn.Query] returns [iter.Seq2][*Row, error]. Each successful iteration
+// yields a [Row] and a nil error. Query and row materialization failures are
+// reported in the second value.
 //
-//	for row := range cn.Query(ctx, "SELECT id, name FROM users WHERE active") {
-//		if _, err := row.View(); err != nil { return err }
-//		id, _ := row.ParseInt()
-//		name, _ := row.ParseString()
+//	var id int
+//	var name string
+//	for row, err := range cn.Query(ctx, "SELECT id, name FROM users WHERE active") {
+//		if err != nil { return err }
+//		for i, col := range row.Columns() {
+//			switch i {
+//			case 0:
+//				id, _ = col.ParseInt()
+//			case 1:
+//				name, _ = col.ParseString()
+//			}
+//		}
 //		fmt.Println(id, name)
 //	}
 //
@@ -40,24 +48,22 @@
 //
 // # Row Access
 //
-// Rows are forward-only because they read directly from the connection's wire
-// buffer — there is no intermediate materialization. [Row.View] returns the
-// raw bytes for the next column and advances the cursor; the caller decides
-// how to interpret the data. [Row.ParseInt], [Row.ParseString], and
-// [Row.ParseTime] are convenience methods built on View for common types.
-// [Row.NumColumns] reports how many columns the row contains.
+// Rows expose columns as a sequence of [Column] values. Each column carries
+// the column name, type OID, and a borrowed byte view of the data. The bytes
+// remain valid until the next row is yielded, so callers can keep references
+// to individual columns while they walk the rest of the row. [Column.ParseInt],
+// [Column.ParseString], and [Column.ParseTime] are convenience methods for
+// common types.
 //
 // # Row Draining
 //
 // The PostgreSQL wire protocol requires the client to consume all row data
 // before the connection returns to ReadyForQuery. The iterator handles this
-// automatically: when iteration advances past a row, any unread columns are
-// drained, and when iteration stops early (via break or return), the iterator
-// drains remaining rows and backend messages until ReadyForQuery so the
-// connection can be reused.
+// automatically: when iteration stops early (via break or return), it drains
+// remaining rows and backend messages until ReadyForQuery so the connection
+// can be reused.
 //
-// Call [Row.Close] to force draining of unread columns immediately and
-// observe drain errors at that call site.
+// [Row.Close] is retained for compatibility and is usually unnecessary.
 //
 // # Bulk Import/Export (COPY FROM/TO)
 //
@@ -70,21 +76,28 @@
 // Each iteration yields a row whose columns can be read the same way as a
 // SELECT result:
 //
-//	for row := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
-//		if _, err := row.View(); err != nil { return err }
-//		id, _ := row.ParseInt()
-//		name, _ := row.ParseString()
+//	var id int
+//	var name string
+//	for row, err := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
+//		if err != nil { return err }
+//		for i, col := range row.Columns() {
+//			switch i {
+//			case 0:
+//				id, _ = col.ParseInt()
+//			case 1:
+//				name, _ = col.ParseString()
+//			}
+//		}
 //		fmt.Println(id, name)
 //	}
 //
 // To import rows in bulk, pass a COPY ... FROM STDIN statement to Query to
 // begin the COPY, then call Exec with an empty SQL string to send each data
-// row. The iterator yields a single sentinel row whose [Row.View] returns
-// [ErrCopyFrom] to signal that the connection is in COPY FROM mode:
+// row. The iterator yields a single [ErrCopyFrom] error to signal that the
+// connection is in COPY FROM mode:
 //
-//	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-//		if _, err := row.View(); err != nil { return err }
-//		// row.View() returns ErrCopyFrom to signal COPY FROM mode.
+//	for _, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+//		if !errors.Is(err, ErrCopyFrom) { return err }
 //		for _, item := range items {
 //			if err := cn.Exec(ctx, "", item.ID, item.Name); err != nil {
 //				return err
