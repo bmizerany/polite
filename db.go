@@ -449,10 +449,10 @@ type Row struct {
 }
 
 // Columns returns the columns in the row.
-func (r *Row) Columns() iter.Seq2[int, Column] {
-	return iter.Seq2[int, Column](func(yield func(int, Column) bool) {
-		for i, col := range r.columns {
-			if !yield(i, col) {
+func (r *Row) Columns() iter.Seq[Column] {
+	return iter.Seq[Column](func(yield func(Column) bool) {
+		for _, col := range r.columns {
+			if !yield(col) {
 				return
 			}
 		}
@@ -461,9 +461,13 @@ func (r *Row) Columns() iter.Seq2[int, Column] {
 
 // Column is a borrowed view of one row column.
 type Column struct {
-	desc febe.FieldDescription
-	data []byte
+	index int
+	desc  febe.FieldDescription
+	data  []byte
 }
+
+// Index returns the column index within the row.
+func (c Column) Index() int { return c.index }
 
 // Name returns the column name from the row description.
 func (c Column) Name() string { return c.desc.Name }
@@ -600,12 +604,12 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 			desc = fields[i]
 		}
 		if v.Data == nil {
-			columns[i] = Column{desc: desc}
+			columns[i] = Column{index: i, desc: desc}
 			continue
 		}
 		start := len(data)
 		data = append(data, v.Data...)
-		columns[i] = Column{desc: desc, data: data[start:]}
+		columns[i] = Column{index: i, desc: desc, data: data[start:]}
 	}
 	row.data = data
 	return columns, nil

@@ -28,8 +28,8 @@ func TestCopyFreestyle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i, col := range row.Columns() {
-			switch i {
+		for col := range row.Columns() {
+			switch col.Index() {
 			case 0:
 				if g := must(col.ParseInt()); g != 1 {
 					t.Fatalf("id = %v, want 1", g)
@@ -188,8 +188,8 @@ func TestCopyFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 		var g G
-		for i, col := range row.Columns() {
-			switch i {
+		for col := range row.Columns() {
+			switch col.Index() {
 			case 0:
 				g.ID = must(col.ParseInt())
 			case 1:
@@ -234,7 +234,7 @@ func TestCopyFromEmpty(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, col := range row.Columns() {
+		for col := range row.Columns() {
 			count = must(col.ParseInt())
 		}
 	}

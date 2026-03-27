@@ -23,8 +23,8 @@
 //	var name string
 //	for row, err := range cn.Query(ctx, "SELECT id, name FROM users WHERE active") {
 //		if err != nil { return err }
-//		for i, col := range row.Columns() {
-//			switch i {
+//		for col := range row.Columns() {
+//			switch col.Index() {
 //			case 0:
 //				id, _ = col.ParseInt()
 //			case 1:
@@ -49,11 +49,11 @@
 // # Row Access
 //
 // Rows expose columns as a sequence of [Column] values. Each column carries
-// the column name, type OID, and a borrowed byte view of the data. The bytes
+// its index, name, type OID, and a borrowed byte view of the data. The bytes
 // remain valid until the next row is yielded, so callers can keep references
-// to individual columns while they walk the rest of the row. [Column.ParseInt],
-// [Column.ParseString], and [Column.ParseTime] are convenience methods for
-// common types.
+// to individual columns while they walk the rest of the row. [Column.Index],
+// [Column.ParseInt], [Column.ParseString], and [Column.ParseTime] are
+// convenience methods for common types.
 //
 // # Row Draining
 //
@@ -78,8 +78,8 @@
 //	var name string
 //	for row, err := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
 //		if err != nil { return err }
-//		for i, col := range row.Columns() {
-//			switch i {
+//		for col := range row.Columns() {
+//			switch col.Index() {
 //			case 0:
 //				id, _ = col.ParseInt()
 //			case 1:

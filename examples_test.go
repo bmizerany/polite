@@ -35,7 +35,7 @@ func ExampleConn_Query() {
 		if err != nil {
 			return
 		}
-		for _, col := range row.Columns() {
+		for col := range row.Columns() {
 			n, err := col.ParseInt()
 			if err != nil {
 				return

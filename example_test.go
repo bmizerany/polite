@@ -23,8 +23,8 @@ func ExampleConn_Query_copyTo() {
 		}
 		var id int
 		var name string
-		for i, col := range row.Columns() {
-			switch i {
+		for col := range row.Columns() {
+			switch col.Index() {
 			case 0:
 				id, err = col.ParseInt()
 			case 1:
