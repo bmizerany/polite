@@ -63,8 +63,6 @@
 // remaining rows and backend messages until ReadyForQuery so the connection
 // can be reused.
 //
-// [Row.Close] is retained for compatibility and is usually unnecessary.
-//
 // # Bulk Import/Export (COPY FROM/TO)
 //
 // Bulk operations use PostgreSQL's COPY protocol. There are no special

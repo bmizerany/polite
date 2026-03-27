@@ -459,11 +459,6 @@ func (r *Row) Columns() iter.Seq2[int, Column] {
 	})
 }
 
-// Close is retained for compatibility and does nothing.
-func (r *Row) Close() error {
-	return nil
-}
-
 // Column is a borrowed view of one row column.
 type Column struct {
 	desc febe.FieldDescription

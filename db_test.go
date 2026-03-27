@@ -332,11 +332,8 @@ func TestRowClose(t *testing.T) {
 	cn := newSession(t)
 
 	t.Run("with remaining values", func(t *testing.T) {
-		for row, err := range cn.Query(t.Context(), q) {
+		for _, err := range cn.Query(t.Context(), q) {
 			if err != nil {
-				t.Fatal(err)
-			}
-			if err := row.Close(); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -349,9 +346,6 @@ func TestRowClose(t *testing.T) {
 			}
 			for range row.Columns() {
 				break
-			}
-			if err := row.Close(); err != nil {
-				t.Fatal(err)
 			}
 		}
 	})
