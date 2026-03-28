@@ -156,9 +156,9 @@ func (c *Conn) copyFromRow(args ...any) error {
 	return nil
 }
 
-// LastResult returns the result of the most recent completed command on c.
-// After [Conn.Exec], this includes the command name and the number of rows
-// affected.
+// LastResult returns the parsed command tag for the most recent completed
+// command on c. The tag includes the command name, such as SELECT or INSERT,
+// and any row count reported by PostgreSQL.
 func (c *Conn) LastResult() febe.Tag {
 	return c.tag
 }
