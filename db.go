@@ -509,11 +509,6 @@ func (c Column) ParseTime() (time.Time, error) {
 	return pgEpoch.Add(time.Duration(microseconds) * time.Microsecond), nil
 }
 
-// ParseString returns the column bytes as a string.
-func (c Column) ParseString() (string, error) {
-	return string(c.Bytes()), nil
-}
-
 func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDescription) (*Row, error) {
 	for {
 		h, err := c.fc.ReadHeader(ctx)

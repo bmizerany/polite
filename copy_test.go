@@ -35,7 +35,7 @@ func TestCopyFreestyle(t *testing.T) {
 					t.Fatalf("id = %v, want 1", g)
 				}
 			case 1:
-				if g := must(col.ParseString()); g != "foo" {
+				if g := string(col.Bytes()); g != "foo" {
 					t.Fatalf("name = %q, want 'foo'", g)
 				}
 			}
@@ -193,7 +193,7 @@ func TestCopyFrom(t *testing.T) {
 			case 0:
 				g.ID = must(col.ParseInt())
 			case 1:
-				g.Name = must(col.ParseString())
+				g.Name = string(col.Bytes())
 			}
 		}
 		got = append(got, g)

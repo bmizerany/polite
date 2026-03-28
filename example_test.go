@@ -27,11 +27,11 @@ func ExampleConn_Query_copyTo() {
 			switch col.Index() {
 			case 0:
 				id, err = col.ParseInt()
+				if err != nil {
+					log.Fatal(err)
+				}
 			case 1:
-				name, err = col.ParseString()
-			}
-			if err != nil {
-				log.Fatal(err)
+				name = string(col.Bytes())
 			}
 		}
 		fmt.Println(id, name)

@@ -151,7 +151,7 @@ func TestQuery(t *testing.T) {
 				case 1:
 					vals = append(vals, must(col.ParseInt()))
 				case 2:
-					vals = append(vals, must(col.ParseString()))
+					vals = append(vals, string(col.Bytes()))
 				}
 			}
 			got = append(got, vals)
@@ -176,10 +176,7 @@ func TestQueryAllocations(t *testing.T) {
 						t.Fatal(err)
 					}
 				case 1:
-					// ParseString allocates by design.
-					if _, err := col.ParseString(); err != nil {
-						t.Fatal(err)
-					}
+					_ = string(col.Bytes())
 				}
 			}
 		}
@@ -207,9 +204,7 @@ func BenchmarkQueryAllocations(b *testing.B) {
 						b.Fatal(err)
 					}
 				case 1:
-					if _, err := col.ParseString(); err != nil {
-						b.Fatal(err)
-					}
+					_ = string(col.Bytes())
 				}
 			}
 		}
@@ -366,7 +361,7 @@ func TestQueryExtended(t *testing.T) {
 			t.Fatal(err)
 		}
 		for col := range row.Columns() {
-			got = append(got, must(col.ParseString()))
+			got = append(got, string(col.Bytes()))
 		}
 	}
 
@@ -385,7 +380,7 @@ func TestQueryExtendedBytes(t *testing.T) {
 			t.Fatal(err)
 		}
 		for col := range row.Columns() {
-			got = append(got, must(col.ParseString()))
+			got = append(got, string(col.Bytes()))
 		}
 	}
 
@@ -459,7 +454,7 @@ func TestQueryExtendedUnsignedOverflow(t *testing.T) {
 			t.Fatal(err)
 		}
 		for col := range row.Columns() {
-			got = must(col.ParseString())
+			got = string(col.Bytes())
 		}
 	}
 	if got != "18446744073709551615" {
@@ -498,7 +493,7 @@ func collectRows(t testing.TB, rows iter.Seq2[*Row, error]) [][]string {
 func collectValues(row *Row) []string {
 	var got []string
 	for col := range row.Columns() {
-		got = append(got, must(col.ParseString()))
+		got = append(got, string(col.Bytes()))
 	}
 	return got
 }
@@ -848,7 +843,7 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 		for col := range row.Columns() {
 			switch col.Index() {
 			case 0:
-				gotText = must(col.ParseString())
+				gotText = string(col.Bytes())
 			case 1:
 				gotBytes = col.Bytes()
 			case 2:

@@ -28,7 +28,7 @@
 //			case 0:
 //				id, _ = col.ParseInt()
 //			case 1:
-//				name, _ = col.ParseString()
+//				name = string(col.Bytes())
 //			}
 //		}
 //		fmt.Println(id, name)
@@ -52,8 +52,8 @@
 // its index, name, type OID, and a borrowed byte view of the data. The bytes
 // remain valid until the next row is yielded, so callers can keep references
 // to individual columns while they walk the rest of the row. [Column.Index],
-// [Column.ParseInt], [Column.ParseString], and [Column.ParseTime] are
-// convenience methods for common types.
+// [Column.ParseInt] and [Column.ParseTime] are convenience methods for common
+// types. Use string(col.Bytes()) for text values.
 //
 // # Row Draining
 //
@@ -83,7 +83,7 @@
 //			case 0:
 //				id, _ = col.ParseInt()
 //			case 1:
-//				name, _ = col.ParseString()
+//				name = string(col.Bytes())
 //			}
 //		}
 //		fmt.Println(id, name)
