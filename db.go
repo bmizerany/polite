@@ -462,6 +462,10 @@ func (c Column) Name() string { return c.desc.Name }
 // OID returns the column type OID from the row description.
 func (c Column) OID() oids.ID { return c.desc.DataTypeOID }
 
+// TypeSize returns the column type size in bytes, or -1 for variable-width
+// types.
+func (c Column) TypeSize() int16 { return c.desc.DataTypeSize }
+
 // Bytes returns the raw bytes for the column value.
 func (c Column) Bytes() []byte { return c.data }
 

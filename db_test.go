@@ -1168,24 +1168,44 @@ func TestRowParseTime(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func TestColumnOID(t *testing.T) {
+func TestColumnType(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
 	defer checkReady(t, cn)
 
 	ctx := t.Context()
-	var got []oids.ID
-	for row, err := range cn.Query(ctx, `SELECT 'hello'::text, 42::int4, now()::timestamptz`) {
+	var got []struct {
+		name string
+		oid  oids.ID
+		size int16
+	}
+	for row, err := range cn.Query(ctx, `SELECT 'hello'::text AS text, 42::int4 AS int4, now()::timestamptz AS timestamptz`) {
 		if err != nil {
 			t.Fatal(err)
 		}
 		for col := range row.Columns() {
-			got = append(got, col.OID())
+			got = append(got, struct {
+				name string
+				oid  oids.ID
+				size int16
+			}{
+				name: col.Name(),
+				oid:  col.OID(),
+				size: col.TypeSize(),
+			})
 		}
 	}
 
-	want := []oids.ID{oids.Text, oids.Int4, oids.Timestamptz}
+	want := []struct {
+		name string
+		oid  oids.ID
+		size int16
+	}{
+		{name: "text", oid: oids.Text, size: -1},
+		{name: "int4", oid: oids.Int4, size: 4},
+		{name: "timestamptz", oid: oids.Timestamptz, size: 8},
+	}
 	diff.Test(t, t.Errorf, got, want)
 }
 
