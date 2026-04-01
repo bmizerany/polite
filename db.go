@@ -465,15 +465,11 @@ type DataType struct {
 // Index returns the column index within the row.
 func (c Column) Index() int { return c.index }
 
-// TypeSize returns the column type size in bytes, or -1 for variable-width
-// types.
-func (c Column) TypeSize() int16 { return c.desc.DataTypeSize }
-
 // DataType returns the column's type metadata from the row description.
 func (c Column) DataType() DataType {
 	return DataType{
 		Name: c.desc.Name,
-		Size: int(c.TypeSize()),
+		Size: int(c.desc.DataTypeSize),
 		ID:   c.desc.DataTypeOID,
 	}
 }
