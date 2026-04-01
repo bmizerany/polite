@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"blake.io/polite/febe/febeio"
+	"blake.io/polite/oids"
 )
 
 // Errors
@@ -665,7 +666,7 @@ type FieldDescription struct {
 	TableAttributeID int16
 
 	// DataTypeOID is the column data type OID.
-	DataTypeOID int32
+	DataTypeOID oids.ID
 
 	// DataTypeSize is the column type size in bytes, or -1 for variable-width
 	// types.
@@ -753,7 +754,7 @@ func (c *Conn) ReadRowDescription() (RowDescriptionResponse, error) {
 			Name:             string(name),
 			TableOID:         tableOID,
 			TableAttributeID: tableAttributeID,
-			DataTypeOID:      dataTypeOID,
+			DataTypeOID:      oids.ID(dataTypeOID),
 			DataTypeSize:     dataTypeSize,
 			TypeModifier:     typeModifier,
 			FormatCode:       formatCode,
@@ -771,7 +772,7 @@ type ParameterDescriptionResponse struct {
 	MessageHeader
 
 	// OIDs lists the parameter type OIDs in declaration order.
-	OIDs []int32
+	OIDs []oids.ID
 }
 
 // ReadParameterDescription reads a ParameterDescription response.
@@ -783,17 +784,17 @@ func (c *Conn) ReadParameterDescription() (ParameterDescriptionResponse, error) 
 	if err != nil {
 		return ParameterDescriptionResponse{}, err
 	}
-	oids := make([]int32, n)
-	for i := range oids {
+	ids := make([]oids.ID, n)
+	for i := range ids {
 		oid, err := c.c.ReadInt32()
 		if err != nil {
 			return ParameterDescriptionResponse{}, err
 		}
-		oids[i] = oid
+		ids[i] = oids.ID(oid)
 	}
 	return ParameterDescriptionResponse{
 		MessageHeader: c.h,
-		OIDs:          oids,
+		OIDs:          ids,
 	}, nil
 }
 

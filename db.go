@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"blake.io/polite/febe"
+	"blake.io/polite/oids"
 )
 
 // Errors
@@ -459,7 +460,7 @@ func (c Column) Index() int { return c.index }
 func (c Column) Name() string { return c.desc.Name }
 
 // OID returns the column type OID from the row description.
-func (c Column) OID() int32 { return c.desc.DataTypeOID }
+func (c Column) OID() oids.ID { return c.desc.DataTypeOID }
 
 // Bytes returns the raw bytes for the column value.
 func (c Column) Bytes() []byte { return c.data }

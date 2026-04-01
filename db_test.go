@@ -20,6 +20,7 @@ import (
 
 	"blake.io/polite/febe"
 	"blake.io/polite/internal/testutil"
+	"blake.io/polite/oids"
 	"kr.dev/diff"
 )
 
@@ -1164,6 +1165,27 @@ func TestRowParseTime(t *testing.T) {
 		}
 	}
 	want := []time.Time{time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)}
+	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestColumnOID(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	ctx := t.Context()
+	var got []oids.ID
+	for row, err := range cn.Query(ctx, `SELECT 'hello'::text, 42::int4, now()::timestamptz`) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		for col := range row.Columns() {
+			got = append(got, col.OID())
+		}
+	}
+
+	want := []oids.ID{oids.Text, oids.Int4, oids.Timestamptz}
 	diff.Test(t, t.Errorf, got, want)
 }
 
