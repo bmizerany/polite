@@ -38,8 +38,14 @@ func main() {
 type oid struct {
 	ID      uint32
 	Typname string
-	Export  string
-	Array   bool
+}
+
+func (o oid) Export() string {
+	return exportedName(o.Typname)
+}
+
+func (o oid) IsArray() bool {
+	return strings.HasPrefix(o.Typname, "_")
 }
 
 func run() error {
@@ -77,16 +83,8 @@ func (id ID) String() string {
 }
 
 func (id ID) IsArray() bool {
-	switch id {
-{{- range . }}
-{{- if .Array }}
-	case {{ .ID }}:
-		return true
-{{- end }}
-{{- end }}
-	default:
-		return false
-	}
+	s := id.String()
+	return len(s) > 0 && s[0] == '_'
 }
 `)
 	if err != nil {
@@ -162,8 +160,6 @@ func getOIDs() ([]oid, error) {
 			}
 		}
 
-		o.Export = exportedName(o.Typname)
-		o.Array = strings.HasPrefix(o.Typname, "_")
 		oids = append(oids, o)
 	}
 
