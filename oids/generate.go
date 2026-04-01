@@ -60,7 +60,7 @@ func run() error {
 // Package oids provides PostgreSQL type OIDs for built-in well-known types.
 package oids
 
-import "fmt"
+import "strconv"
 
 // ID is a PostgreSQL type OID.
 type ID uint32
@@ -71,20 +71,27 @@ const (
 {{- end }}
 )
 
-func (id ID) String() string {
-	switch id {
+var idNames = map[ID]string{
 {{- range . }}
-	case {{ .ID }}:
-		return {{ printf "%q" .Typname }}
+	{{ .ID }}: {{ printf "%q" .Typname }},
 {{- end }}
-	default:
-		return fmt.Sprintf("oids.ID(%d)", id)
+}
+
+func (id ID) String() string {
+	if s := idNames[id]; s != "" {
+		return s
 	}
+	return unknownIDString(id)
 }
 
 func (id ID) IsArray() bool {
-	s := id.String()
+	s := idNames[id]
 	return len(s) > 0 && s[0] == '_'
+}
+
+//go:noinline
+func unknownIDString(id ID) string {
+	return "oids.ID(" + strconv.FormatUint(uint64(id), 10) + ")"
 }
 `)
 	if err != nil {
