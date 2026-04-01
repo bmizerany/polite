@@ -39,6 +39,7 @@ type oid struct {
 	ID      uint32
 	Typname string
 	Export  string
+	Array   bool
 }
 
 func run() error {
@@ -72,6 +73,19 @@ func (id ID) String() string {
 {{- end }}
 	default:
 		return fmt.Sprintf("oids.ID(%d)", id)
+	}
+}
+
+func (id ID) IsArray() bool {
+	switch id {
+{{- range . }}
+{{- if .Array }}
+	case {{ .ID }}:
+		return true
+{{- end }}
+{{- end }}
+	default:
+		return false
 	}
 }
 `)
@@ -149,6 +163,7 @@ func getOIDs() ([]oid, error) {
 		}
 
 		o.Export = exportedName(o.Typname)
+		o.Array = strings.HasPrefix(o.Typname, "_")
 		oids = append(oids, o)
 	}
 

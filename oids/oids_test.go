@@ -26,3 +26,23 @@ func TestIDString(t *testing.T) {
 		}
 	}
 }
+
+func TestIDIsArray(t *testing.T) {
+	tests := []struct {
+		id   ID
+		want bool
+	}{
+		{Bool, false},
+		{Text, false},
+		{TextArray, true},
+		{JsonbArray, true},
+		{PgLsnArray, true},
+		{ID(123456789), false},
+	}
+
+	for _, tt := range tests {
+		if got := tt.id.IsArray(); got != tt.want {
+			t.Errorf("%v.IsArray() = %v, want %v", tt.id, got, tt.want)
+		}
+	}
+}
