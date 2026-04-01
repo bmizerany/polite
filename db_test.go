@@ -1168,6 +1168,30 @@ func TestRowParseTime(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestRowParseFloat(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkReady(t, cn) // ensure we leave in a good state
+
+	ctx := t.Context()
+	var got []float64
+	for row, err := range cn.Query(ctx, `SELECT 1.5::real, -2.25::double precision`) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		for col := range row.Columns() {
+			f, err := col.ParseFloat()
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, f)
+		}
+	}
+	want := []float64{1.5, -2.25}
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func TestColumnType(t *testing.T) {
 	t.Parallel()
 

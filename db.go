@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"math"
 	"net"
 	"strconv"
 	"time"
@@ -493,6 +494,20 @@ func (c Column) ParseInt() (int, error) {
 		return int(v[0])<<56 | int(v[1])<<48 | int(v[2])<<40 | int(v[3])<<32 | int(v[4])<<24 | int(v[5])<<16 | int(v[6])<<8 | int(v[7]), nil
 	default:
 		return 0, fmt.Errorf("ParseInt: invalid length: %d", len(v))
+	}
+}
+
+// ParseFloat decodes the column bytes as a PostgreSQL binary float.
+// Supported widths are 4 and 8 bytes.
+func (c Column) ParseFloat() (float64, error) {
+	v := c.Bytes()
+	switch len(v) {
+	case 4:
+		return float64(math.Float32frombits(binary.BigEndian.Uint32(v))), nil
+	case 8:
+		return math.Float64frombits(binary.BigEndian.Uint64(v)), nil
+	default:
+		return 0, fmt.Errorf("ParseFloat: invalid length: %d", len(v))
 	}
 }
 
