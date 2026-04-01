@@ -153,7 +153,7 @@ func getOIDs() ([]oid, error) {
 
 		var o oid
 		for col := range row.Columns() {
-			switch dt := col.DataType(); dt.Name {
+			switch dt := col.FieldInfo(); dt.Name {
 			case "oid":
 				v, err := col.ParseInt()
 				if err != nil {

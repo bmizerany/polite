@@ -454,8 +454,8 @@ type Column struct {
 	data  []byte
 }
 
-// DataType describes the type metadata for a column.
-type DataType struct {
+// FieldInfo describes a row field's name, size, and type OID.
+type FieldInfo struct {
 	Name string
 
 	Size int
@@ -466,9 +466,9 @@ type DataType struct {
 // Index returns the column index within the row.
 func (c Column) Index() int { return c.index }
 
-// DataType returns the column's type metadata from the row description.
-func (c Column) DataType() DataType {
-	return DataType{
+// FieldInfo returns the column's type metadata from the row description.
+func (c Column) FieldInfo() FieldInfo {
+	return FieldInfo{
 		Name: c.desc.Name,
 		Size: int(c.desc.DataTypeSize),
 		ID:   c.desc.DataTypeOID,

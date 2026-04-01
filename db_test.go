@@ -1199,17 +1199,17 @@ func TestColumnType(t *testing.T) {
 	defer checkReady(t, cn)
 
 	ctx := t.Context()
-	var got []DataType
+	var got []FieldInfo
 	for row, err := range cn.Query(ctx, `SELECT 'hello'::text AS text, 42::int4 AS int4, now()::timestamptz AS timestamptz`) {
 		if err != nil {
 			t.Fatal(err)
 		}
 		for col := range row.Columns() {
-			got = append(got, col.DataType())
+			got = append(got, col.FieldInfo())
 		}
 	}
 
-	want := []DataType{
+	want := []FieldInfo{
 		{Name: "text", Size: -1, ID: oids.Text},
 		{Name: "int4", Size: 4, ID: oids.Int4},
 		{Name: "timestamptz", Size: 8, ID: oids.Timestamptz},
