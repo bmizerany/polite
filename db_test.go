@@ -1175,36 +1175,20 @@ func TestColumnType(t *testing.T) {
 	defer checkReady(t, cn)
 
 	ctx := t.Context()
-	var got []struct {
-		name string
-		oid  oids.ID
-		size int16
-	}
+	var got []DataType
 	for row, err := range cn.Query(ctx, `SELECT 'hello'::text AS text, 42::int4 AS int4, now()::timestamptz AS timestamptz`) {
 		if err != nil {
 			t.Fatal(err)
 		}
 		for col := range row.Columns() {
-			got = append(got, struct {
-				name string
-				oid  oids.ID
-				size int16
-			}{
-				name: col.Name(),
-				oid:  col.OID(),
-				size: col.TypeSize(),
-			})
+			got = append(got, col.DataType())
 		}
 	}
 
-	want := []struct {
-		name string
-		oid  oids.ID
-		size int16
-	}{
-		{name: "text", oid: oids.Text, size: -1},
-		{name: "int4", oid: oids.Int4, size: 4},
-		{name: "timestamptz", oid: oids.Timestamptz, size: 8},
+	want := []DataType{
+		{Name: "text", Size: -1, ID: oids.Text},
+		{Name: "int4", Size: 4, ID: oids.Int4},
+		{Name: "timestamptz", Size: 8, ID: oids.Timestamptz},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }

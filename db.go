@@ -453,18 +453,30 @@ type Column struct {
 	data  []byte
 }
 
+// DataType describes the type metadata for a column.
+type DataType struct {
+	Name string
+
+	Size int
+
+	ID oids.ID
+}
+
 // Index returns the column index within the row.
 func (c Column) Index() int { return c.index }
-
-// Name returns the column name from the row description.
-func (c Column) Name() string { return c.desc.Name }
-
-// OID returns the column type OID from the row description.
-func (c Column) OID() oids.ID { return c.desc.DataTypeOID }
 
 // TypeSize returns the column type size in bytes, or -1 for variable-width
 // types.
 func (c Column) TypeSize() int16 { return c.desc.DataTypeSize }
+
+// DataType returns the column's type metadata from the row description.
+func (c Column) DataType() DataType {
+	return DataType{
+		Name: c.desc.Name,
+		Size: int(c.TypeSize()),
+		ID:   c.desc.DataTypeOID,
+	}
+}
 
 // Bytes returns the raw bytes for the column value.
 func (c Column) Bytes() []byte { return c.data }

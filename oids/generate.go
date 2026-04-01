@@ -153,7 +153,7 @@ func getOIDs() ([]oid, error) {
 
 		var o oid
 		for col := range row.Columns() {
-			switch col.Name() {
+			switch dt := col.DataType(); dt.Name {
 			case "oid":
 				v, err := col.ParseInt()
 				if err != nil {
@@ -163,7 +163,7 @@ func getOIDs() ([]oid, error) {
 			case "typname":
 				o.Typname = string(col.Bytes())
 			default:
-				return nil, fmt.Errorf("unexpected pg_type column %q", col.Name())
+				return nil, fmt.Errorf("unexpected pg_type column %q", dt.Name)
 			}
 		}
 
