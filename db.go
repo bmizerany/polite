@@ -456,11 +456,11 @@ type Column struct {
 
 // FieldInfo describes a row field's name, size, and type OID.
 type FieldInfo struct {
-	Name string
+	Name string // field name from server
 
-	Size int
+	Size int // field width in bytes, or -1 for variable-width types
 
-	ID oids.ID
+	ID oids.ID // field type OID
 }
 
 // Index returns the column index within the row.
