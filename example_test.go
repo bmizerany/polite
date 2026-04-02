@@ -21,7 +21,7 @@ func ExampleConn_Query_copyTo() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		var id int
+		var id int64
 		var name string
 		for col := range row.Columns() {
 			switch col.Index() {

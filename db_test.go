@@ -157,7 +157,7 @@ func TestQuery(t *testing.T) {
 			}
 			got = append(got, vals)
 		}
-		want := [][]any{{1, 2, "three"}}
+		want := [][]any{{int64(1), int64(2), "three"}}
 		diff.Test(t, t.Errorf, got, want)
 	}
 }
@@ -302,7 +302,7 @@ func TestConnPid(t *testing.T) {
 
 	cn := newSession(t)
 
-	var got int
+	var got int64
 	for row, err := range cn.Query(t.Context(), "SELECT pg_backend_pid()") {
 		if err != nil {
 			t.Fatal(err)
@@ -312,7 +312,7 @@ func TestConnPid(t *testing.T) {
 		}
 	}
 
-	if want := cn.Pid(); want != got {
+	if want := int64(cn.Pid()); want != got {
 		t.Fatalf("Pid() = %d; want %d", want, got)
 	}
 	if got <= 0 {
@@ -835,7 +835,7 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 	var gotText string
 	var gotBytes []byte
 	var gotTime time.Time
-	var gotInt int
+	var gotInt int64
 	var gotFloat []byte
 	for row, err := range cn.Query(t.Context(), q, "hello", []byte("world"), in, uint(42), float64(3.5)) {
 		if err != nil {
@@ -860,7 +860,7 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 	diff.Test(t, t.Errorf, gotText, "hello")
 	diff.Test(t, t.Errorf, string(gotBytes), "world")
 	diff.Test(t, t.Errorf, gotTime, wantTime)
-	diff.Test(t, t.Errorf, gotInt, 42)
+	diff.Test(t, t.Errorf, gotInt, int64(42))
 	diff.Test(t, t.Errorf, gotFloat, []byte{0x40, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 }
 

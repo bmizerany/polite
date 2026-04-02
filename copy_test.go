@@ -178,7 +178,7 @@ func TestCopyFrom(t *testing.T) {
 	}
 
 	type G struct {
-		ID   int
+		ID   int64
 		Name string
 	}
 
@@ -229,7 +229,7 @@ func TestCopyFromEmpty(t *testing.T) {
 	}
 
 	// Verify no rows were inserted.
-	var count int
+	var count int64
 	for row, err := range cn.Query(ctx, "SELECT count(*) FROM foo") {
 		if err != nil {
 			t.Fatal(err)

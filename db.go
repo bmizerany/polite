@@ -480,18 +480,18 @@ func (c Column) Bytes() []byte { return c.data }
 
 // ParseInt decodes the column bytes as a binary integer.
 // Supported widths are 1, 2, 4, and 8 bytes.
-func (c Column) ParseInt() (int, error) {
+func (c Column) ParseInt() (int64, error) {
 	v := c.Bytes()
 	// TODO(bmizerany): test coverage for all cases
 	switch len(v) {
 	case 1:
-		return int(v[0]), nil
+		return int64(int8(v[0])), nil
 	case 2:
-		return int(v[0])<<8 | int(v[1]), nil
+		return int64(int16(binary.BigEndian.Uint16(v))), nil
 	case 4:
-		return int(v[0])<<24 | int(v[1])<<16 | int(v[2])<<8 | int(v[3]), nil
+		return int64(int32(binary.BigEndian.Uint32(v))), nil
 	case 8:
-		return int(v[0])<<56 | int(v[1])<<48 | int(v[2])<<40 | int(v[3])<<32 | int(v[4])<<24 | int(v[5])<<16 | int(v[6])<<8 | int(v[7]), nil
+		return int64(binary.BigEndian.Uint64(v)), nil
 	default:
 		return 0, fmt.Errorf("ParseInt: invalid length: %d", len(v))
 	}
