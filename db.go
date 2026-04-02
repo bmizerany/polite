@@ -50,7 +50,6 @@ type Conn struct {
 	fc *febe.Conn
 
 	useGoTime bool
-	pid       int
 
 	nstmt int
 	cache map[string]*statement
@@ -65,11 +64,6 @@ type Conn struct {
 	copyHeaderWritten bool
 
 	closed bool
-}
-
-// Pid returns the backend process ID for the connection.
-func (c *Conn) Pid() int {
-	return c.pid
 }
 
 // Close sends a Terminate message, flushes it, and then closes the underlying

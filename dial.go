@@ -97,11 +97,10 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 					return err
 				}
 			case 'K':
-				key, err := c.fc.ReadBackendKeyData()
+				_, err := c.fc.ReadBackendKeyData()
 				if err != nil {
 					return err
 				}
-				c.pid = int(key.PID)
 			case 'Z':
 				_, err := c.fc.ReadReadyForQuery()
 				if err != nil {

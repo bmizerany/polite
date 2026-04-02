@@ -297,29 +297,6 @@ func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 	}
 }
 
-func TestConnPid(t *testing.T) {
-	t.Parallel()
-
-	cn := newSession(t)
-
-	var got int64
-	for row, err := range cn.Query(t.Context(), "SELECT pg_backend_pid()") {
-		if err != nil {
-			t.Fatal(err)
-		}
-		for col := range row.Columns() {
-			got = must(col.ParseInt())
-		}
-	}
-
-	if want := int64(cn.Pid()); want != got {
-		t.Fatalf("Pid() = %d; want %d", want, got)
-	}
-	if got <= 0 {
-		t.Fatalf("backend pid = %d; want > 0", got)
-	}
-}
-
 func TestRowClose(t *testing.T) {
 	t.Parallel()
 
