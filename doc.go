@@ -17,7 +17,7 @@
 // connection by exact SQL text. Reusing the same SQL on the same connection
 // reuses the prepared statement as well.
 //
-// Once Query is the main API, the next question is what a row contains.
+// From there, the row API defines how results are read.
 //
 // # Rows and Columns
 //
