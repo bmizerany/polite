@@ -450,8 +450,8 @@ type Column struct {
 	data []byte
 }
 
-// FieldInfo describes a row field's name, size, and type OID.
-type FieldInfo struct {
+// ColumnDesc describes a row field's name, size, and type OID.
+type ColumnDesc struct {
 	Name string // field name from server
 
 	Size int // field width in bytes, or -1 for variable-width types
@@ -459,9 +459,9 @@ type FieldInfo struct {
 	ID oids.ID // field type OID
 }
 
-// FieldInfo returns the column's type metadata from the row description.
-func (c Column) FieldInfo() FieldInfo {
-	return FieldInfo{
+// Desc returns the column's type metadata from the row description.
+func (c Column) Desc() ColumnDesc {
+	return ColumnDesc{
 		Name: c.desc.Name,
 		Size: int(c.desc.DataTypeSize),
 		ID:   c.desc.DataTypeOID,
