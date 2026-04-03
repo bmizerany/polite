@@ -2,6 +2,7 @@ package polite_test
 
 import (
 	"context"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log"
@@ -62,6 +63,42 @@ func ExampleConn_Query_copyFrom() {
 			if err := cn.Exec(ctx, "", item.ID, item.Name); err != nil {
 				log.Fatal(err)
 			}
+		}
+	}
+}
+
+func ExampleConn_Query_struct() {
+	ctx := context.Background()
+
+	cn, err := polite.Dial(ctx, "", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cn.Close()
+
+	type User struct {
+		ID   int32  `json:"id"`
+		Name string `json:"name"`
+	}
+
+	for row, err := range cn.Query(ctx, `
+		SELECT row_to_json(t)
+		FROM (
+			SELECT 1::int4 AS id, 'alice'::text AS name
+			UNION ALL
+			SELECT 2::int4, 'bob'::text
+		) AS t
+	`) {
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for col := range row.Columns() {
+			var user User
+			if err := json.Unmarshal(col.Bytes(), &user); err != nil {
+				log.Fatal(err)
+			}
+			_ = user
 		}
 	}
 }
