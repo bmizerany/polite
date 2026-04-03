@@ -449,8 +449,7 @@ func collectRows(t testing.TB, rows iter.Seq2[*Row, error]) [][]string {
 
 func collectValues(row *Row) []string {
 	var got []string
-	for i := 0; i < row.NumColumns(); i++ {
-		col := row.Column(i)
+	for col := range row.Columns() {
 		got = append(got, string(col.Bytes()))
 	}
 	return got

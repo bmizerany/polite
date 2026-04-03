@@ -433,6 +433,17 @@ type Row struct {
 // NumColumns returns the number of columns in the row.
 func (r *Row) NumColumns() int { return len(r.columns) }
 
+// Columns returns the columns in the row.
+func (r *Row) Columns() iter.Seq[Column] {
+	return func(yield func(Column) bool) {
+		for i := range r.NumColumns() {
+			if !yield(r.Column(i)) {
+				return
+			}
+		}
+	}
+}
+
 // Column returns the column at index i.
 //
 // It panics if i is out of range. The returned Column is a borrowed view that

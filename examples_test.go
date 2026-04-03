@@ -45,8 +45,7 @@ func ExampleConn_Query() {
 			Street string
 			City   string
 		}
-		for i := range row.NumColumns() {
-			col := row.Column(i)
+		for col := range row.Columns() {
 			switch col.Name() {
 			case "id":
 				address.ID, err = col.ParseInt()
