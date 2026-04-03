@@ -36,9 +36,6 @@ func ExampleConn_Query() {
 			return
 		}
 		col := row.Column(0)
-		if col.IsZero() {
-			return
-		}
 		n, err := col.ParseInt()
 		if err != nil {
 			return

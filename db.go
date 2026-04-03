@@ -435,12 +435,9 @@ func (r *Row) NumColumns() int { return len(r.columns) }
 
 // Column returns the column at index i.
 //
-// The returned Column is a borrowed view that remains valid only while this
-// row is current.
+// It panics if i is out of range. The returned Column is a borrowed view that
+// remains valid only while this row is current.
 func (r *Row) Column(i int) Column {
-	if uint(i) >= uint(len(r.columns)) {
-		return Column{}
-	}
 	return r.columns[i]
 }
 

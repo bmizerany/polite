@@ -505,13 +505,6 @@ func TestRowColumn(t *testing.T) {
 			if got != 11 {
 				t.Fatalf("column 0 repeated = %v, want 11", got)
 			}
-
-			if !row.Column(-1).IsZero() {
-				t.Fatal("expected negative index to fail")
-			}
-			if !row.Column(row.NumColumns()).IsZero() {
-				t.Fatal("expected out-of-range index to fail")
-			}
 			return
 		}
 		t.Fatal("expected 1 row")
@@ -541,6 +534,42 @@ func TestRowColumn(t *testing.T) {
 			return
 		}
 		t.Fatal("expected 1 signed integer row")
+	})
+}
+
+func TestRowColumnPanic(t *testing.T) {
+	t.Parallel()
+
+	t.Run("negative_index", func(t *testing.T) {
+		cn := newSession(t)
+		defer func() { _ = cn.Close() }()
+		defer func() { _ = recover() }()
+
+		for row, err := range cn.Query(t.Context(), `SELECT 11::int4`) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = row.Column(-1)
+			t.Fatal("expected negative index panic")
+		}
+
+		t.Fatal("expected 1 row")
+	})
+
+	t.Run("past_end", func(t *testing.T) {
+		cn := newSession(t)
+		defer func() { _ = cn.Close() }()
+		defer func() { _ = recover() }()
+
+		for row, err := range cn.Query(t.Context(), `SELECT 11::int4`) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = row.Column(row.NumColumns())
+			t.Fatal("expected out-of-range panic")
+		}
+
+		t.Fatal("expected 1 row")
 	})
 }
 
