@@ -583,8 +583,14 @@ func TestZeroColumn(t *testing.T) {
 	if got := col.Bytes(); got != nil {
 		t.Fatalf("Bytes() = %v; want nil", got)
 	}
-	if got := col.Desc(); got != (ColumnDesc{}) {
-		t.Fatalf("Desc() = %#v; want zero ColumnDesc", got)
+	if got := col.Name; got != "" {
+		t.Fatalf("Name = %q; want empty", got)
+	}
+	if got := col.Size; got != 0 {
+		t.Fatalf("Size = %d; want 0", got)
+	}
+	if got := col.Type; got != 0 {
+		t.Fatalf("Type = %v; want 0", got)
 	}
 
 	for _, tt := range []struct {
@@ -1313,7 +1319,11 @@ func TestColumnType(t *testing.T) {
 	defer checkReady(t, cn)
 
 	ctx := t.Context()
-	var got []ColumnDesc
+	var got []struct {
+		Name string
+		Size int
+		Type oids.ID
+	}
 	for row, err := range cn.Query(ctx, `SELECT 'hello'::text AS text, 42::int4 AS int4, now()::timestamptz AS timestamptz`) {
 		if err != nil {
 			t.Fatal(err)
@@ -1323,14 +1333,26 @@ func TestColumnType(t *testing.T) {
 			if col.IsZero() {
 				t.Fatalf("missing column %d", i)
 			}
-			got = append(got, col.Desc())
+			got = append(got, struct {
+				Name string
+				Size int
+				Type oids.ID
+			}{
+				Name: col.Name,
+				Size: col.Size,
+				Type: col.Type,
+			})
 		}
 	}
 
-	want := []ColumnDesc{
-		{Name: "text", Size: -1, ID: oids.Text},
-		{Name: "int4", Size: 4, ID: oids.Int4},
-		{Name: "timestamptz", Size: 8, ID: oids.Timestamptz},
+	want := []struct {
+		Name string
+		Size int
+		Type oids.ID
+	}{
+		{Name: "text", Size: -1, Type: oids.Text},
+		{Name: "int4", Size: 4, Type: oids.Int4},
+		{Name: "timestamptz", Size: 8, Type: oids.Timestamptz},
 	}
 	diff.Test(t, t.Errorf, got, want)
 }

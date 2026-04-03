@@ -443,31 +443,16 @@ func (r *Row) Column(i int) Column {
 
 // Column is a borrowed view of one row column.
 type Column struct {
-	desc febe.FieldDescription
+	Name string
+	Size int
+	Type oids.ID
+
 	data []byte
-}
-
-// ColumnDesc describes a row field's name, size, and type OID.
-type ColumnDesc struct {
-	Name string // field name from server
-
-	Size int // field width in bytes, or -1 for variable-width types
-
-	ID oids.ID // field type OID
-}
-
-// Desc returns the column's PostgreSQL type metadata from the row description.
-func (c Column) Desc() ColumnDesc {
-	return ColumnDesc{
-		Name: c.desc.Name,
-		Size: int(c.desc.DataTypeSize),
-		ID:   c.desc.DataTypeOID,
-	}
 }
 
 // IsZero reports whether c is the zero column sentinel.
 func (c Column) IsZero() bool {
-	return c.desc == (febe.FieldDescription{}) && c.data == nil
+	return c.Name == "" && c.Size == 0 && c.Type == 0 && c.data == nil
 }
 
 // Bytes returns the raw wire bytes for the column value.
@@ -617,12 +602,21 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 			desc = fields[i]
 		}
 		if v.Data == nil {
-			columns[i] = Column{desc: desc}
+			columns[i] = Column{
+				Name: desc.Name,
+				Size: int(desc.DataTypeSize),
+				Type: desc.DataTypeOID,
+			}
 			continue
 		}
 		start := len(data)
 		data = append(data, v.Data...)
-		columns[i] = Column{desc: desc, data: data[start:]}
+		columns[i] = Column{
+			Name: desc.Name,
+			Size: int(desc.DataTypeSize),
+			Type: desc.DataTypeOID,
+			data: data[start:],
+		}
 	}
 	row.data = data
 	return columns, nil
