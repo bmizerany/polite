@@ -443,16 +443,24 @@ func (r *Row) Column(i int) Column {
 
 // Column is a borrowed view of one row column.
 type Column struct {
-	Name string
-	Size int
-	Type oids.ID
-
-	data []byte
+	name   string
+	size   int
+	typeID oids.ID
+	data   []byte
 }
+
+// Name returns the column name from the row description.
+func (c Column) Name() string { return c.name }
+
+// Size returns the column width in bytes, or -1 for variable-width types.
+func (c Column) Size() int { return c.size }
+
+// Type returns the column type OID from the row description.
+func (c Column) Type() oids.ID { return c.typeID }
 
 // IsZero reports whether c is the zero column sentinel.
 func (c Column) IsZero() bool {
-	return c.Name == "" && c.Size == 0 && c.Type == 0 && c.data == nil
+	return c.name == "" && c.size == 0 && c.typeID == 0 && c.data == nil
 }
 
 // Bytes returns the raw wire bytes for the column value.
@@ -603,19 +611,19 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 		}
 		if v.Data == nil {
 			columns[i] = Column{
-				Name: desc.Name,
-				Size: int(desc.DataTypeSize),
-				Type: desc.DataTypeOID,
+				name:   desc.Name,
+				size:   int(desc.DataTypeSize),
+				typeID: desc.DataTypeOID,
 			}
 			continue
 		}
 		start := len(data)
 		data = append(data, v.Data...)
 		columns[i] = Column{
-			Name: desc.Name,
-			Size: int(desc.DataTypeSize),
-			Type: desc.DataTypeOID,
-			data: data[start:],
+			name:   desc.Name,
+			size:   int(desc.DataTypeSize),
+			typeID: desc.DataTypeOID,
+			data:   data[start:],
 		}
 	}
 	row.data = data

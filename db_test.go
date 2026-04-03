@@ -583,13 +583,13 @@ func TestZeroColumn(t *testing.T) {
 	if got := col.Bytes(); got != nil {
 		t.Fatalf("Bytes() = %v; want nil", got)
 	}
-	if got := col.Name; got != "" {
+	if got := col.Name(); got != "" {
 		t.Fatalf("Name = %q; want empty", got)
 	}
-	if got := col.Size; got != 0 {
+	if got := col.Size(); got != 0 {
 		t.Fatalf("Size = %d; want 0", got)
 	}
-	if got := col.Type; got != 0 {
+	if got := col.Type(); got != 0 {
 		t.Fatalf("Type = %v; want 0", got)
 	}
 
@@ -1338,9 +1338,9 @@ func TestColumnType(t *testing.T) {
 				Size int
 				Type oids.ID
 			}{
-				Name: col.Name,
-				Size: col.Size,
-				Type: col.Type,
+				Name: col.Name(),
+				Size: col.Size(),
+				Type: col.Type(),
 			})
 		}
 	}
