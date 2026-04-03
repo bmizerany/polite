@@ -468,84 +468,80 @@ func TestRowColumn(t *testing.T) {
 	cn := newSession(t)
 	defer checkReady(t, cn)
 
-	found := false
-	for row, err := range cn.Query(t.Context(), `SELECT 11::int4, 'two'::text`) {
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		col := row.Column(1)
-		if col.IsZero() {
-			t.Fatal("missing column 1")
-		}
-		if got := string(col.Bytes()); got != "two" {
-			t.Fatalf("column 1 = %q, want %q", got, "two")
-		}
-
-		col = row.Column(0)
-		if col.IsZero() {
-			t.Fatal("missing column 0")
-		}
-		got, err := col.ParseInt()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got != 11 {
-			t.Fatalf("column 0 = %v, want 11", got)
-		}
-
-		col = row.Column(0)
-		if col.IsZero() {
-			t.Fatal("missing column 0 on repeated access")
-		}
-		got, err = col.ParseInt()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got != 11 {
-			t.Fatalf("column 0 repeated = %v, want 11", got)
-		}
-
-		if !row.Column(-1).IsZero() {
-			t.Fatal("expected negative index to fail")
-		}
-		if !row.Column(row.NumColumns()).IsZero() {
-			t.Fatal("expected out-of-range index to fail")
-		}
-		found = true
-		break
-	}
-	if !found {
-		t.Fatal("expected 1 row")
-	}
-
-	found = false
-	for row, err := range cn.Query(t.Context(), `SELECT -7::int2, 0::int2, -123456::int4, 0::int4, -1234567890123::int8, 0::int8`) {
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		var got []int64
-		for i := range row.NumColumns() {
-			col := row.Column(i)
-			if col.IsZero() {
-				t.Fatalf("missing column %d", i)
-			}
-			n, err := col.ParseInt()
+	t.Run("basic", func(t *testing.T) {
+		for row, err := range cn.Query(t.Context(), `SELECT 11::int4, 'two'::text`) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got = append(got, n)
-		}
 
-		want := []int64{-7, 0, -123456, 0, -1234567890123, 0}
-		diff.Test(t, t.Errorf, got, want)
-		found = true
-		break
-	}
-	if !found {
+			col := row.Column(1)
+			if col.IsZero() {
+				t.Fatal("missing column 1")
+			}
+			if got := string(col.Bytes()); got != "two" {
+				t.Fatalf("column 1 = %q, want %q", got, "two")
+			}
+
+			col = row.Column(0)
+			if col.IsZero() {
+				t.Fatal("missing column 0")
+			}
+			got, err := col.ParseInt()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != 11 {
+				t.Fatalf("column 0 = %v, want 11", got)
+			}
+
+			col = row.Column(0)
+			if col.IsZero() {
+				t.Fatal("missing column 0 on repeated access")
+			}
+			got, err = col.ParseInt()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != 11 {
+				t.Fatalf("column 0 repeated = %v, want 11", got)
+			}
+
+			if !row.Column(-1).IsZero() {
+				t.Fatal("expected negative index to fail")
+			}
+			if !row.Column(row.NumColumns()).IsZero() {
+				t.Fatal("expected out-of-range index to fail")
+			}
+			return
+		}
+		t.Fatal("expected 1 row")
+	})
+
+	t.Run("negative_and_zero", func(t *testing.T) {
+		for row, err := range cn.Query(t.Context(), `SELECT -7::int2, 0::int2, -123456::int4, 0::int4, -1234567890123::int8, 0::int8`) {
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var got []int64
+			for i := range row.NumColumns() {
+				col := row.Column(i)
+				if col.IsZero() {
+					t.Fatalf("missing column %d", i)
+				}
+				n, err := col.ParseInt()
+				if err != nil {
+					t.Fatal(err)
+				}
+				got = append(got, n)
+			}
+
+			want := []int64{-7, 0, -123456, 0, -1234567890123, 0}
+			diff.Test(t, t.Errorf, got, want)
+			return
+		}
 		t.Fatal("expected 1 signed integer row")
-	}
+	})
 }
 
 func TestZeroColumn(t *testing.T) {
