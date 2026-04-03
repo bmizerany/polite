@@ -1259,7 +1259,7 @@ func TestRowParseInt(t *testing.T) {
 
 	ctx := t.Context()
 	var got []int64
-	for row, err := range cn.Query(ctx, `SELECT -7::int2, -123456::int4, -1234567890123::int8`) {
+	for row, err := range cn.Query(ctx, `SELECT -7::int2, 0::int2, -123456::int4, 0::int4, -1234567890123::int8, 0::int8`) {
 		check(err, nil)
 		for i := range row.NumColumns() {
 			col := row.Column(i)
@@ -1271,7 +1271,7 @@ func TestRowParseInt(t *testing.T) {
 			got = append(got, n)
 		}
 	}
-	want := []int64{-7, -123456, -1234567890123}
+	want := []int64{-7, 0, -123456, 0, -1234567890123, 0}
 	diff.Test(t, t.Errorf, got, want)
 }
 
