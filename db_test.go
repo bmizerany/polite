@@ -1250,7 +1250,7 @@ func TestRowParseFloat(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func TestRowParseInt(t *testing.T) {
+func TestRowParseIntNegativeAndZero(t *testing.T) {
 	t.Parallel()
 
 	check := testutil.Checker(t)
