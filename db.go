@@ -458,20 +458,12 @@ func (c Column) Size() int { return c.size }
 // Type returns the column type OID from the row description.
 func (c Column) Type() oids.ID { return c.typeID }
 
-// IsZero reports whether c is the zero column sentinel.
-func (c Column) IsZero() bool {
-	return c.name == "" && c.size == 0 && c.typeID == 0 && c.data == nil
-}
-
 // Bytes returns the raw wire bytes for the column value.
 func (c Column) Bytes() []byte { return c.data }
 
 // ParseInt decodes the column bytes as a PostgreSQL binary signed integer.
 // Supported widths are 1, 2, 4, and 8 bytes.
 func (c Column) ParseInt() (int64, error) {
-	if c.IsZero() {
-		return 0, fmt.Errorf("polite: zero column")
-	}
 	v := c.Bytes()
 	// TODO(bmizerany): test coverage for all cases
 	switch len(v) {
@@ -491,9 +483,6 @@ func (c Column) ParseInt() (int64, error) {
 // ParseFloat decodes the column bytes as a PostgreSQL binary float.
 // Supported widths are 4 and 8 bytes.
 func (c Column) ParseFloat() (float64, error) {
-	if c.IsZero() {
-		return 0, fmt.Errorf("polite: zero column")
-	}
 	v := c.Bytes()
 	switch len(v) {
 	case 4:
@@ -510,9 +499,6 @@ var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 // ParseTime decodes the column bytes as a PostgreSQL
 // timestamp-without-timezone value.
 func (c Column) ParseTime() (time.Time, error) {
-	if c.IsZero() {
-		return time.Time{}, fmt.Errorf("polite: zero column")
-	}
 	microseconds, err := c.ParseInt()
 	if err != nil {
 		return time.Time{}, err

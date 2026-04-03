@@ -302,12 +302,9 @@ func TestRowClose(t *testing.T) {
 	})
 
 	t.Run("without remaining values", func(t *testing.T) {
-		for row, err := range cn.Query(t.Context(), q) {
+		for _, err := range cn.Query(t.Context(), q) {
 			if err != nil {
 				t.Fatal(err)
-			}
-			if row.Column(0).IsZero() {
-				t.Fatal("missing column 0")
 			}
 		}
 	})
@@ -454,9 +451,6 @@ func collectValues(row *Row) []string {
 	var got []string
 	for i := 0; i < row.NumColumns(); i++ {
 		col := row.Column(i)
-		if col.IsZero() {
-			panic(fmt.Sprintf("missing column %d", i))
-		}
 		got = append(got, string(col.Bytes()))
 	}
 	return got
@@ -475,17 +469,11 @@ func TestRowColumn(t *testing.T) {
 			}
 
 			col := row.Column(1)
-			if col.IsZero() {
-				t.Fatal("missing column 1")
-			}
 			if got := string(col.Bytes()); got != "two" {
 				t.Fatalf("column 1 = %q, want %q", got, "two")
 			}
 
 			col = row.Column(0)
-			if col.IsZero() {
-				t.Fatal("missing column 0")
-			}
 			got, err := col.ParseInt()
 			if err != nil {
 				t.Fatal(err)
@@ -495,9 +483,6 @@ func TestRowColumn(t *testing.T) {
 			}
 
 			col = row.Column(0)
-			if col.IsZero() {
-				t.Fatal("missing column 0 on repeated access")
-			}
 			got, err = col.ParseInt()
 			if err != nil {
 				t.Fatal(err)
@@ -519,9 +504,6 @@ func TestRowColumn(t *testing.T) {
 			var got []int64
 			for i := range row.NumColumns() {
 				col := row.Column(i)
-				if col.IsZero() {
-					t.Fatalf("missing column %d", i)
-				}
 				n, err := col.ParseInt()
 				if err != nil {
 					t.Fatal(err)
@@ -577,9 +559,6 @@ func TestZeroColumn(t *testing.T) {
 	t.Parallel()
 
 	var col Column
-	if !col.IsZero() {
-		t.Fatal("zero column should report zero")
-	}
 	if got := col.Bytes(); got != nil {
 		t.Fatalf("Bytes() = %v; want nil", got)
 	}
@@ -591,43 +570,6 @@ func TestZeroColumn(t *testing.T) {
 	}
 	if got := col.Type(); got != 0 {
 		t.Fatalf("Type = %v; want 0", got)
-	}
-
-	for _, tt := range []struct {
-		name string
-		err  error
-	}{
-		{
-			name: "ParseInt",
-			err: func() error {
-				_, err := col.ParseInt()
-				return err
-			}(),
-		},
-		{
-			name: "ParseFloat",
-			err: func() error {
-				_, err := col.ParseFloat()
-				return err
-			}(),
-		},
-		{
-			name: "ParseTime",
-			err: func() error {
-				_, err := col.ParseTime()
-				return err
-			}(),
-		},
-	} {
-		if tt.err == nil {
-			t.Fatalf("%s: expected error", tt.name)
-		}
-		if !strings.HasPrefix(tt.err.Error(), "polite:") {
-			t.Fatalf("%s: got %q, want polite-prefixed error", tt.name, tt.err)
-		}
-		if strings.Contains(tt.err.Error(), "invalid length") {
-			t.Fatalf("%s: fell through to invalid-length behavior: %v", tt.name, tt.err)
-		}
 	}
 }
 
@@ -1300,9 +1242,6 @@ func TestRowParseFloat(t *testing.T) {
 		check(err, nil)
 		for i := 0; i < row.NumColumns(); i++ {
 			col := row.Column(i)
-			if col.IsZero() {
-				t.Fatalf("missing column %d", i)
-			}
 			f, err := col.ParseFloat()
 			check(err, nil)
 			got = append(got, f)
@@ -1330,9 +1269,6 @@ func TestColumnType(t *testing.T) {
 		}
 		for i := 0; i < row.NumColumns(); i++ {
 			col := row.Column(i)
-			if col.IsZero() {
-				t.Fatalf("missing column %d", i)
-			}
 			got = append(got, struct {
 				Name string
 				Size int
