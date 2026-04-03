@@ -155,7 +155,7 @@ func TestQuery(t *testing.T) {
 			got = append(got, []any{
 				v0,
 				v1,
-				string(row.Column(2).Bytes()),
+				row.Column(2).Text(),
 			})
 		}
 		want := [][]any{{int64(1), int64(2), "three"}}
@@ -174,7 +174,7 @@ func TestQueryAllocations(t *testing.T) {
 			if _, err := row.Column(0).ParseInt(); err != nil {
 				t.Fatal(err)
 			}
-			_ = string(row.Column(1).Bytes())
+			_ = row.Column(1).Text()
 		}
 	})
 
@@ -196,7 +196,7 @@ func BenchmarkQueryAllocations(b *testing.B) {
 			if _, err := row.Column(0).ParseInt(); err != nil {
 				b.Fatal(err)
 			}
-			_ = string(row.Column(1).Bytes())
+			_ = row.Column(1).Text()
 		}
 	}
 
@@ -324,7 +324,7 @@ func TestQueryExtended(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, string(row.Column(0).Bytes()))
+		got = append(got, row.Column(0).Text())
 	}
 
 	want := []string{"hello", "world"}
@@ -412,7 +412,7 @@ func TestQueryExtendedUnsignedOverflow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = string(row.Column(0).Bytes())
+		got = row.Column(0).Text()
 	}
 	if got != "18446744073709551615" {
 		t.Fatalf("got %q want %q", got, "18446744073709551615")
@@ -469,7 +469,7 @@ func TestRowColumn(t *testing.T) {
 			}
 
 			col := row.Column(1)
-			if got := string(col.Bytes()); got != "two" {
+			if got := col.Text(); got != "two" {
 				t.Fatalf("column 1 = %q, want %q", got, "two")
 			}
 
@@ -914,7 +914,7 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 	var gotFloat []byte
 	for row, err := range cn.Query(t.Context(), q, "hello", []byte("world"), in, uint(42), float64(3.5)) {
 		check(err, nil)
-		gotText = string(row.Column(0).Bytes())
+		gotText = row.Column(0).Text()
 		gotBytes = row.Column(1).Bytes()
 		gotTime, err = row.Column(2).ParseTime()
 		check(err, nil)

@@ -35,7 +35,7 @@ func TestCopyFreestyle(t *testing.T) {
 		if g != 1 {
 			t.Fatalf("id = %v, want 1", g)
 		}
-		if g := string(row.Column(1).Bytes()); g != "foo" {
+		if g := row.Column(1).Text(); g != "foo" {
 			t.Fatalf("name = %q, want 'foo'", g)
 		}
 	}
@@ -190,7 +190,7 @@ func TestCopyFrom(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		g.Name = string(row.Column(1).Bytes())
+		g.Name = row.Column(1).Text()
 		got = append(got, g)
 	}
 	want := []G{

@@ -441,7 +441,9 @@ func (r *Row) Column(i int) Column {
 	return r.columns[i]
 }
 
-// Column is a borrowed view of one row column.
+// Column describes one column returned by [Conn.Query].
+//
+// To obtain a Column, call [Conn.Query] and then [Row.Column].
 type Column struct {
 	name   string
 	size   int
@@ -459,7 +461,12 @@ func (c Column) Size() int { return c.size }
 func (c Column) Type() oids.ID { return c.typeID }
 
 // Bytes returns the raw wire bytes for the column value.
+//
+// The returned slice is valid until the next row is determined in the sequence.
 func (c Column) Bytes() []byte { return c.data }
+
+// Text returns the column bytes as a string copy.
+func (c Column) Text() string { return string(c.data) }
 
 // ParseInt decodes the column bytes as a PostgreSQL binary signed integer.
 // Supported widths are 1, 2, 4, and 8 bytes.

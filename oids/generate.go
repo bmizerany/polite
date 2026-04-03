@@ -162,7 +162,7 @@ func getOIDs() ([]oid, error) {
 				}
 				o.ID = uint32(v)
 			case "typname":
-				o.Typname = string(col.Bytes())
+				o.Typname = col.Text()
 			default:
 				return nil, fmt.Errorf("unexpected pg_type column %q", col.Name())
 			}

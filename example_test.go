@@ -30,7 +30,7 @@ func ExampleConn_Query_copyTo() {
 			log.Fatal(err)
 		}
 		col = row.Column(1)
-		name = string(col.Bytes())
+		name = col.Text()
 		fmt.Println(id, name)
 	}
 }
