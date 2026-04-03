@@ -31,16 +31,35 @@ func ExampleConn_Query() {
 	}
 	defer cn.Close()
 
-	for row, err := range cn.Query(ctx, "SELECT 1") {
+	const q = `
+		SELECT id, street, city
+		FROM addresses
+		ORDER BY id
+	`
+	for row, err := range cn.Query(ctx, q) {
 		if err != nil {
 			return
 		}
-		col := row.Column(0)
-		n, err := col.ParseInt()
-		if err != nil {
-			return
+		var address struct {
+			ID     int64
+			Street string
+			City   string
 		}
-		fmt.Println(n)
+		for i := range row.NumColumns() {
+			col := row.Column(i)
+			switch col.Name() {
+			case "id":
+				address.ID, err = col.ParseInt()
+				if err != nil {
+					return
+				}
+			case "street":
+				address.Street = col.Text()
+			case "city":
+				address.City = col.Text()
+			}
+		}
+		fmt.Println(address.ID, address.Street, address.City)
 	}
 }
 
