@@ -459,7 +459,7 @@ type ColumnDesc struct {
 	ID oids.ID // field type OID
 }
 
-// Desc returns the column's type metadata from the row description.
+// Desc returns the column's PostgreSQL type metadata from the row description.
 func (c Column) Desc() ColumnDesc {
 	return ColumnDesc{
 		Name: c.desc.Name,
@@ -473,10 +473,10 @@ func (c Column) IsZero() bool {
 	return c.desc == (febe.FieldDescription{}) && c.data == nil
 }
 
-// Bytes returns the raw bytes for the column value.
+// Bytes returns the raw wire bytes for the column value.
 func (c Column) Bytes() []byte { return c.data }
 
-// ParseInt decodes the column bytes as a binary integer.
+// ParseInt decodes the column bytes as a PostgreSQL binary signed integer.
 // Supported widths are 1, 2, 4, and 8 bytes.
 func (c Column) ParseInt() (int64, error) {
 	if c.IsZero() {

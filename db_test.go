@@ -1250,6 +1250,31 @@ func TestRowParseFloat(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestRowParseInt(t *testing.T) {
+	t.Parallel()
+
+	check := testutil.Checker(t)
+	cn := newSession(t)
+	defer checkReady(t, cn) // ensure we leave in a good state
+
+	ctx := t.Context()
+	var got []int64
+	for row, err := range cn.Query(ctx, `SELECT -7::int2, -123456::int4, -1234567890123::int8`) {
+		check(err, nil)
+		for i := range row.NumColumns() {
+			col := row.Column(i)
+			if col.IsZero() {
+				t.Fatalf("missing column %d", i)
+			}
+			n, err := col.ParseInt()
+			check(err, nil)
+			got = append(got, n)
+		}
+	}
+	want := []int64{-7, -123456, -1234567890123}
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func TestColumnType(t *testing.T) {
 	t.Parallel()
 
