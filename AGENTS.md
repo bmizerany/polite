@@ -82,3 +82,6 @@ type Foo struct {
 When the user uses "SQL" casually in a sentence, unless otherwise noted, it
 should be interpreted to mean specifically SQL as defined by Postgres, not ANSI
 SQL or some other dialect of SQL.
+
+When the user says "Phoebe", it should be interpreted as "Febe", the Postgres
+Front End Back End protocol.
