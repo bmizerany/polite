@@ -430,22 +430,24 @@ type Row struct {
 	columns []Column
 }
 
-// Columns returns the columns in the row.
-func (r *Row) Columns() iter.Seq[Column] {
-	return iter.Seq[Column](func(yield func(Column) bool) {
-		for _, col := range r.columns {
-			if !yield(col) {
-				return
-			}
-		}
-	})
+// NumColumns returns the number of columns in the row.
+func (r *Row) NumColumns() int { return len(r.columns) }
+
+// Column returns the column at index i.
+//
+// The returned Column is a borrowed view that remains valid only while this
+// row is current.
+func (r *Row) Column(i int) Column {
+	if uint(i) >= uint(len(r.columns)) {
+		return Column{}
+	}
+	return r.columns[i]
 }
 
 // Column is a borrowed view of one row column.
 type Column struct {
-	index int
-	desc  febe.FieldDescription
-	data  []byte
+	desc febe.FieldDescription
+	data []byte
 }
 
 // FieldInfo describes a row field's name, size, and type OID.
@@ -457,9 +459,6 @@ type FieldInfo struct {
 	ID oids.ID // field type OID
 }
 
-// Index returns the column index within the row.
-func (c Column) Index() int { return c.index }
-
 // FieldInfo returns the column's type metadata from the row description.
 func (c Column) FieldInfo() FieldInfo {
 	return FieldInfo{
@@ -469,12 +468,20 @@ func (c Column) FieldInfo() FieldInfo {
 	}
 }
 
+// IsZero reports whether c is the zero column sentinel.
+func (c Column) IsZero() bool {
+	return c.desc == (febe.FieldDescription{}) && c.data == nil
+}
+
 // Bytes returns the raw bytes for the column value.
 func (c Column) Bytes() []byte { return c.data }
 
 // ParseInt decodes the column bytes as a binary integer.
 // Supported widths are 1, 2, 4, and 8 bytes.
 func (c Column) ParseInt() (int64, error) {
+	if c.IsZero() {
+		return 0, fmt.Errorf("polite: zero column")
+	}
 	v := c.Bytes()
 	// TODO(bmizerany): test coverage for all cases
 	switch len(v) {
@@ -494,6 +501,9 @@ func (c Column) ParseInt() (int64, error) {
 // ParseFloat decodes the column bytes as a PostgreSQL binary float.
 // Supported widths are 4 and 8 bytes.
 func (c Column) ParseFloat() (float64, error) {
+	if c.IsZero() {
+		return 0, fmt.Errorf("polite: zero column")
+	}
 	v := c.Bytes()
 	switch len(v) {
 	case 4:
@@ -510,6 +520,9 @@ var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 // ParseTime decodes the column bytes as a PostgreSQL
 // timestamp-without-timezone value.
 func (c Column) ParseTime() (time.Time, error) {
+	if c.IsZero() {
+		return time.Time{}, fmt.Errorf("polite: zero column")
+	}
 	microseconds, err := c.ParseInt()
 	if err != nil {
 		return time.Time{}, err
@@ -607,12 +620,12 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 			desc = fields[i]
 		}
 		if v.Data == nil {
-			columns[i] = Column{index: i, desc: desc}
+			columns[i] = Column{desc: desc}
 			continue
 		}
 		start := len(data)
 		data = append(data, v.Data...)
-		columns[i] = Column{index: i, desc: desc, data: data[start:]}
+		columns[i] = Column{desc: desc, data: data[start:]}
 	}
 	row.data = data
 	return columns, nil

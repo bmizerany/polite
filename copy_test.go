@@ -28,17 +28,15 @@ func TestCopyFreestyle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for col := range row.Columns() {
-			switch col.Index() {
-			case 0:
-				if g := must(col.ParseInt()); g != 1 {
-					t.Fatalf("id = %v, want 1", g)
-				}
-			case 1:
-				if g := string(col.Bytes()); g != "foo" {
-					t.Fatalf("name = %q, want 'foo'", g)
-				}
-			}
+		g, err := row.Column(0).ParseInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g != 1 {
+			t.Fatalf("id = %v, want 1", g)
+		}
+		if g := string(row.Column(1).Bytes()); g != "foo" {
+			t.Fatalf("name = %q, want 'foo'", g)
 		}
 	}
 }
@@ -188,14 +186,11 @@ func TestCopyFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 		var g G
-		for col := range row.Columns() {
-			switch col.Index() {
-			case 0:
-				g.ID = must(col.ParseInt())
-			case 1:
-				g.Name = string(col.Bytes())
-			}
+		g.ID, err = row.Column(0).ParseInt()
+		if err != nil {
+			t.Fatal(err)
 		}
+		g.Name = string(row.Column(1).Bytes())
 		got = append(got, g)
 	}
 	want := []G{
@@ -234,8 +229,9 @@ func TestCopyFromEmpty(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for col := range row.Columns() {
-			count = must(col.ParseInt())
+		count, err = row.Column(0).ParseInt()
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	if count != 0 {
@@ -245,11 +241,4 @@ func TestCopyFromEmpty(t *testing.T) {
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func must[T any](v T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return v
 }

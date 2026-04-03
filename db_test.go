@@ -144,18 +144,19 @@ func TestQuery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var vals []any
-			for col := range row.Columns() {
-				switch col.Index() {
-				case 0:
-					vals = append(vals, must(col.ParseInt()))
-				case 1:
-					vals = append(vals, must(col.ParseInt()))
-				case 2:
-					vals = append(vals, string(col.Bytes()))
-				}
+			v0, err := row.Column(0).ParseInt()
+			if err != nil {
+				t.Fatal(err)
 			}
-			got = append(got, vals)
+			v1, err := row.Column(1).ParseInt()
+			if err != nil {
+				t.Fatal(err)
+			}
+			got = append(got, []any{
+				v0,
+				v1,
+				string(row.Column(2).Bytes()),
+			})
 		}
 		want := [][]any{{int64(1), int64(2), "three"}}
 		diff.Test(t, t.Errorf, got, want)
@@ -170,16 +171,10 @@ func TestQueryAllocations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for col := range row.Columns() {
-				switch col.Index() {
-				case 0:
-					if _, err := col.ParseInt(); err != nil {
-						t.Fatal(err)
-					}
-				case 1:
-					_ = string(col.Bytes())
-				}
+			if _, err := row.Column(0).ParseInt(); err != nil {
+				t.Fatal(err)
 			}
+			_ = string(row.Column(1).Bytes())
 		}
 	})
 
@@ -198,16 +193,10 @@ func BenchmarkQueryAllocations(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			for col := range row.Columns() {
-				switch col.Index() {
-				case 0:
-					if _, err := col.ParseInt(); err != nil {
-						b.Fatal(err)
-					}
-				case 1:
-					_ = string(col.Bytes())
-				}
+			if _, err := row.Column(0).ParseInt(); err != nil {
+				b.Fatal(err)
 			}
+			_ = string(row.Column(1).Bytes())
 		}
 	}
 
@@ -300,7 +289,7 @@ func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 func TestRowClose(t *testing.T) {
 	t.Parallel()
 
-	const q = `SELECT 1`
+	const q = `SELECT 1, 2`
 
 	cn := newSession(t)
 
@@ -317,8 +306,8 @@ func TestRowClose(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for range row.Columns() {
-				break
+			if row.Column(0).IsZero() {
+				t.Fatal("missing column 0")
 			}
 		}
 	})
@@ -338,9 +327,7 @@ func TestQueryExtended(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for col := range row.Columns() {
-			got = append(got, string(col.Bytes()))
-		}
+		got = append(got, string(row.Column(0).Bytes()))
 	}
 
 	want := []string{"hello", "world"}
@@ -357,9 +344,7 @@ func TestQueryExtendedBytes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for col := range row.Columns() {
-			got = append(got, string(col.Bytes()))
-		}
+		got = append(got, string(row.Column(0).Bytes()))
 	}
 
 	diff.Test(t, t.Errorf, got, []string{"\x12\x345"})
@@ -374,10 +359,8 @@ func TestQueryExtendedNullBytes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for col := range row.Columns() {
-			if got := col.Bytes(); got != nil {
-				t.Fatalf("unexpected non-nil got: %v", got)
-			}
+		if got := row.Column(0).Bytes(); got != nil {
+			t.Fatalf("unexpected non-nil got: %v", got)
 		}
 		return
 	}
@@ -397,8 +380,9 @@ func TestQueryExtendedTime(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for col := range row.Columns() {
-			gotTime = must(col.ParseTime())
+		gotTime, err = row.Column(0).ParseTime()
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	diff.Test(t, t.Errorf, gotTime, want)
@@ -431,9 +415,7 @@ func TestQueryExtendedUnsignedOverflow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for col := range row.Columns() {
-			got = string(col.Bytes())
-		}
+		got = string(row.Column(0).Bytes())
 	}
 	if got != "18446744073709551615" {
 		t.Fatalf("got %q want %q", got, "18446744073709551615")
@@ -470,10 +452,121 @@ func collectRows(t testing.TB, rows iter.Seq2[*Row, error]) [][]string {
 
 func collectValues(row *Row) []string {
 	var got []string
-	for col := range row.Columns() {
+	for i := 0; i < row.NumColumns(); i++ {
+		col := row.Column(i)
+		if col.IsZero() {
+			panic(fmt.Sprintf("missing column %d", i))
+		}
 		got = append(got, string(col.Bytes()))
 	}
 	return got
+}
+
+func TestRowColumn(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	for row, err := range cn.Query(t.Context(), `SELECT 11::int4, 'two'::text`) {
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		col := row.Column(1)
+		if col.IsZero() {
+			t.Fatal("missing column 1")
+		}
+		if got := string(col.Bytes()); got != "two" {
+			t.Fatalf("column 1 = %q, want %q", got, "two")
+		}
+
+		col = row.Column(0)
+		if col.IsZero() {
+			t.Fatal("missing column 0")
+		}
+		got, err := col.ParseInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != 11 {
+			t.Fatalf("column 0 = %v, want 11", got)
+		}
+
+		col = row.Column(0)
+		if col.IsZero() {
+			t.Fatal("missing column 0 on repeated access")
+		}
+		got, err = col.ParseInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != 11 {
+			t.Fatalf("column 0 repeated = %v, want 11", got)
+		}
+
+		if !row.Column(-1).IsZero() {
+			t.Fatal("expected negative index to fail")
+		}
+		if !row.Column(row.NumColumns()).IsZero() {
+			t.Fatal("expected out-of-range index to fail")
+		}
+		return
+	}
+
+	t.Fatal("expected 1 row")
+}
+
+func TestZeroColumn(t *testing.T) {
+	t.Parallel()
+
+	var col Column
+	if !col.IsZero() {
+		t.Fatal("zero column should report zero")
+	}
+	if got := col.Bytes(); got != nil {
+		t.Fatalf("Bytes() = %v; want nil", got)
+	}
+	if got := col.FieldInfo(); got != (FieldInfo{}) {
+		t.Fatalf("FieldInfo() = %#v; want zero FieldInfo", got)
+	}
+
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "ParseInt",
+			err: func() error {
+				_, err := col.ParseInt()
+				return err
+			}(),
+		},
+		{
+			name: "ParseFloat",
+			err: func() error {
+				_, err := col.ParseFloat()
+				return err
+			}(),
+		},
+		{
+			name: "ParseTime",
+			err: func() error {
+				_, err := col.ParseTime()
+				return err
+			}(),
+		},
+	} {
+		if tt.err == nil {
+			t.Fatalf("%s: expected error", tt.name)
+		}
+		if !strings.HasPrefix(tt.err.Error(), "polite:") {
+			t.Fatalf("%s: got %q, want polite-prefixed error", tt.name, tt.err)
+		}
+		if strings.Contains(tt.err.Error(), "invalid length") {
+			t.Fatalf("%s: fell through to invalid-length behavior: %v", tt.name, tt.err)
+		}
+	}
 }
 
 func TestQueryAll(t *testing.T) {
@@ -795,6 +888,7 @@ func TestAppendArgUintOverflow(t *testing.T) {
 func TestQueryExtendedMixedArguments(t *testing.T) {
 	t.Parallel()
 
+	check := testutil.Checker(t)
 	cn := newSession(t)
 
 	in := time.Date(2026, 1, 2, 3, 4, 5, 987654321, time.FixedZone("UTC+3", 3*60*60))
@@ -815,23 +909,14 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 	var gotInt int64
 	var gotFloat []byte
 	for row, err := range cn.Query(t.Context(), q, "hello", []byte("world"), in, uint(42), float64(3.5)) {
-		if err != nil {
-			t.Fatal(err)
-		}
-		for col := range row.Columns() {
-			switch col.Index() {
-			case 0:
-				gotText = string(col.Bytes())
-			case 1:
-				gotBytes = col.Bytes()
-			case 2:
-				gotTime = must(col.ParseTime())
-			case 3:
-				gotInt = must(col.ParseInt())
-			case 4:
-				gotFloat = col.Bytes()
-			}
-		}
+		check(err, nil)
+		gotText = string(row.Column(0).Bytes())
+		gotBytes = row.Column(1).Bytes()
+		gotTime, err = row.Column(2).ParseTime()
+		check(err, nil)
+		gotInt, err = row.Column(3).ParseInt()
+		check(err, nil)
+		gotFloat = row.Column(4).Bytes()
 	}
 
 	diff.Test(t, t.Errorf, gotText, "hello")
@@ -1124,22 +1209,17 @@ func TestByteaString(t *testing.T) {
 func TestRowParseTime(t *testing.T) {
 	t.Parallel()
 
+	check := testutil.Checker(t)
 	cn := newSession(t)
 	defer checkReady(t, cn) // ensure we leave in a good state
 
 	ctx := t.Context()
 	var got []time.Time
 	for row, err := range cn.Query(ctx, `SELECT '2021-01-01 00:00:00'::timestamp`) {
-		if err != nil {
-			t.Fatal(err)
-		}
-		for col := range row.Columns() {
-			ts, err := col.ParseTime()
-			if err != nil {
-				t.Fatal(err)
-			}
-			got = append(got, ts)
-		}
+		check(err, nil)
+		ts, err := row.Column(0).ParseTime()
+		check(err, nil)
+		got = append(got, ts)
 	}
 	want := []time.Time{time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)}
 	diff.Test(t, t.Errorf, got, want)
@@ -1148,20 +1228,21 @@ func TestRowParseTime(t *testing.T) {
 func TestRowParseFloat(t *testing.T) {
 	t.Parallel()
 
+	check := testutil.Checker(t)
 	cn := newSession(t)
 	defer checkReady(t, cn) // ensure we leave in a good state
 
 	ctx := t.Context()
 	var got []float64
 	for row, err := range cn.Query(ctx, `SELECT 1.5::real, -2.25::double precision`) {
-		if err != nil {
-			t.Fatal(err)
-		}
-		for col := range row.Columns() {
-			f, err := col.ParseFloat()
-			if err != nil {
-				t.Fatal(err)
+		check(err, nil)
+		for i := 0; i < row.NumColumns(); i++ {
+			col := row.Column(i)
+			if col.IsZero() {
+				t.Fatalf("missing column %d", i)
 			}
+			f, err := col.ParseFloat()
+			check(err, nil)
 			got = append(got, f)
 		}
 	}
@@ -1181,7 +1262,11 @@ func TestColumnType(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for col := range row.Columns() {
+		for i := 0; i < row.NumColumns(); i++ {
+			col := row.Column(i)
+			if col.IsZero() {
+				t.Fatalf("missing column %d", i)
+			}
 			got = append(got, col.FieldInfo())
 		}
 	}
@@ -1214,12 +1299,10 @@ func TestUseGoTime(t *testing.T) {
 	checkTime := func(cn *Conn, want time.Time) {
 		for row, err := range cn.Query(t.Context(), `SELECT now()`) {
 			check(err, nil)
-			for col := range row.Columns() {
-				ts, err := col.ParseTime()
-				check(err, nil)
-				if !ts.Equal(want) {
-					t.Errorf("got %v; want %v", ts, want)
-				}
+			ts, err := row.Column(0).ParseTime()
+			check(err, nil)
+			if !ts.Equal(want) {
+				t.Errorf("got %v; want %v", ts, want)
 			}
 		}
 	}

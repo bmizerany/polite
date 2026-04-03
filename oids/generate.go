@@ -152,7 +152,11 @@ func getOIDs() ([]oid, error) {
 		}
 
 		var o oid
-		for col := range row.Columns() {
+		for i := 0; i < row.NumColumns(); i++ {
+			col := row.Column(i)
+			if col.IsZero() {
+				return nil, fmt.Errorf("missing pg_type column %d", i)
+			}
 			switch dt := col.FieldInfo(); dt.Name {
 			case "oid":
 				v, err := col.ParseInt()

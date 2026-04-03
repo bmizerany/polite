@@ -35,13 +35,15 @@ func ExampleConn_Query() {
 		if err != nil {
 			return
 		}
-		for col := range row.Columns() {
-			n, err := col.ParseInt()
-			if err != nil {
-				return
-			}
-			fmt.Println(n)
+		col := row.Column(0)
+		if col.IsZero() {
+			return
 		}
+		n, err := col.ParseInt()
+		if err != nil {
+			return
+		}
+		fmt.Println(n)
 	}
 }
 

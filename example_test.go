@@ -24,17 +24,19 @@ func ExampleConn_Query_copyTo() {
 		}
 		var id int64
 		var name string
-		for col := range row.Columns() {
-			switch col.Index() {
-			case 0:
-				id, err = col.ParseInt()
-				if err != nil {
-					log.Fatal(err)
-				}
-			case 1:
-				name = string(col.Bytes())
-			}
+		col := row.Column(0)
+		if col.IsZero() {
+			log.Fatal("missing column 0")
 		}
+		id, err = col.ParseInt()
+		if err != nil {
+			log.Fatal(err)
+		}
+		col = row.Column(1)
+		if col.IsZero() {
+			log.Fatal("missing column 1")
+		}
+		name = string(col.Bytes())
 		fmt.Println(id, name)
 	}
 }
@@ -93,12 +95,14 @@ func ExampleConn_Query_struct() {
 			log.Fatal(err)
 		}
 
-		for col := range row.Columns() {
-			var user User
-			if err := json.Unmarshal(col.Bytes(), &user); err != nil {
-				log.Fatal(err)
-			}
-			_ = user
+		col := row.Column(0)
+		if col.IsZero() {
+			log.Fatal("missing column 0")
 		}
+		var user User
+		if err := json.Unmarshal(col.Bytes(), &user); err != nil {
+			log.Fatal(err)
+		}
+		_ = user
 	}
 }
