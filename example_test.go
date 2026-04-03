@@ -2,7 +2,7 @@ package polite_test
 
 import (
 	"context"
-	json "encoding/json/v2"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
