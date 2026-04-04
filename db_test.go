@@ -520,36 +520,42 @@ func TestRowColumn(t *testing.T) {
 func TestRowColumnPanic(t *testing.T) {
 	t.Parallel()
 
-	t.Run("negative_index", func(t *testing.T) {
-		cn := newSession(t)
-		defer func() { _ = cn.Close() }()
-		defer func() { _ = recover() }()
+	t.Run("column_index", func(t *testing.T) {
+		for _, tc := range []struct {
+			name      string
+			index     int
+			wantPanic bool
+		}{
+			{name: "negative_index", index: -1, wantPanic: true},
+			{name: "zero", index: 0},
+			{name: "past_end", index: 1, wantPanic: true},
+		} {
+			func() {
+				cn := newSession(t)
+				if tc.wantPanic {
+					defer func() {
+						if r := recover(); r == nil {
+							t.Fatalf("expected %s panic", tc.name)
+						}
+					}()
+				}
 
-		for row, err := range cn.Query(t.Context(), `SELECT 11::int4`) {
-			if err != nil {
-				t.Fatal(err)
-			}
-			_ = row.Column(-1)
-			t.Fatal("expected negative index panic")
+				for row, err := range cn.Query(t.Context(), `SELECT 11::int4`) {
+					if err != nil {
+						t.Fatal(err)
+					}
+					_ = row.Column(tc.index)
+					if !tc.wantPanic {
+						continue
+					}
+					t.Fatalf("expected %s panic", tc.name)
+				}
+
+				if tc.wantPanic {
+					t.Fatal("expected 1 row")
+				}
+			}()
 		}
-
-		t.Fatal("expected 1 row")
-	})
-
-	t.Run("past_end", func(t *testing.T) {
-		cn := newSession(t)
-		defer func() { _ = cn.Close() }()
-		defer func() { _ = recover() }()
-
-		for row, err := range cn.Query(t.Context(), `SELECT 11::int4`) {
-			if err != nil {
-				t.Fatal(err)
-			}
-			_ = row.Column(row.NumColumns())
-			t.Fatal("expected out-of-range panic")
-		}
-
-		t.Fatal("expected 1 row")
 	})
 }
 
