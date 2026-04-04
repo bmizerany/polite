@@ -58,7 +58,7 @@ func ExampleConn_Query() {
 				address.City = col.Text()
 			}
 		}
-		fmt.Println(address.ID, address.Street, address.City)
+		fmt.Printf("%#v\n", address)
 	}
 }
 

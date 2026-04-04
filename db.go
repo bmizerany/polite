@@ -427,12 +427,12 @@ func (c *Conn) execAndSync(portal string) error {
 
 // Row is a view of the current result row.
 //
-// When you call [Conn.Query], you already know the SQL and therefore the
-// result shape. Row supports the two common ways to read that result: iterate
-// all columns with [Row.Columns], or read a few known positions with
-// [Row.Column]. It is not a dynamic result-inspection API for discovering
-// column counts at runtime. The returned columns refer to storage owned by the
-// current row and remain valid only while this row is current.
+// It assumes the caller wrote the query and knows the number of result columns
+// ahead of time. Use [Row.Column] to read a specific column by index. For more
+// general row processing, use [Row.Columns] to range over all columns, for
+// example to map them into a struct or another destination. The returned
+// columns refer to storage owned by the current row and remain valid only
+// while this row is current.
 type Row struct {
 	data    []byte
 	columns []Column
