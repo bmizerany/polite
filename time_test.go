@@ -10,25 +10,6 @@ import (
 	"kr.dev/diff"
 )
 
-func TestRowDecodeTime(t *testing.T) {
-	t.Parallel()
-
-	check := testutil.Checker(t)
-	cn := newSession(t)
-	defer checkReady(t, cn) // ensure we leave in a good state
-
-	ctx := t.Context()
-	var got []time.Time
-	for row, err := range cn.Query(ctx, `SELECT '2021-01-01 00:00:00'::timestamp`) {
-		check(err, nil)
-		ts, err := row.Column(0).DecodeTime()
-		check(err, nil)
-		got = append(got, ts)
-	}
-	want := []time.Time{time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)}
-	diff.Test(t, t.Errorf, got, want)
-}
-
 func TestDecodeTimeRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -110,6 +91,11 @@ func TestDecodeTimeFromPostgres(t *testing.T) {
 		want time.Time
 	}{
 		{
+			name: "timestamp-basic",
+			sql:  `SELECT '2021-01-01 00:00:00'::timestamp`,
+			want: time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
 			name: "timestamp-pg-epoch",
 			sql:  `SELECT TIMESTAMP '2000-01-01 00:00:00'`,
 			want: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -139,6 +125,7 @@ func TestDecodeTimeFromPostgres(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			cn := newSession(t)
+			defer checkReady(t, cn) // ensure we leave in a good state
 			ctx := t.Context()
 			var got []time.Time
 			for row, err := range cn.Query(ctx, tt.sql) {
