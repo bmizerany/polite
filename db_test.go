@@ -144,11 +144,11 @@ func TestQuery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			v0, err := row.Column(0).ParseInt()
+			v0, err := row.Column(0).DecodeInt()
 			if err != nil {
 				t.Fatal(err)
 			}
-			v1, err := row.Column(1).ParseInt()
+			v1, err := row.Column(1).DecodeInt()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -171,7 +171,7 @@ func TestQueryAllocations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := row.Column(0).ParseInt(); err != nil {
+			if _, err := row.Column(0).DecodeInt(); err != nil {
 				t.Fatal(err)
 			}
 			_ = row.Column(1).Text()
@@ -193,7 +193,7 @@ func BenchmarkQueryAllocations(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			if _, err := row.Column(0).ParseInt(); err != nil {
+			if _, err := row.Column(0).DecodeInt(); err != nil {
 				b.Fatal(err)
 			}
 			_ = row.Column(1).Text()
@@ -377,7 +377,7 @@ func TestQueryExtendedTime(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		gotTime, err = row.Column(0).ParseTime()
+		gotTime, err = row.Column(0).DecodeTime()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -473,7 +473,7 @@ func TestRowColumn(t *testing.T) {
 			}
 
 			col = row.Column(0)
-			got, err := col.ParseInt()
+			got, err := col.DecodeInt()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -482,7 +482,7 @@ func TestRowColumn(t *testing.T) {
 			}
 
 			col = row.Column(0)
-			got, err = col.ParseInt()
+			got, err = col.DecodeInt()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -502,7 +502,7 @@ func TestRowColumn(t *testing.T) {
 
 			var got []int64
 			for col := range row.Columns() {
-				n, err := col.ParseInt()
+				n, err := col.DecodeInt()
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -920,9 +920,9 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 		check(err, nil)
 		gotText = row.Column(0).Text()
 		gotBytes = row.Column(1).Bytes()
-		gotTime, err = row.Column(2).ParseTime()
+		gotTime, err = row.Column(2).DecodeTime()
 		check(err, nil)
-		gotInt, err = row.Column(3).ParseInt()
+		gotInt, err = row.Column(3).DecodeInt()
 		check(err, nil)
 		gotFloat = row.Column(4).Bytes()
 	}
@@ -1214,7 +1214,7 @@ func TestByteaString(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func TestRowParseTime(t *testing.T) {
+func TestRowDecodeTime(t *testing.T) {
 	t.Parallel()
 
 	check := testutil.Checker(t)
@@ -1225,7 +1225,7 @@ func TestRowParseTime(t *testing.T) {
 	var got []time.Time
 	for row, err := range cn.Query(ctx, `SELECT '2021-01-01 00:00:00'::timestamp`) {
 		check(err, nil)
-		ts, err := row.Column(0).ParseTime()
+		ts, err := row.Column(0).DecodeTime()
 		check(err, nil)
 		got = append(got, ts)
 	}
@@ -1233,7 +1233,7 @@ func TestRowParseTime(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func TestRowParseFloat(t *testing.T) {
+func TestRowDecodeFloat(t *testing.T) {
 	t.Parallel()
 
 	check := testutil.Checker(t)
@@ -1245,7 +1245,7 @@ func TestRowParseFloat(t *testing.T) {
 	for row, err := range cn.Query(ctx, `SELECT 1.5::real, -2.25::double precision`) {
 		check(err, nil)
 		for col := range row.Columns() {
-			f, err := col.ParseFloat()
+			f, err := col.DecodeFloat()
 			check(err, nil)
 			got = append(got, f)
 		}
@@ -1315,7 +1315,7 @@ func TestUseGoTime(t *testing.T) {
 	checkTime := func(cn *Conn, want time.Time) {
 		for row, err := range cn.Query(t.Context(), `SELECT now()`) {
 			check(err, nil)
-			ts, err := row.Column(0).ParseTime()
+			ts, err := row.Column(0).DecodeTime()
 			check(err, nil)
 			if !ts.Equal(want) {
 				t.Errorf("got %v; want %v", ts, want)

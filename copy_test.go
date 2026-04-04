@@ -28,7 +28,7 @@ func TestCopyFreestyle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		g, err := row.Column(0).ParseInt()
+		g, err := row.Column(0).DecodeInt()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,7 +186,7 @@ func TestCopyFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 		var g G
-		g.ID, err = row.Column(0).ParseInt()
+		g.ID, err = row.Column(0).DecodeInt()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -229,7 +229,7 @@ func TestCopyFromEmpty(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		count, err = row.Column(0).ParseInt()
+		count, err = row.Column(0).DecodeInt()
 		if err != nil {
 			t.Fatal(err)
 		}

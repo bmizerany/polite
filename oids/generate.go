@@ -155,7 +155,7 @@ func getOIDs() ([]oid, error) {
 		for col := range row.Columns() {
 			switch col.Name() {
 			case "oid":
-				v, err := col.ParseInt()
+				v, err := col.DecodeInt()
 				if err != nil {
 					return nil, fmt.Errorf("parse oid column: %w", err)
 				}

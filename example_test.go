@@ -25,7 +25,7 @@ func ExampleConn_Query_copyTo() {
 		var id int64
 		var name string
 		col := row.Column(0)
-		id, err = col.ParseInt()
+		id, err = col.DecodeInt()
 		if err != nil {
 			log.Fatal(err)
 		}

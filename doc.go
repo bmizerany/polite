@@ -22,10 +22,10 @@
 // # Rows and Columns
 //
 // A [Row] is a view of the current result row. Each [Column] reports its name,
-// width, PostgreSQL type OID, and raw bytes. [Column.ParseInt],
-// [Column.ParseFloat], and [Column.ParseTime] decode common PostgreSQL binary
-// values directly. Raw column bytes refer to storage owned by the current row
-// and remain valid only until the next row is determined.
+// width, PostgreSQL type OID, and raw bytes. [Column.DecodeInt],
+// [Column.DecodeFloat], and [Column.DecodeTime] decode common PostgreSQL
+// binary values directly. Raw column bytes refer to storage owned by the
+// current row and remain valid only until the next row is determined.
 //
 // Rows reuse storage across iterations. In steady-state query paths, that lets
 // polite avoid per-row allocation. The same column metadata also makes it

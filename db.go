@@ -485,9 +485,9 @@ func (c Column) Bytes() []byte { return c.data }
 // Text returns the column bytes as a string copy.
 func (c Column) Text() string { return string(c.data) }
 
-// ParseInt decodes the column bytes as a PostgreSQL binary signed integer.
+// DecodeInt decodes the column bytes as a PostgreSQL binary signed integer.
 // Supported widths are 1, 2, 4, and 8 bytes.
-func (c Column) ParseInt() (int64, error) {
+func (c Column) DecodeInt() (int64, error) {
 	v := c.Bytes()
 	// TODO(bmizerany): test coverage for all cases
 	switch len(v) {
@@ -500,13 +500,13 @@ func (c Column) ParseInt() (int64, error) {
 	case 8:
 		return int64(binary.BigEndian.Uint64(v)), nil
 	default:
-		return 0, fmt.Errorf("ParseInt: invalid length: %d", len(v))
+		return 0, fmt.Errorf("DecodeInt: invalid length: %d", len(v))
 	}
 }
 
-// ParseFloat decodes the column bytes as a PostgreSQL binary float.
+// DecodeFloat decodes the column bytes as a PostgreSQL binary float.
 // Supported widths are 4 and 8 bytes.
-func (c Column) ParseFloat() (float64, error) {
+func (c Column) DecodeFloat() (float64, error) {
 	v := c.Bytes()
 	switch len(v) {
 	case 4:
@@ -514,16 +514,16 @@ func (c Column) ParseFloat() (float64, error) {
 	case 8:
 		return math.Float64frombits(binary.BigEndian.Uint64(v)), nil
 	default:
-		return 0, fmt.Errorf("ParseFloat: invalid length: %d", len(v))
+		return 0, fmt.Errorf("DecodeFloat: invalid length: %d", len(v))
 	}
 }
 
 var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
-// ParseTime decodes the column bytes as a PostgreSQL
+// DecodeTime decodes the column bytes as a PostgreSQL
 // timestamp-without-timezone value.
-func (c Column) ParseTime() (time.Time, error) {
-	microseconds, err := c.ParseInt()
+func (c Column) DecodeTime() (time.Time, error) {
+	microseconds, err := c.DecodeInt()
 	if err != nil {
 		return time.Time{}, err
 	}

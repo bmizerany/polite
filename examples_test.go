@@ -48,7 +48,7 @@ func ExampleConn_Query() {
 		for col := range row.Columns() {
 			switch col.Name() {
 			case "id":
-				address.ID, err = col.ParseInt()
+				address.ID, err = col.DecodeInt()
 				if err != nil {
 					return
 				}
