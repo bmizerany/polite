@@ -77,21 +77,22 @@ func ExampleConn_Query_struct() {
 		Name string `json:"name"`
 	}
 
-	for row, err := range cn.Query(ctx, `
+	const q = `
 		SELECT row_to_json(t)
 		FROM (
 			SELECT 1::int4 AS id, 'alice'::text AS name
 			UNION ALL
 			SELECT 2::int4, 'bob'::text
 		) AS t
-	`) {
+	`
+	for row, err := range cn.Query(ctx, q) {
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		col := row.Column(0)
 		var user User
-		if err := json.Unmarshal(col.Bytes(), &user); err != nil {
+		err := json.Unmarshal(row.Column(0).Bytes(), &user)
+		if err != nil {
 			log.Fatal(err)
 		}
 		_ = user
