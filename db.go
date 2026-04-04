@@ -200,8 +200,7 @@ func appendArg(dst []byte, arg any) ([]byte, int16, error) {
 		// precision. Round instead of truncate so we choose the
 		// nearest representable PostgreSQL timestamp; truncate would
 		// always bias earlier than round.
-		t := v.UTC().Round(time.Microsecond)
-		return appendBinaryArg(dst, t.UnixMicro()-pgEpochUnixMicro)
+		return appendBinaryArg(dst, timeToPGMicroseconds(v))
 	case uint32:
 		return appendBinaryArg(dst, int64(v))
 	case uint:
@@ -519,12 +518,28 @@ func (c Column) DecodeFloat() (float64, error) {
 }
 
 var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-var pgEpochUnixMicro = pgEpoch.UnixMicro()
+var pgEpochUnix = pgEpoch.Unix()
 
 const (
 	pgTimestampInfinity    = int64(^uint64(0) >> 1)
 	pgTimestampNegInfinity = -pgTimestampInfinity - 1
 )
+
+func timeToPGMicroseconds(t time.Time) int64 {
+	t = t.UTC().Round(time.Microsecond)
+	sec := t.Unix() - pgEpochUnix
+	return sec*1_000_000 + int64(t.Nanosecond()/1_000)
+}
+
+func pgMicrosecondsToTime(microseconds int64) time.Time {
+	sec := microseconds / 1_000_000
+	usec := microseconds % 1_000_000
+	if usec < 0 {
+		sec--
+		usec += 1_000_000
+	}
+	return time.Unix(pgEpochUnix+sec, usec*1_000).UTC()
+}
 
 // DecodeTime decodes the column bytes as a PostgreSQL timestamp value and
 // returns it in UTC.
@@ -546,7 +561,7 @@ func (c Column) DecodeTime() (time.Time, error) {
 		return time.Time{}, fmt.Errorf("DecodeTime: infinity is not supported")
 	}
 
-	return time.UnixMicro(pgEpochUnixMicro + microseconds).UTC(), nil
+	return pgMicrosecondsToTime(microseconds), nil
 }
 
 func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDescription) (*Row, error) {

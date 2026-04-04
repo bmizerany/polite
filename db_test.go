@@ -795,6 +795,13 @@ func TestEncodeArg(t *testing.T) {
 			wantFmt: formatBinary,
 		},
 		{
+			name:    "time arg far-future beyond unixmicro limit",
+			dst:     []byte{},
+			arg:     time.Date(294260, 1, 1, 0, 0, 0, 0, time.UTC),
+			want:    []byte{0x7f, 0xfe, 0x17, 0x5f, 0xd1, 0x2b, 0xe0, 0x00},
+			wantFmt: formatBinary,
+		},
+		{
 			name:    "int arg",
 			dst:     []byte{},
 			arg:     int(-123456),
@@ -1269,6 +1276,10 @@ func TestDecodeTimeRoundTrip(t *testing.T) {
 			in:   time.Date(2500, 1, 2, 3, 4, 5, 123456789, time.FixedZone("UTC-11", -11*60*60)),
 		},
 		{
+			name: "far-future-beyond-unixmicro-limit",
+			in:   time.Date(294260, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
 			name: "far-past",
 			in:   time.Date(1500, 1, 2, 3, 4, 5, 123456789, time.FixedZone("UTC+11", 11*60*60)),
 		},
@@ -1320,6 +1331,11 @@ func TestDecodeTimeFromPostgres(t *testing.T) {
 			want: time.Date(2500, 1, 2, 3, 4, 5, 123457000, time.UTC),
 		},
 		{
+			name: "timestamp-far-future-beyond-unixmicro-limit",
+			sql:  `SELECT TIMESTAMP '294260-01-01 00:00:00'`,
+			want: time.Date(294260, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+		{
 			name: "timestamp-far-past",
 			sql:  `SELECT TIMESTAMP '1500-01-02 03:04:05.123457'`,
 			want: time.Date(1500, 1, 2, 3, 4, 5, 123457000, time.UTC),
@@ -1353,6 +1369,23 @@ func TestDecodeTimeFromPostgres(t *testing.T) {
 			diff.Test(t, t.Errorf, got, want)
 		})
 	}
+}
+
+func TestDecodeTimeHandlesNegativeRemainder(t *testing.T) {
+	t.Parallel()
+
+	col := Column{
+		typeID: oids.Timestamp,
+		data:   []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+	}
+
+	got, err := col.DecodeTime()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := time.Date(1999, 12, 31, 23, 59, 59, 999999000, time.UTC)
+	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestDecodeTimeRejectsNonTimestampTypes(t *testing.T) {
