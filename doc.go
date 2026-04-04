@@ -1,5 +1,5 @@
 // Package polite provides a small PostgreSQL client for Go built around
-// binary queries, borrowed row data, and a narrow API surface.
+// binary queries, row views, and a narrow API surface.
 //
 // The package centers on [Conn]. Dial a connection, call [Conn.Query] to range
 // over rows, call [Conn.Exec] for commands whose rows you do not need, and use
@@ -21,15 +21,15 @@
 //
 // # Rows and Columns
 //
-// A [Row] is a borrowed view of the current result row. Each [Column] reports
-// its name, width, PostgreSQL type OID, and raw bytes. [Column.ParseInt],
+// A [Row] is a view of the current result row. Each [Column] reports its name,
+// width, PostgreSQL type OID, and raw bytes. [Column.ParseInt],
 // [Column.ParseFloat], and [Column.ParseTime] decode common PostgreSQL binary
-// values directly. Borrowed means that raw column bytes remain valid only until
-// the next row is determined.
+// values directly. Raw column bytes refer to storage owned by the current row
+// and remain valid only until the next row is determined.
 //
 // Rows reuse storage across iterations. In steady-state query paths, that lets
-// polite avoid per-row allocation. The same borrowed column metadata also makes
-// it straightforward to fill Go structs by matching column names in a single
+// polite avoid per-row allocation. The same column metadata also makes it
+// straightforward to fill Go structs by matching column names in a single
 // pass, without reflection or per-row lookup tables.
 //
 // # Binary Format
