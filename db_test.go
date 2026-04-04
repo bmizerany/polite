@@ -501,8 +501,7 @@ func TestRowColumn(t *testing.T) {
 			}
 
 			var got []int64
-			for i := range row.NumColumns() {
-				col := row.Column(i)
+			for col := range row.Columns() {
 				n, err := col.ParseInt()
 				if err != nil {
 					t.Fatal(err)
@@ -1239,8 +1238,7 @@ func TestRowParseFloat(t *testing.T) {
 	var got []float64
 	for row, err := range cn.Query(ctx, `SELECT 1.5::real, -2.25::double precision`) {
 		check(err, nil)
-		for i := 0; i < row.NumColumns(); i++ {
-			col := row.Column(i)
+		for col := range row.Columns() {
 			f, err := col.ParseFloat()
 			check(err, nil)
 			got = append(got, f)
@@ -1266,8 +1264,7 @@ func TestColumnType(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i := 0; i < row.NumColumns(); i++ {
-			col := row.Column(i)
+		for col := range row.Columns() {
 			got = append(got, struct {
 				Name string
 				Size int

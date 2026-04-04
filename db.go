@@ -430,13 +430,10 @@ type Row struct {
 	columns []Column
 }
 
-// NumColumns returns the number of columns in the row.
-func (r *Row) NumColumns() int { return len(r.columns) }
-
 // Columns returns the columns in the row.
 func (r *Row) Columns() iter.Seq[Column] {
 	return func(yield func(Column) bool) {
-		for i := range r.NumColumns() {
+		for i := range r.columns {
 			if !yield(r.Column(i)) {
 				return
 			}

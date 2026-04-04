@@ -152,8 +152,7 @@ func getOIDs() ([]oid, error) {
 		}
 
 		var o oid
-		for i := 0; i < row.NumColumns(); i++ {
-			col := row.Column(i)
+		for col := range row.Columns() {
 			switch col.Name() {
 			case "oid":
 				v, err := col.ParseInt()
