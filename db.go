@@ -201,7 +201,7 @@ func appendArg(dst []byte, arg any) ([]byte, int16, error) {
 		// nearest representable PostgreSQL timestamp; truncate would
 		// always bias earlier than round.
 		t := v.UTC().Round(time.Microsecond)
-		return appendBinaryArg(dst, t.Sub(pgEpoch).Microseconds())
+		return appendBinaryArg(dst, t.UnixMicro()-pgEpochUnixMicro)
 	case uint32:
 		return appendBinaryArg(dst, int64(v))
 	case uint:
@@ -519,15 +519,34 @@ func (c Column) DecodeFloat() (float64, error) {
 }
 
 var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+var pgEpochUnixMicro = pgEpoch.UnixMicro()
 
-// DecodeTime decodes the column bytes as a PostgreSQL
-// timestamp-without-timezone value.
+const (
+	pgTimestampInfinity    = int64(^uint64(0) >> 1)
+	pgTimestampNegInfinity = -pgTimestampInfinity - 1
+)
+
+// DecodeTime decodes the column bytes as a PostgreSQL timestamp value and
+// returns it in UTC.
 func (c Column) DecodeTime() (time.Time, error) {
-	microseconds, err := c.DecodeInt()
-	if err != nil {
-		return time.Time{}, err
+	switch c.Type() {
+	case oids.Timestamp, oids.Timestamptz:
+	default:
+		return time.Time{}, fmt.Errorf("DecodeTime: unsupported type: %s", c.Type())
 	}
-	return pgEpoch.Add(time.Duration(microseconds) * time.Microsecond), nil
+
+	v := c.Bytes()
+	if len(v) != 8 {
+		return time.Time{}, fmt.Errorf("DecodeTime: invalid length: %d", len(v))
+	}
+
+	microseconds := int64(binary.BigEndian.Uint64(v))
+	switch microseconds {
+	case pgTimestampInfinity, pgTimestampNegInfinity:
+		return time.Time{}, fmt.Errorf("DecodeTime: infinity is not supported")
+	}
+
+	return time.UnixMicro(pgEpochUnixMicro + microseconds).UTC(), nil
 }
 
 func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDescription) (*Row, error) {
