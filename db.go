@@ -425,6 +425,14 @@ func (c *Conn) execAndSync(portal string) error {
 	return c.fc.Flush()
 }
 
+// Row is a borrowed view of the current result row.
+//
+// When you call [Conn.Query], you already know the SQL and therefore the
+// result shape. Row supports the two common ways to read that result: iterate
+// all columns with [Row.Columns], or read a few known positions with
+// [Row.Column]. It is not a dynamic result-inspection API for discovering
+// column counts at runtime. The returned columns borrow storage from the
+// current row and remain valid only while this row is current.
 type Row struct {
 	data    []byte
 	columns []Column
