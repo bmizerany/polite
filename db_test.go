@@ -250,7 +250,7 @@ type closeFailConn struct {
 }
 
 func (c *closeFailConn) Read([]byte) (int, error)         { return 0, io.EOF }
-func (c *closeFailConn) Write([]byte) (int, error)        { return 0, c.writeErr }
+func (c *closeFailConn) Write(p []byte) (int, error)      { return len(p), c.writeErr }
 func (c *closeFailConn) Close() error                     { c.closed = true; return c.closeErr }
 func (c *closeFailConn) LocalAddr() net.Addr              { return dummyAddr("local") }
 func (c *closeFailConn) RemoteAddr() net.Addr             { return dummyAddr("remote") }
@@ -280,6 +280,26 @@ func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 	err := cn.Close()
 	if !errors.Is(err, flushErr) {
 		t.Fatalf("Close() = %v; want %v", err, flushErr)
+	}
+	if !raw.closed {
+		t.Fatal("underlying connection was not closed")
+	}
+}
+
+func TestConnCloseReturnsCloseError(t *testing.T) {
+	t.Parallel()
+
+	closeErr := errors.New("close")
+	raw := &closeFailConn{
+		closeErr: closeErr,
+	}
+	cn := &Conn{
+		cn: raw,
+		fc: febe.New(raw, raw),
+	}
+
+	if err := cn.Close(); !errors.Is(err, closeErr) {
+		t.Fatalf("Close() = %v; want %v", err, closeErr)
 	}
 	if !raw.closed {
 		t.Fatal("underlying connection was not closed")
