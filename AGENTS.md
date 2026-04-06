@@ -8,6 +8,10 @@ focused on one thing: Providing the simplest possible API for executing SQL
 queries and handling results, without any additional features or abstractions
 that could complicate its usage.
 
+- Keep parameter typing and binary encodings aligned with libpq; when a
+  parameter OID is unknown, do not add client-side heuristics based on payload
+  width or shape.
+
 ## Commit message rules for this repository
 
 - For commits that touch the root package (`package polite`), use the
