@@ -203,6 +203,48 @@ func TestTimestampMicrosecondRoundingInSQL(t *testing.T) {
 	}
 }
 
+func TestTimeArgRejectsUnknownAndNonTemporalParameterTypes(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	in := time.Date(2024, 1, 2, 3, 4, 5, 123456789, time.UTC)
+	cases := []struct {
+		name    string
+		sql     string
+		wantErr string
+	}{
+		{
+			name:    "text",
+			sql:     `SELECT $1`,
+			wantErr: "time.Time requires timestamp or timestamptz parameter type; got text",
+		},
+		{
+			name:    "int8",
+			sql:     `SELECT $1::int8`,
+			wantErr: "time.Time requires timestamp or timestamptz parameter type; got int8",
+		},
+		{
+			name:    "numeric",
+			sql:     `SELECT $1::numeric`,
+			wantErr: "time.Time requires timestamp or timestamptz parameter type; got numeric",
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			err := cn.Exec(t.Context(), tt.sql, in)
+			if err == nil {
+				t.Fatalf("Exec(%q) error = nil", tt.sql)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Exec(%q) error = %q, want substring %q", tt.sql, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestDecodeTimeFromPostgres(t *testing.T) {
 	t.Parallel()
 

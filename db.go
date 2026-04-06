@@ -215,6 +215,8 @@ func appendArg(dst []byte, arg any, oid oids.ID, loc *time.Location) ([]byte, in
 			)
 		case oids.Timestamptz:
 			v = v.UTC()
+		default:
+			return nil, formatBinary, fmt.Errorf("polite: time.Time requires timestamp or timestamptz parameter type; got %s", oid)
 		}
 		return appendBinaryArg(dst, timeToPGMicroseconds(v))
 	case uint32:

@@ -699,6 +699,7 @@ func TestEncodeArg(t *testing.T) {
 		name    string
 		dst     []byte
 		arg     any
+		oid     oids.ID
 		wantFmt int16
 		want    []byte
 		wantErr string
@@ -733,119 +734,117 @@ func TestEncodeArg(t *testing.T) {
 		},
 		{
 			name:    "int8 arg",
-			dst:     []byte{},
 			arg:     int8(-8),
 			want:    []byte{0xff, 0xf8},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "uint8 arg",
-			dst:     []byte{},
 			arg:     uint8(200),
 			want:    []byte{0x00, 0xc8},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "int16 arg",
-			dst:     []byte{},
 			arg:     int16(-123),
 			want:    []byte{0xff, 0x85},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "uint16 arg",
-			dst:     []byte{},
 			arg:     uint16(60000),
 			want:    []byte{0x00, 0x00, 0xea, 0x60},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "int32 arg",
-			dst:     []byte{},
 			arg:     int32(-123456789),
 			want:    []byte{0xf8, 0xa4, 0x32, 0xeb},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "float32 arg",
-			dst:     []byte{},
 			arg:     float32(1.5),
 			want:    []byte{0x3f, 0xc0, 0x00, 0x00},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "int64 arg",
-			dst:     []byte{},
 			arg:     int64(-7),
 			want:    []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xf9},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "float64 arg",
-			dst:     []byte{},
 			arg:     float64(-2.25),
 			want:    []byte{0xc0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "time arg",
-			dst:     []byte{},
 			arg:     time.Date(2024, 2, 3, 4, 5, 6, 987654321, time.FixedZone("UTC+2", 2*60*60)),
+			oid:     oids.Timestamptz,
 			want:    []byte{0x00, 0x02, 0xb3, 0x6f, 0x6d, 0x20, 0x2a, 0x86},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "time arg far-future beyond unixmicro limit",
-			dst:     []byte{},
 			arg:     time.Date(294260, 1, 1, 0, 0, 0, 0, time.UTC),
+			oid:     oids.Timestamptz,
 			want:    []byte{0x7f, 0xfe, 0x17, 0x5f, 0xd1, 0x2b, 0xe0, 0x00},
 			wantFmt: formatBinary,
 		},
 		{
+			name:    "time arg unknown oid",
+			arg:     time.Date(2024, 2, 3, 4, 5, 6, 987654321, time.UTC),
+			wantErr: "time.Time requires timestamp or timestamptz parameter type; got unknown",
+			wantFmt: formatBinary,
+		},
+		{
+			name:    "time arg int8 oid",
+			arg:     time.Date(2024, 2, 3, 4, 5, 6, 987654321, time.UTC),
+			oid:     oids.Numeric,
+			wantErr: "time.Time requires timestamp or timestamptz parameter type; got numeric",
+			wantFmt: formatBinary,
+		},
+		{
 			name:    "int arg",
-			dst:     []byte{},
 			arg:     int(-123456),
 			want:    []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0x1d, 0xc0},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "uint32 arg",
-			dst:     []byte{},
 			arg:     uint32(math.MaxUint32),
 			want:    []byte{0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "uint arg",
-			dst:     []byte{},
 			arg:     uint(42),
 			want:    []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2a},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "uint64 arg",
-			dst:     []byte{},
 			arg:     uint64(42),
 			want:    []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2a},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "unsupported arg type bool",
-			dst:     []byte{},
 			arg:     true,
 			wantErr: "polite: unsupported argument type bool",
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "unsupported alias int",
-			dst:     []byte{},
 			arg:     customInt(7),
 			wantErr: "polite: unsupported argument type",
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "unsigned overflow",
-			dst:     []byte{},
 			arg:     uint64(math.MaxUint64),
 			want:    []byte("18446744073709551615"),
 			wantFmt: formatText,
@@ -856,7 +855,7 @@ func TestEncodeArg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Helper()
 
-			got, gotFmt, err := appendArg(tt.dst, tt.arg, 0, nil)
+			got, gotFmt, err := appendArg(tt.dst, tt.arg, tt.oid, nil)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("got error %v", err)

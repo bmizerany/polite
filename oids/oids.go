@@ -259,6 +259,9 @@ var idNames = map[ID]string{
 }
 
 func (id ID) String() string {
+	if id == 0 {
+		return "unknown"
+	}
 	if s := idNames[id]; s != "" {
 		return s
 	}

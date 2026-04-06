@@ -9,6 +9,7 @@ func TestIDString(t *testing.T) {
 		id   ID
 		want string
 	}{
+		{ID(0), "unknown"},
 		{Bool, "bool"},
 		{Text, "text"},
 		{Jsonb, "jsonb"},
