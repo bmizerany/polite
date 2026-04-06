@@ -76,7 +76,9 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 		cn:        cn,
 		fc:        febe.New(cn, cn),
 		useGoTime: cfg.UseGoTime,
+		timeZone:  time.UTC,
 	}
+	c.fc.SetParameterStatusHook(c.handleParameterStatus)
 
 	err = func() error {
 		if err := c.fc.WriteStartupMessage(o.Extra...); err != nil {

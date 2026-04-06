@@ -50,6 +50,7 @@ type Conn struct {
 	fc *febe.Conn
 
 	useGoTime bool
+	timeZone  *time.Location
 
 	nstmt int
 	cache map[string]*statement
@@ -119,7 +120,7 @@ func (c *Conn) copyFromRow(args ...any) error {
 	scratch := make([]byte, 0, len(args)*8)
 	for i, arg := range args {
 		start := len(scratch)
-		encoded, _, err := appendArg(scratch, arg)
+		encoded, _, err := appendArg(scratch, arg, 0, nil)
 		if err != nil {
 			return err
 		}
@@ -170,7 +171,7 @@ func appendBinaryArg(dst []byte, arg any) ([]byte, int16, error) {
 	return dst, formatBinary, nil
 }
 
-func appendArg(dst []byte, arg any) ([]byte, int16, error) {
+func appendArg(dst []byte, arg any, oid oids.ID, loc *time.Location) ([]byte, int16, error) {
 	switch v := arg.(type) {
 	case nil:
 		return nil, formatBinary, nil
@@ -200,6 +201,21 @@ func appendArg(dst []byte, arg any) ([]byte, int16, error) {
 		// precision. Round instead of truncate so we choose the
 		// nearest representable PostgreSQL timestamp; truncate would
 		// always bias earlier than round.
+		switch oid {
+		case oids.Timestamp:
+			v = time.Date(
+				v.Year(),
+				v.Month(),
+				v.Day(),
+				v.Hour(),
+				v.Minute(),
+				v.Second(),
+				v.Round(time.Microsecond).Nanosecond(),
+				time.UTC,
+			)
+		case oids.Timestamptz:
+			v = v.UTC()
+		}
 		return appendBinaryArg(dst, timeToPGMicroseconds(v))
 	case uint32:
 		return appendBinaryArg(dst, int64(v))
@@ -233,6 +249,40 @@ func (c *Conn) updateGoTime(ctx context.Context) error {
 	return c.Exec(ctx, "SELECT set_config('polite.go_time', $1, false) LIMIT 0", formatGoTime(time.Now()))
 }
 
+func (c *Conn) handleParameterStatus(p febe.Parameter) {
+	if p.Name != "TimeZone" {
+		return
+	}
+	loc, err := loadLocation(p.Value)
+	if err != nil {
+		return
+	}
+	c.timeZone = loc
+}
+
+func loadLocation(name string) (*time.Location, error) {
+	loc, err := time.LoadLocation(name)
+	if err == nil {
+		return loc, nil
+	}
+	if offset, err := loadTimeZoneOffset(name); err == nil {
+		return time.FixedZone(name, offset), nil
+	}
+	return nil, err
+}
+
+func loadTimeZoneOffset(name string) (int, error) {
+	for _, layout := range timeZoneOffsetLayouts() {
+		ts, err := time.Parse(layout, name)
+		if err != nil {
+			continue
+		}
+		_, offset := ts.Zone()
+		return offset, nil
+	}
+	return 0, fmt.Errorf("unsupported timezone %q", name)
+}
+
 func (c *Conn) initGoTime(ctx context.Context) error {
 	for _, sql := range []string{
 		"CREATE SCHEMA IF NOT EXISTS polite",
@@ -260,7 +310,11 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (*s
 	scratch := make([]byte, 0, len(args)*8)
 	for i, arg := range args {
 		start := len(scratch)
-		encoded, format, err := appendArg(scratch, arg)
+		oid := oids.ID(0)
+		if i < len(stmt.in.OIDs) {
+			oid = stmt.in.OIDs[i]
+		}
+		encoded, format, err := appendArg(scratch, arg, oid, c.timeZone)
 		if err != nil {
 			return nil, err
 		}
@@ -464,6 +518,8 @@ type Column struct {
 	size   int
 	typeID oids.ID
 	data   []byte
+
+	timeZone *time.Location
 }
 
 // Name returns the column name from the row description.
@@ -520,6 +576,15 @@ func (c Column) DecodeFloat() (float64, error) {
 var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 var pgEpochUnix = pgEpoch.Unix()
 
+var timeZoneOffsetLayoutsList = []string{
+	"Z07:00:00",
+	"Z07:00",
+	"Z0700",
+	"Z07",
+}
+
+func timeZoneOffsetLayouts() []string { return timeZoneOffsetLayoutsList }
+
 const (
 	pgTimestampInfinity    = int64(^uint64(0) >> 1)
 	pgTimestampNegInfinity = -pgTimestampInfinity - 1
@@ -542,7 +607,8 @@ func pgMicrosecondsToTime(microseconds int64) time.Time {
 }
 
 // DecodeTime decodes the column bytes as a PostgreSQL timestamp value and
-// returns it in UTC.
+// returns it in UTC for timestamptz or in the column's session timezone for
+// timestamp.
 func (c Column) DecodeTime() (time.Time, error) {
 	switch c.Type() {
 	case oids.Timestamp, oids.Timestamptz:
@@ -561,7 +627,20 @@ func (c Column) DecodeTime() (time.Time, error) {
 		return time.Time{}, fmt.Errorf("DecodeTime: infinity is not supported")
 	}
 
-	return pgMicrosecondsToTime(microseconds), nil
+	ts := pgMicrosecondsToTime(microseconds)
+	if c.Type() == oids.Timestamp && c.timeZone != nil {
+		return time.Date(
+			ts.Year(),
+			ts.Month(),
+			ts.Day(),
+			ts.Hour(),
+			ts.Minute(),
+			ts.Second(),
+			ts.Nanosecond(),
+			c.timeZone,
+		), nil
+	}
+	return ts, nil
 }
 
 func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDescription) (*Row, error) {
@@ -609,7 +688,7 @@ func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDe
 			if c.row == nil {
 				c.row = &Row{}
 			}
-			columns, err := buildColumns(c.fc, c.row, fields, int(m.NumCols))
+			columns, err := buildColumns(c.fc, c.row, fields, int(m.NumCols), c.timeZone)
 			if err != nil {
 				return nil, err
 			}
@@ -633,7 +712,7 @@ func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDe
 	}
 }
 
-func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCols int) ([]Column, error) {
+func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCols int, loc *time.Location) ([]Column, error) {
 	var columns []Column
 	if row != nil {
 		columns = row.columns
@@ -655,19 +734,21 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 		}
 		if v.Data == nil {
 			columns[i] = Column{
-				name:   desc.Name,
-				size:   int(desc.DataTypeSize),
-				typeID: desc.DataTypeOID,
+				name:     desc.Name,
+				size:     int(desc.DataTypeSize),
+				typeID:   desc.DataTypeOID,
+				timeZone: loc,
 			}
 			continue
 		}
 		start := len(data)
 		data = append(data, v.Data...)
 		columns[i] = Column{
-			name:   desc.Name,
-			size:   int(desc.DataTypeSize),
-			typeID: desc.DataTypeOID,
-			data:   data[start:],
+			name:     desc.Name,
+			size:     int(desc.DataTypeSize),
+			typeID:   desc.DataTypeOID,
+			data:     data[start:],
+			timeZone: loc,
 		}
 	}
 	row.data = data

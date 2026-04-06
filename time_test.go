@@ -58,26 +58,147 @@ func TestDecodeTimeRoundTrip(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			cn := newSession(t)
-			ctx := t.Context()
-			want := tt.in.UTC().Round(time.Microsecond)
-			var got []time.Time
-			for row, err := range cn.Query(ctx, `SELECT $1::timestamp, $2::timestamptz`, tt.in, tt.in) {
+			loc := currentTimeZone(t, cn)
+			got := decodeQueryTimes(t, cn, `SELECT $1::timestamp, $2::timestamptz`, tt.in, tt.in)
+			assertTime(t, got[0], wantTimestampInLocation(loc, tt.in))
+			assertTime(t, got[1], wantTimestamptz(tt.in))
+		})
+	}
+}
+
+func TestDecodeTimeTracksSessionTimeZone(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+
+	startLoc := currentTimeZone(t, cn)
+	start := time.Date(2024, 1, 2, 3, 4, 5, 123456789, startLoc)
+	assertTime(t, decodeQueryTimes(t, cn, `SELECT $1::timestamp`, start)[0], wantTimestampInLocation(startLoc, start))
+
+	if err := cn.Exec(t.Context(), `SET TimeZone TO 'America/Los_Angeles'`); err != nil {
+		t.Fatal(err)
+	}
+
+	la, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	other := time.Date(2024, 7, 8, 9, 10, 11, 123456789, time.UTC)
+	assertTime(t, decodeQueryTimes(t, cn, `SELECT $1::timestamp`, other)[0], wantTimestampInLocation(la, other))
+
+	same := time.Date(2024, 7, 8, 9, 10, 11, 123456789, la)
+	assertTime(t, decodeQueryTimes(t, cn, `SELECT $1::timestamp`, same)[0], wantTimestampInLocation(la, same))
+}
+
+func TestLoadTimeZoneOffset(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		text    string
+		want    int
+		wantErr string
+	}{
+		{name: "offset-hour", text: "+02", want: 2 * 60 * 60},
+		{name: "offset-hour-negative", text: "-08", want: -8 * 60 * 60},
+		{name: "offset-hour-minute", text: "+02:30", want: 2*60*60 + 30*60},
+		{name: "offset-hour-minute-negative", text: "-07:30", want: -(7*60*60 + 30*60)},
+		{name: "offset-hour-minute-second", text: "+02:30:15", want: 2*60*60 + 30*60 + 15},
+		{name: "offset-hour-minute-second-negative", text: "-07:30:15", want: -(7*60*60 + 30*60 + 15)},
+		{name: "offset-compact-hour-minute", text: "+0230", want: 2*60*60 + 30*60},
+		{name: "offset-compact-hour-minute-negative", text: "-0730", want: -(7*60*60 + 30*60)},
+		{name: "offset-compact-hour", text: "+02", want: 2 * 60 * 60},
+		{name: "offset-zero", text: "Z", want: 0},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := loadTimeZoneOffset(tt.text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("loadTimeZoneOffset(%q) = %d, want %d", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTimeZoneOffsetLayouts(t *testing.T) {
+	t.Parallel()
+
+	got := timeZoneOffsetLayouts()
+	want := []string{"Z07:00:00", "Z07:00", "Z0700", "Z07"}
+	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestLoadLocation(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		text string
+	}{
+		{name: "iana", text: "America/Los_Angeles"},
+		{name: "posix", text: "EST5EDT"},
+		{name: "utc", text: "UTC"},
+		{name: "gmt", text: "GMT"},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			loc, err := loadLocation(tt.text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loc.String() != tt.text {
+				t.Fatalf("loadLocation(%q) = %q, want %q", tt.text, loc.String(), tt.text)
+			}
+		})
+	}
+}
+
+func TestTimestampMicrosecondRoundingInSQL(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	ctx := t.Context()
+
+	cases := []struct {
+		name string
+		in   time.Time
+		want string
+	}{
+		{
+			name: "round-down",
+			in:   time.Date(2024, 1, 2, 3, 4, 5, 123456499, time.UTC),
+			want: `timestamp '2024-01-02 03:04:05.123456'`,
+		},
+		{
+			name: "round-up",
+			in:   time.Date(2024, 1, 2, 3, 4, 5, 123456500, time.UTC),
+			want: `timestamp '2024-01-02 03:04:05.123457'`,
+		},
+		{
+			name: "no-change",
+			in:   time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC),
+			want: `timestamp '2024-01-02 03:04:05.123456'`,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			sql := `WITH x AS (SELECT $1::timestamp AS ts) SELECT ts = ` + tt.want + ` FROM x`
+			for row, err := range cn.Query(ctx, sql, tt.in) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				for i := range 2 {
-					ts, err := row.Column(i).DecodeTime()
-					if err != nil {
-						t.Fatal(err)
-					}
-					if ts.Location() != time.UTC {
-						t.Fatalf("column %d location = %v, want UTC", i, ts.Location())
-					}
-					got = append(got, ts)
+				got := row.Column(0).Bytes()
+				if len(got) != 1 || got[0] != 1 {
+					t.Fatalf("got %v, want true", got)
 				}
 			}
-			wantTimes := []time.Time{want, want}
-			diff.Test(t, t.Errorf, got, wantTimes)
 		})
 	}
 }
@@ -88,37 +209,49 @@ func TestDecodeTimeFromPostgres(t *testing.T) {
 	cases := []struct {
 		name string
 		sql  string
-		want time.Time
+		want func(*time.Location) time.Time
 	}{
 		{
 			name: "timestamp-basic",
 			sql:  `SELECT '2021-01-01 00:00:00'::timestamp`,
-			want: time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+			want: func(loc *time.Location) time.Time {
+				return time.Date(2021, 1, 1, 0, 0, 0, 0, loc)
+			},
 		},
 		{
 			name: "timestamp-pg-epoch",
 			sql:  `SELECT TIMESTAMP '2000-01-01 00:00:00'`,
-			want: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC),
+			want: func(loc *time.Location) time.Time {
+				return time.Date(2000, 1, 1, 0, 0, 0, 0, loc)
+			},
 		},
 		{
 			name: "timestamp-far-future",
 			sql:  `SELECT TIMESTAMP '2500-01-02 03:04:05.123457'`,
-			want: time.Date(2500, 1, 2, 3, 4, 5, 123457000, time.UTC),
+			want: func(loc *time.Location) time.Time {
+				return time.Date(2500, 1, 2, 3, 4, 5, 123457000, loc)
+			},
 		},
 		{
 			name: "timestamp-far-future-beyond-unixmicro-limit",
 			sql:  `SELECT TIMESTAMP '294260-01-01 00:00:00'`,
-			want: time.Date(294260, 1, 1, 0, 0, 0, 0, time.UTC),
+			want: func(loc *time.Location) time.Time {
+				return time.Date(294260, 1, 1, 0, 0, 0, 0, loc)
+			},
 		},
 		{
 			name: "timestamp-far-past",
 			sql:  `SELECT TIMESTAMP '1500-01-02 03:04:05.123457'`,
-			want: time.Date(1500, 1, 2, 3, 4, 5, 123457000, time.UTC),
+			want: func(loc *time.Location) time.Time {
+				return time.Date(1500, 1, 2, 3, 4, 5, 123457000, loc)
+			},
 		},
 		{
 			name: "timestamptz-timezone",
-			sql:  `SELECT TIMESTAMPTZ '2024-07-08 09:10:11.123457-04'`,
-			want: time.Date(2024, 7, 8, 13, 10, 11, 123457000, time.UTC),
+			sql:  `SELECT TIMESTAMPTZ '2024-07-08 09:10:11.123457'`,
+			want: func(loc *time.Location) time.Time {
+				return time.Date(2024, 7, 8, 9, 10, 11, 123457000, loc).UTC()
+			},
 		},
 	}
 
@@ -126,23 +259,9 @@ func TestDecodeTimeFromPostgres(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cn := newSession(t)
 			defer checkReady(t, cn) // ensure we leave in a good state
-			ctx := t.Context()
-			var got []time.Time
-			for row, err := range cn.Query(ctx, tt.sql) {
-				if err != nil {
-					t.Fatal(err)
-				}
-				ts, err := row.Column(0).DecodeTime()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if ts.Location() != time.UTC {
-					t.Fatalf("location = %v, want UTC", ts.Location())
-				}
-				got = append(got, ts)
-			}
-			want := []time.Time{tt.want}
-			diff.Test(t, t.Errorf, got, want)
+			loc := currentTimeZone(t, cn)
+			got := decodeQueryTimes(t, cn, tt.sql)
+			assertTime(t, got[0], tt.want(loc))
 		})
 	}
 }
@@ -202,6 +321,108 @@ func TestDecodeTimeRejectsUnsupportedValues(t *testing.T) {
 				t.Fatalf("rows = %d, want 1", rows)
 			}
 		})
+	}
+}
+
+func TestDecodeTimeRejectsInvalidLength(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		typ  oids.ID
+	}{
+		{name: "timestamp", typ: oids.Timestamp},
+		{name: "timestamptz", typ: oids.Timestamptz},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			col := Column{
+				typeID: tt.typ,
+				data:   []byte{1, 2, 3, 4},
+			}
+
+			if _, err := col.DecodeTime(); err == nil {
+				t.Fatal("DecodeTime() error = nil; want invalid length error")
+			} else if !strings.Contains(err.Error(), "invalid length") {
+				t.Fatalf("DecodeTime() error = %q; want invalid length", err)
+			}
+		})
+	}
+}
+
+func currentTimeZone(t *testing.T, cn *Conn) *time.Location {
+	t.Helper()
+
+	for row, err := range cn.Query(t.Context(), `SHOW TimeZone`) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		loc, err := loadLocation(row.Column(0).Text())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return loc
+	}
+
+	t.Fatal("expected TimeZone row")
+	return nil
+}
+
+func decodeQueryTimes(t *testing.T, cn *Conn, sql string, args ...any) []time.Time {
+	t.Helper()
+
+	var got []time.Time
+	rows := 0
+	for row, err := range cn.Query(t.Context(), sql, args...) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows++
+		got = make([]time.Time, len(row.columns))
+		for i := range row.columns {
+			ts, err := row.Column(i).DecodeTime()
+			if err != nil {
+				t.Fatal(err)
+			}
+			got[i] = ts
+		}
+	}
+	if rows != 1 {
+		t.Fatalf("rows = %d, want 1", rows)
+	}
+	return got
+}
+
+// wantTimestampInLocation mirrors appendArg/DecodeTime semantics for timestamp:
+// preserve wall-clock fields and round only the subsecond component to the
+// nearest PostgreSQL microsecond.
+func wantTimestampInLocation(loc *time.Location, in time.Time) time.Time {
+	t := in.Round(time.Microsecond)
+	return time.Date(
+		in.Year(),
+		in.Month(),
+		in.Day(),
+		in.Hour(),
+		in.Minute(),
+		in.Second(),
+		t.Nanosecond(),
+		loc,
+	)
+}
+
+func wantTimestamptz(in time.Time) time.Time {
+	return in.UTC().Round(time.Microsecond)
+}
+
+func assertTime(t *testing.T, got, want time.Time) {
+	t.Helper()
+
+	if !got.Equal(want) {
+		t.Fatalf("time = %v, want %v", got, want)
+	}
+	if got.Location().String() != want.Location().String() {
+		t.Fatalf("location = %v, want %v", got.Location(), want.Location())
 	}
 }
 

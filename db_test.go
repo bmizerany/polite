@@ -856,7 +856,7 @@ func TestEncodeArg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Helper()
 
-			got, gotFmt, err := appendArg(tt.dst, tt.arg)
+			got, gotFmt, err := appendArg(tt.dst, tt.arg, 0, nil)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("got error %v", err)
@@ -887,7 +887,7 @@ func TestAppendArgUintOverflow(t *testing.T) {
 		t.Skip("uint does not overflow signed 64-bit on this platform")
 	}
 
-	got, gotFmt, err := appendArg(nil, u)
+	got, gotFmt, err := appendArg(nil, u, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -907,7 +907,7 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 	cn := newSession(t)
 
 	in := time.Date(2026, 1, 2, 3, 4, 5, 987654321, time.FixedZone("UTC+3", 3*60*60))
-	wantTime := in.UTC().Round(time.Microsecond)
+	wantTime := wantTimestamptz(in)
 
 	const q = `
 		SELECT
