@@ -145,6 +145,46 @@ func TestMaybeUpgradeToTLSVerifyFullRejectsUntrustedCertificate(t *testing.T) {
 	<-serverErr
 }
 
+func TestMaybeUpgradeToTLSVerifyFullIgnoresConfigNow(t *testing.T) {
+	t.Parallel()
+
+	client, sni, serverErr := startTLSUpgradeServer(t)
+	o := &dsn.Options{
+		Host:        "localhost",
+		SSLMode:     "verify-full",
+		SSLRootCert: writeTLSRootCert(t),
+	}
+
+	cn, err := maybeUpgradeToTLS(client, o, &Config{
+		Now: func() time.Time {
+			return time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cn.Close() })
+
+	tlsConn, ok := cn.(*tls.Conn)
+	if !ok {
+		t.Fatalf("connection type = %T; want *tls.Conn", cn)
+	}
+	if err := tlsConn.HandshakeContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	state := tlsConn.ConnectionState()
+	if len(state.VerifiedChains) == 0 {
+		t.Fatal("VerifiedChains empty; want certificate verification")
+	}
+	if got, want := <-sni, "localhost"; got != want {
+		t.Fatalf("SNI = %q; want %q", got, want)
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatalf("server handshake: %v", err)
+	}
+}
+
 func startTLSUpgradeServer(t *testing.T) (net.Conn, <-chan string, <-chan error) {
 	t.Helper()
 

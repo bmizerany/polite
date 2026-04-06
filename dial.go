@@ -22,10 +22,15 @@ import (
 
 type Config struct {
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
-	TLSConfig   *tls.Config
+	// TLSConfig is cloned and used as the base TLS config for handshakes.
+	// Set Time there to override the clock used by crypto/tls.
+	TLSConfig *tls.Config
 
-	// Now returns the current time for this connection. If nil, polite leaves
-	// PostgreSQL time functions alone and uses normal client behavior.
+	// Now returns the time polite uses for unqualified calls to now(),
+	// transaction_timestamp(), statement_timestamp(), and clock_timestamp()
+	// on the connection.
+	// If Now is nil, polite leaves PostgreSQL's default time behavior
+	// unchanged.
 	Now func() time.Time
 }
 
@@ -205,11 +210,6 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 	}
 
 	tcfg := cmp.Or(cfg.TLSConfig.Clone(), &tls.Config{})
-	now := tcfg.Time
-	if now == nil {
-		now = verifyTime(cfg.Now)
-		tcfg.Time = now
-	}
 
 	if o.SSLRootCert != "" {
 		if strings.EqualFold(o.SSLRootCert, "system") {
@@ -250,11 +250,4 @@ func rootedReadFile(name string) ([]byte, error) {
 	}
 	defer root.Close()
 	return root.ReadFile(filepath.Base(name))
-}
-
-func verifyTime(now func() time.Time) func() time.Time {
-	if now != nil {
-		return now
-	}
-	return time.Now
 }
