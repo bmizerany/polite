@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"blake.io/polite/dsn"
@@ -24,7 +23,10 @@ import (
 type Config struct {
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 	TLSConfig   *tls.Config
-	UseGoTime   bool
+
+	// Now returns the current time for this connection. If nil, polite leaves
+	// PostgreSQL time functions alone and uses normal client behavior.
+	Now func() time.Time
 }
 
 // Dial opens a connection to postgres using the parameters in dsnOrURL,
@@ -73,10 +75,10 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	})
 
 	c := &Conn{
-		cn:        cn,
-		fc:        febe.New(cn, cn),
-		useGoTime: cfg.UseGoTime,
-		timeZone:  time.UTC,
+		cn:       cn,
+		fc:       febe.New(cn, cn),
+		now:      cfg.Now,
+		timeZone: time.UTC,
 	}
 	c.fc.SetParameterStatusHook(c.handleParameterStatus)
 
@@ -108,8 +110,11 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 				if err != nil {
 					return err
 				}
-				if c.useGoTime {
-					return c.initGoTime(ctx)
+				if c.now != nil {
+					if err := c.initGoTime(ctx); err != nil {
+						return err
+					}
+					return c.updateGoTime(ctx)
 				}
 				return nil
 			default:
@@ -202,7 +207,7 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 	tcfg := cmp.Or(cfg.TLSConfig.Clone(), &tls.Config{})
 	now := tcfg.Time
 	if now == nil {
-		now = verifyTime(cfg.UseGoTime)
+		now = verifyTime(cfg.Now)
 		tcfg.Time = now
 	}
 
@@ -247,17 +252,9 @@ func rootedReadFile(name string) ([]byte, error) {
 	return root.ReadFile(filepath.Base(name))
 }
 
-func verifyTime(useGoTime bool) func() time.Time {
-	if !useGoTime {
-		return time.Now
+func verifyTime(now func() time.Time) func() time.Time {
+	if now != nil {
+		return now
 	}
-	return syscallTime
-}
-
-func syscallTime() time.Time {
-	var tv syscall.Timeval
-	if err := syscall.Gettimeofday(&tv); err != nil {
-		return time.Now()
-	}
-	return time.Unix(tv.Sec, int64(tv.Usec)*1000)
+	return time.Now
 }

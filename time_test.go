@@ -468,41 +468,59 @@ func assertTime(t *testing.T, got, want time.Time) {
 	}
 }
 
-func TestUseGoTime(t *testing.T) {
+func TestDialNow(t *testing.T) {
 	check := testutil.Checker(t)
 
-	cn0, err := Dial(t.Context(), testDSN, &Config{UseGoTime: true})
-	check(err, nil)
-	defer cn0.Close()
-
-	err = cn0.Exec(t.Context(), `SET polite.go_time = '2024-01-02T03:04:05.123456Z'`)
-	check(err, nil)
-
-	cn1, err := Dial(t.Context(), testDSN, &Config{UseGoTime: true})
-	check(err, nil)
-	defer cn1.Close()
-
-	err = cn1.Exec(t.Context(), `SET polite.go_time = '2025-01-02T03:04:05.123456Z'`)
-	check(err, nil)
-
-	checkTime := func(cn *Conn, want time.Time) {
-		for _, sql := range []string{
-			`SELECT now()`,
-			`SELECT statement_timestamp()`,
-			`SELECT transaction_timestamp()`,
-			`SELECT clock_timestamp()`,
-		} {
-			for row, err := range cn.Query(t.Context(), sql) {
-				check(err, nil)
-				ts, err := row.Column(0).DecodeTime()
-				check(err, nil)
-				if !ts.Equal(want) {
-					t.Errorf("%s got %v; want %v", sql, ts, want)
+	cases := []struct {
+		name string
+		cfg  *Config
+		want func(*testing.T, *Conn)
+	}{
+		{
+			name: "custom_now",
+			cfg: &Config{
+				Now: func() time.Time {
+					return time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC)
+				},
+			},
+			want: func(t *testing.T, cn *Conn) {
+				for _, sql := range []string{
+					`SELECT now()`,
+					`SELECT statement_timestamp()`,
+					`SELECT transaction_timestamp()`,
+					`SELECT clock_timestamp()`,
+				} {
+					for row, err := range cn.Query(t.Context(), sql) {
+						check(err, nil)
+						ts, err := row.Column(0).DecodeTime()
+						check(err, nil)
+						want := time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC)
+						if !ts.Equal(want) {
+							t.Errorf("%s got %v; want %v", sql, ts, want)
+						}
+					}
 				}
-			}
-		}
+			},
+		},
+		{
+			name: "nil",
+			want: func(t *testing.T, cn *Conn) {
+				for row, err := range cn.Query(t.Context(), `SELECT current_setting('polite.go_time', true)`) {
+					check(err, nil)
+					if got := row.Column(0).Bytes(); got != nil {
+						t.Fatalf("polite.go_time = %q; want unset", got)
+					}
+				}
+			},
+		},
 	}
 
-	checkTime(cn0, time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC))
-	checkTime(cn1, time.Date(2025, 1, 2, 3, 4, 5, 123456000, time.UTC))
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			cn, err := Dial(t.Context(), testDSN, tt.cfg)
+			check(err, nil)
+			defer cn.Close()
+			tt.want(t, cn)
+		})
+	}
 }

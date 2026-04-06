@@ -60,9 +60,10 @@
 //
 // # Testing and Time
 //
-// Setting [Config.UseGoTime] makes PostgreSQL time functions follow Go's
-// current time for that connection. This is useful in tests, including tests
-// run under testing/synctest, because SQL that calls now(), clock_timestamp(),
-// statement_timestamp(), or transaction_timestamp() can observe the same clock
-// as the Go test.
+// Setting [Config.Now] makes PostgreSQL time functions follow the returned
+// clock for that connection. If it is nil, polite leaves PostgreSQL time
+// functions alone and uses normal client behavior. This is useful in tests,
+// including tests run under testing/synctest, because SQL that calls now(),
+// clock_timestamp(), statement_timestamp(), or transaction_timestamp() can
+// observe the same clock as the Go test.
 package polite

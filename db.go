@@ -49,8 +49,8 @@ type Conn struct {
 	cn net.Conn
 	fc *febe.Conn
 
-	useGoTime bool
-	timeZone  *time.Location
+	now      func() time.Time
+	timeZone *time.Location
 
 	nstmt int
 	cache map[string]*statement
@@ -243,12 +243,13 @@ func appendArg(dst []byte, arg any, oid oids.ID, loc *time.Location) ([]byte, in
 }
 
 func (c *Conn) updateGoTime(ctx context.Context) error {
-	if !c.useGoTime {
+	if c.now == nil {
 		return nil
 	}
-	c.useGoTime = false // prevent infinite recursion during next call to Query
-	defer func() { c.useGoTime = true }()
-	return c.Exec(ctx, "SELECT set_config('polite.go_time', $1, false) LIMIT 0", formatGoTime(time.Now()))
+	now := c.now
+	c.now = nil // prevent infinite recursion during the internal set_config query.
+	defer func() { c.now = now }()
+	return c.Exec(ctx, "SELECT set_config('polite.go_time', $1, false)", formatGoTime(now()))
 }
 
 func (c *Conn) handleParameterStatus(p febe.Parameter) {
@@ -414,7 +415,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // transitions, and row materialization errors are reported in the range body.
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
 	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
-		if c.useGoTime {
+		if c.now != nil {
 			if err := c.updateGoTime(ctx); err != nil {
 				yield(nil, err)
 				return
