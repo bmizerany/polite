@@ -820,6 +820,13 @@ func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
 	for {
 		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
+			// An ErrorResponse (e.g. constraint violation) may
+			// arrive instead of CommandComplete. Drain to
+			// ReadyForQuery so the connection is usable, then
+			// report the original error.
+			if drainErr := c.discardUntilReady(ctx); drainErr != nil {
+				return drainErr
+			}
 			return err
 		}
 		switch h.Type() {

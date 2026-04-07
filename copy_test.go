@@ -175,6 +175,48 @@ func TestDiscardUntilReadyFatal(t *testing.T) {
 	}
 }
 
+func TestCopyFromConstraintViolation(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+
+	defer func() {
+		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	err := cn.Exec(ctx, "CREATE TEMP TABLE strict (id INT NOT NULL)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Enter COPY FROM and send a NULL for a NOT NULL column.
+	var gotErr error
+	for row, err := range cn.Query(ctx, "COPY strict FROM STDIN WITH (FORMAT binary)") {
+		if err != nil {
+			gotErr = err
+			break
+		}
+		if !errors.Is(row.Err(), ErrCopyFrom) {
+			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		}
+		// Send a row with NULL id — violates NOT NULL.
+		if err := cn.Exec(ctx, "", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if gotErr == nil {
+		t.Fatal("expected a constraint violation error")
+	}
+	var fe *febe.Error
+	if !errors.As(gotErr, &fe) {
+		t.Fatalf("got %T (%v), want *febe.Error", gotErr, gotErr)
+	}
+}
+
 func TestCopyTo(t *testing.T) {
 	t.Parallel()
 
