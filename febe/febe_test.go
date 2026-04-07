@@ -395,8 +395,6 @@ func TestWriteTerminate(t *testing.T) {
 }
 
 func TestReadReadyForQuery(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name   string
 		status ReadyStatus

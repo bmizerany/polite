@@ -694,8 +694,6 @@ func TestQueryExtendedNumbers(t *testing.T) {
 }
 
 func TestEncodeArg(t *testing.T) {
-	t.Parallel()
-
 	type customInt int64
 
 	tests := []struct {

@@ -16,8 +16,6 @@ import (
 )
 
 func TestMaybeUpgradeToTLSVerifyFullLoadsRootCertAndUsesDSNHost(t *testing.T) {
-	t.Parallel()
-
 	client, sni, serverErr := startTLSUpgradeServer(t)
 	o := &dsn.Options{
 		Host:        "localhost",
@@ -67,8 +65,6 @@ func TestMaybeUpgradeToTLSVerifyFullLoadsRootCertAndUsesDSNHost(t *testing.T) {
 }
 
 func TestMaybeUpgradeToTLSVerifyFullRejectsHostnameMismatch(t *testing.T) {
-	t.Parallel()
-
 	client, sni, serverErr := startTLSUpgradeServer(t)
 	o := &dsn.Options{
 		Host:    "example.com",
@@ -110,8 +106,6 @@ func TestMaybeUpgradeToTLSVerifyFullRejectsHostnameMismatch(t *testing.T) {
 }
 
 func TestMaybeUpgradeToTLSVerifyFullRejectsUntrustedCertificate(t *testing.T) {
-	t.Parallel()
-
 	client, sni, serverErr := startTLSUpgradeServer(t)
 	o := &dsn.Options{
 		Host:    "localhost",
@@ -146,8 +140,6 @@ func TestMaybeUpgradeToTLSVerifyFullRejectsUntrustedCertificate(t *testing.T) {
 }
 
 func TestMaybeUpgradeToTLSVerifyFullIgnoresConfigNow(t *testing.T) {
-	t.Parallel()
-
 	client, sni, serverErr := startTLSUpgradeServer(t)
 	o := &dsn.Options{
 		Host:        "localhost",

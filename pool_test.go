@@ -27,8 +27,6 @@ func newTestPool(t *testing.T) *Pool {
 }
 
 func TestDefaultDSNUsesVerifyFull(t *testing.T) {
-	t.Parallel()
-
 	o, err := dsn.ParseOptions(DefaultDSN)
 	if err != nil {
 		t.Fatal(err)

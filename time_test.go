@@ -92,8 +92,6 @@ func TestDecodeTimeTracksSessionTimeZone(t *testing.T) {
 }
 
 func TestLoadTimeZoneOffset(t *testing.T) {
-	t.Parallel()
-
 	cases := []struct {
 		name    string
 		text    string
@@ -126,16 +124,12 @@ func TestLoadTimeZoneOffset(t *testing.T) {
 }
 
 func TestTimeZoneOffsetLayouts(t *testing.T) {
-	t.Parallel()
-
 	got := timeZoneOffsetLayouts()
 	want := []string{"Z07:00:00", "Z07:00", "Z0700", "Z07"}
 	diff.Test(t, t.Errorf, got, want)
 }
 
 func TestLoadLocation(t *testing.T) {
-	t.Parallel()
-
 	cases := []struct {
 		name string
 		text string
