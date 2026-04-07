@@ -33,6 +33,7 @@ type statement struct {
 // Conn is a PostgreSQL connection.
 //
 // Conn is not safe for concurrent use by multiple goroutines.
+// Use [Pool] for concurrent access from multiple goroutines.
 //
 // Conn prepares SQL on first use and caches prepared statements per connection
 // by exact SQL text. Calls with the same SQL reuse the cached statement.
