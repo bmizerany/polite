@@ -22,10 +22,6 @@ var (
 	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 	ErrCopyFrom              = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
 
-	// errCopyFromAborted is returned by nextRow when a non-binary COPY
-	// FROM is rejected and abortCopyFrom has already recovered the
-	// connection. The Query loop uses this to skip maybeRecoverFrom.
-	errCopyFromAborted = fmt.Errorf("%w (aborted)", ErrUnsupportedCopyFormat)
 )
 
 type statement struct {
@@ -454,12 +450,6 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 				if errors.Is(err, ErrDone) {
 					return
 				}
-				if errors.Is(err, errCopyFromAborted) {
-					// abortCopyFrom already recovered the
-					// connection; report the unwrapped error.
-					yield(nil, ErrUnsupportedCopyFormat)
-					return
-				}
 				err = c.maybeRecoverFrom(ctx, err)
 				yield(nil, err)
 				return
@@ -723,10 +713,10 @@ func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDe
 				return nil, err
 			}
 			if m.Format != febe.CopyFormatBinary {
-				if err := c.abortCopyFrom(ctx); err != nil {
+				if err := c.abortCopyFrom(); err != nil {
 					return nil, err
 				}
-				return nil, errCopyFromAborted
+				return nil, ErrUnsupportedCopyFormat
 			}
 			c.inCopyFrom = true
 			c.copyHeaderWritten = false
@@ -811,15 +801,12 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 }
 
 // abortCopyFrom sends CopyFail + Sync to cancel a COPY IN that we don't
-// support (e.g. non-binary format) and drains through ReadyForQuery, leaving
-// the connection clean.
-func (c *Conn) abortCopyFrom(ctx context.Context) error {
+// support (e.g. non-binary format). It does not drain the response;
+// the caller's recovery path (maybeRecoverFrom) handles that.
+func (c *Conn) abortCopyFrom() error {
 	c.fc.WriteCopyFail(ErrUnsupportedCopyFormat.Error())
 	c.fc.WriteSync()
-	if err := c.fc.Flush(); err != nil {
-		return err
-	}
-	return c.discardUntilReady(ctx)
+	return c.fc.Flush()
 }
 
 func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
