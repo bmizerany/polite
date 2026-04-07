@@ -389,6 +389,7 @@ func TestQueryExtendedUnsupportedType(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
+	t.Cleanup(func() { checkReady(t, cn) })
 
 	var got []error
 	for _, err := range cn.Query(t.Context(), "SELECT $1", true) {
@@ -423,6 +424,7 @@ func TestQueryExtendedComplex(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
+	t.Cleanup(func() { checkReady(t, cn) })
 
 	var got []error
 	for _, err := range cn.Query(t.Context(), "SELECT $1", complex128(1+2i)) {
@@ -602,6 +604,7 @@ func TestQueryBreakInAll(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
+	t.Cleanup(func() { checkReady(t, cn) })
 	var got [][]string
 	for row, err := range cn.Query(t.Context(), "SELECT * FROM generate_series(1, 5)") {
 		if err != nil {
