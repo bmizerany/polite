@@ -167,7 +167,7 @@ func TestQueryAllocations(t *testing.T) {
 	cn := newSession(t)
 	allocs := testing.AllocsPerRun(1000, func() {
 		const q = `SELECT 1, 'two'`
-		for row, err := range cn.Query(t.Context(), q) {
+		for row, err := range cn.Query(context.Background(), q) {
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -223,6 +223,38 @@ func TestDeadlineIsolation(t *testing.T) {
 
 	if err := c.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatalf("unexpected error after context cancel: %v", err)
+	}
+}
+
+func TestQueryCancel(t *testing.T) {
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	for _, err := range cn.Query(ctx, "SELECT pg_sleep(10)") {
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("got %v; want context.DeadlineExceeded", err)
+		}
+	}
+
+	// Connection should be reusable.
+	var got int64
+	for row, err := range cn.Query(context.Background(), "SELECT 1") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err = row.Column(0).DecodeInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got != 1 {
+		t.Fatalf("got %d; want 1", got)
 	}
 }
 

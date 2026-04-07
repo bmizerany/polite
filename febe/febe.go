@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -60,6 +61,18 @@ func RequestTLS(cn net.Conn) (ok bool, err error) {
 		return false, err
 	}
 	return b[0] == 'S', nil
+}
+
+// WriteCancelRequest writes a CancelRequest message to cn. The caller
+// should close cn after calling this; no response is expected.
+func WriteCancelRequest(cn net.Conn, pid, secretKey int32) error {
+	var b [16]byte
+	binary.BigEndian.PutUint32(b[0:4], 16)
+	binary.BigEndian.PutUint32(b[4:8], 80877102)
+	binary.BigEndian.PutUint32(b[8:12], uint32(pid))
+	binary.BigEndian.PutUint32(b[12:16], uint32(secretKey))
+	_, err := cn.Write(b[:])
+	return err
 }
 
 // ReadyStatus reports the backend transaction status in ReadyForQuery.

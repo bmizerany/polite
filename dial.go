@@ -22,6 +22,7 @@ import (
 
 type Config struct {
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
+
 	// TLSConfig is cloned and used as the base TLS config for handshakes.
 	// Set Time there to override the clock used by crypto/tls.
 	TLSConfig *tls.Config
@@ -84,6 +85,10 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 		fc:       febe.New(cn, cn),
 		now:      cfg.Now,
 		timeZone: time.UTC,
+		network:  network,
+		addr:     addr,
+		opts:     o,
+		cfg:      cfg,
 	}
 	c.fc.SetParameterStatusHook(c.handleParameterStatus)
 
@@ -106,10 +111,12 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 					return err
 				}
 			case 'K':
-				_, err := c.fc.ReadBackendKeyData()
+				bk, err := c.fc.ReadBackendKeyData()
 				if err != nil {
 					return err
 				}
+				c.pid = bk.PID
+				c.secretKey = bk.SecretKey
 			case 'Z':
 				_, err := c.fc.ReadReadyForQuery()
 				if err != nil {

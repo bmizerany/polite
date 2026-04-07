@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"blake.io/polite/dsn"
 	"blake.io/polite/febe"
 	"blake.io/polite/oids"
 )
@@ -21,7 +22,6 @@ var (
 	ErrTLSRefused            = errors.New("polite: TLS refused by backend")
 	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 	ErrCopyFrom              = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
-
 )
 
 type statement struct {
@@ -72,6 +72,14 @@ type Conn struct {
 	// returns false (caller broke out of the loop). It is surfaced on
 	// the next operation.
 	stickyErr error
+
+	// cancel support
+	pid       int32
+	secretKey int32
+	network   string
+	addr      string
+	opts      *dsn.Options
+	cfg       *Config
 }
 
 // Close sends a Terminate message, flushes it, and then closes the underlying
@@ -423,12 +431,25 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // copy mode, Query yields a [Row] whose [Row.Err] reports [ErrCopyFrom].
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
 	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
+		if ctx.Done() != nil {
+			stop := context.AfterFunc(ctx, c.cancel)
+			defer func() {
+				if stop() {
+					return
+				}
+				// AfterFunc fired — clear the deadline so
+				// maybeRecoverFrom can drain normally.
+				c.cn.SetReadDeadline(time.Time{})
+			}()
+		}
+
 		if c.stickyErr != nil {
 			err := c.stickyErr
 			c.stickyErr = nil
 			yield(nil, err)
 			return
 		}
+
 		if c.now != nil {
 			if err := c.updateGoTime(ctx); err != nil {
 				yield(nil, err)
@@ -440,7 +461,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 			yield(nil, err)
 			return
 		}
-		if err := c.execAndSync(""); err != nil {
+		if err := c.execAndSync(ctx, ""); err != nil {
 			yield(nil, err)
 			return
 		}
@@ -489,7 +510,10 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 	})
 }
 
-func (c *Conn) execAndSync(portal string) error {
+func (c *Conn) execAndSync(ctx context.Context, portal string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	c.fc.WriteExecute(portal, 0)
 	c.fc.WriteSync()
 	return c.fc.Flush()
@@ -613,8 +637,10 @@ func (c Column) DecodeFloat() (float64, error) {
 	}
 }
 
-var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-var pgEpochUnix = pgEpoch.Unix()
+var (
+	pgEpoch     = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	pgEpochUnix = pgEpoch.Unix()
+)
 
 var timeZoneOffsetLayoutsList = []string{
 	"Z07:00:00",
@@ -803,7 +829,7 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 
 // abortCopyFrom sends CopyFail + Sync to cancel a COPY IN that we don't
 // support (e.g. non-binary format). It does not drain the response;
-// the caller's recovery path (maybeRecoverFrom) handles that.
+// maybeRecoverFrom handles that.
 func (c *Conn) abortCopyFrom() error {
 	c.fc.WriteCopyFail(ErrUnsupportedCopyFormat.Error())
 	c.fc.WriteSync()
@@ -860,6 +886,16 @@ func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
 		return nil
 	}
 
+	// If the context is canceled, a cancel request is in flight.
+	// Drain to ReadyForQuery so the connection is reusable, then
+	// return the context error as the root cause.
+	if ctx.Err() != nil {
+		if err := c.discardUntilReady(ctx); err != nil {
+			return err
+		}
+		return ctx.Err()
+	}
+
 	// FATAL and PANIC mean the backend closed the connection;
 	// no ReadyForQuery will follow, so skip recovery.
 	if fe, ok := errors.AsType[*febe.Error](initErr); ok && fe.IsFatal() {
@@ -879,6 +915,9 @@ func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
 }
 
 func (c *Conn) discardUntilReady(ctx context.Context) error {
+	if ctx.Done() != nil {
+		ctx = context.WithoutCancel(ctx)
+	}
 	for {
 		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
@@ -896,5 +935,37 @@ func (c *Conn) discardUntilReady(ctx context.Context) error {
 			_, err := c.fc.ReadReadyForQuery()
 			return err
 		}
+	}
+}
+
+// cancel sends a CancelRequest on a new connection. Called by
+// context.AfterFunc in a separate goroutine.
+//
+// If the cancel request is sent successfully, PostgreSQL will send an
+// ErrorResponse followed by ReadyForQuery on the main connection,
+// unblocking the caller naturally. If anything fails (dial, TLS, write),
+// we set a read deadline on the main connection to unblock it; the
+// connection is then unusable.
+func (c *Conn) cancel() {
+	const timeout = 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cn, err := c.cfg.DialContext(ctx, c.network, c.addr)
+	if err != nil {
+		c.cn.SetReadDeadline(time.Now())
+		return
+	}
+	defer cn.Close()
+
+	cn, err = maybeUpgradeToTLS(cn, c.opts, c.cfg)
+	if err != nil {
+		c.cn.SetReadDeadline(time.Now())
+		return
+	}
+
+	cn.SetDeadline(time.Now().Add(timeout))
+	if err := febe.WriteCancelRequest(cn, c.pid, c.secretKey); err != nil {
+		c.cn.SetReadDeadline(time.Now())
 	}
 }
