@@ -57,6 +57,9 @@ EOF
 ## Documentation
 
 - Always include white space between fields of a struct and preceding fields.
+- When referencing columns by index, it is idiomatic to keep the read on one
+  line, for example `id, err := row.Column(0).DecodeInt()`. Exceptions exist,
+  but this is usually the preferred form.
 
 Good:
 

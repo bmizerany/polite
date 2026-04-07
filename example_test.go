@@ -3,7 +3,6 @@ package polite_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 
@@ -22,15 +21,11 @@ func ExampleConn_Query_copyTo() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		var id int64
-		var name string
-		col := row.Column(0)
-		id, err = col.DecodeInt()
+		id, err := row.Column(0).DecodeInt()
 		if err != nil {
 			log.Fatal(err)
 		}
-		col = row.Column(1)
-		name = col.Text()
+		name := row.Column(1).Text()
 		fmt.Println(id, name)
 	}
 }
@@ -51,10 +46,7 @@ func ExampleConn_Query_copyFrom() {
 		{2, "bob"},
 	}
 
-	for _, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if !errors.Is(err, polite.ErrCopyFrom) {
-			log.Fatal(err)
-		}
+	for range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
 		for _, item := range items {
 			if err := cn.Exec(ctx, "", item.ID, item.Name); err != nil {
 				log.Fatal(err)

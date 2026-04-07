@@ -45,11 +45,8 @@
 //
 // # COPY
 //
-// Query supports COPY TO and COPY FROM in PostgreSQL's binary format. COPY TO
-// yields rows. COPY FROM reports [ErrCopyFrom] to enter copy mode; while copy
-// mode is active, calling [Conn.Exec] with an empty SQL string sends one COPY
-// data row encoded from the arguments. When the range ends, polite finalizes
-// the COPY and records the command tag for [Conn.LastResult].
+// Query supports COPY TO and COPY FROM in PostgreSQL's binary format.
+// See [Conn.Query] for copy examples.
 //
 // # Pooling
 //

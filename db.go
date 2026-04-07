@@ -101,8 +101,8 @@ func (c *Conn) Close() (err error) {
 // After Exec returns, call [Conn.LastResult] to get the number of rows
 // affected (not the number of rows matched).
 //
-// When a COPY FROM is in progress (see [ErrCopyFrom]), calling Exec with
-// an empty sql string sends a single COPY data row encoded from args.
+// When a COPY FROM is in progress, calling Exec with an empty sql string sends
+// a single COPY data row encoded from args.
 func (c *Conn) Exec(ctx context.Context, sql string, args ...any) error {
 	if c.inCopyFrom && sql == "" {
 		return c.copyFromRow(args...)
@@ -438,7 +438,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 					return
 				}
 				if errors.Is(err, ErrCopyFrom) {
-					if !yield(nil, err) {
+					if !yield(nil, nil) {
 						if err := c.finalizeCopyFrom(ctx); err != nil {
 							fmt.Printf("polite: COPY FROM cleanup error: %v\n", err)
 						}

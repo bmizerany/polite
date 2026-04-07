@@ -163,10 +163,7 @@ func TestCopyFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if !errors.Is(err, ErrCopyFrom) {
-			t.Fatalf("Query() = %v, want ErrCopyFrom", err)
-		}
+	for range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
 		if err := cn.Exec(ctx, "", int32(4), "qux"); err != nil {
 			t.Fatal(err)
 		}
@@ -216,10 +213,7 @@ func TestCopyFromEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if !errors.Is(err, ErrCopyFrom) {
-			t.Fatalf("Query() = %v, want ErrCopyFrom", err)
-		}
+	for range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
 		// Send no rows, just let the iterator end.
 	}
 
