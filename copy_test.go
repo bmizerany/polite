@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"blake.io/polite/febe"
 	"kr.dev/diff"
 )
 
@@ -100,6 +101,77 @@ func TestCopyFromNonBinary(t *testing.T) {
 	}
 	if !errors.Is(gotErr, ErrUnsupportedCopyFormat) {
 		t.Fatalf("got %v, want ErrUnsupportedCopyFormat", gotErr)
+	}
+}
+
+func TestDiscardUntilReadyFatal(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn, err := Dial(ctx, testDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cn.cn.Close()
+	})
+
+	// Create a table with enough rows to generate many CopyData
+	// messages during COPY TO, giving us a window to terminate.
+	err = cn.Exec(ctx, "CREATE TEMP TABLE big (id INT)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cn.Exec(ctx, "INSERT INTO big SELECT generate_series(1, 10000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Get the backend PID of the connection under test.
+	var pid int64
+	for row, err := range cn.Query(ctx, "SELECT pg_backend_pid()") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		pid, err = row.Column(0).DecodeInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Open a second connection to terminate the first.
+	killer := newSession(t)
+
+	// Terminate the backend while discardUntilReady is draining the
+	// COPY TO stream. The large number of rows ensures there is still
+	// data in flight when the terminate arrives.
+	killed := make(chan struct{})
+	go func() {
+		defer close(killed)
+		killer.Exec(ctx, "SELECT pg_terminate_backend($1)", int32(pid))
+	}()
+	// Issue a non-binary COPY TO. The format check rejects it and
+	// maybeRecoverFrom calls discardUntilReady to drain the stream.
+	// The terminate will cause a FATAL error mid-drain.
+	//
+	// Without the IsFatal guard in discardUntilReady, this loops
+	// forever; with the guard it returns the fatal error.
+	var gotErr error
+	for _, err := range cn.Query(ctx, "COPY big TO STDOUT WITH (FORMAT text)") {
+		gotErr = err
+	}
+
+	<-killed
+
+	if gotErr == nil {
+		t.Fatal("expected an error from Query")
+	}
+	var fe *febe.Error
+	if !errors.As(gotErr, &fe) {
+		t.Fatalf("got %T (%v), want *febe.Error", gotErr, gotErr)
+	}
+	if !fe.IsFatal() {
+		t.Fatalf("got non-fatal error %v, want fatal", fe)
 	}
 }
 

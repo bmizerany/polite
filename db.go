@@ -810,36 +810,16 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 	return columns, nil
 }
 
-// abortCopyFrom sends CopyFail and drains through ReadyForQuery, leaving the
-// connection in a clean state. It is used when we reject the COPY before
-// entering copy mode (e.g. non-binary format).
-// abortCopyFrom sends CopyFail to cancel a COPY IN that we don't support
-// (e.g. non-binary format) and drains through ReadyForQuery, leaving the
-// connection clean. The original Sync from execAndSync is still queued, so
-// the backend sends ErrorResponse + ReadyForQuery (original Sync).
+// abortCopyFrom sends CopyFail + Sync to cancel a COPY IN that we don't
+// support (e.g. non-binary format) and drains through ReadyForQuery, leaving
+// the connection clean.
 func (c *Conn) abortCopyFrom(ctx context.Context) error {
 	c.fc.WriteCopyFail(ErrUnsupportedCopyFormat.Error())
 	c.fc.WriteSync()
 	if err := c.fc.Flush(); err != nil {
 		return err
 	}
-	// Drain ErrorResponse (from CopyFail) + ReadyForQuery (from the
-	// original Sync that was queued before CopyIn started).
-	for {
-		h, err := c.fc.ReadHeader(ctx)
-		if err != nil {
-			// The ErrorResponse from CopyFail is expected;
-			// keep reading until ReadyForQuery.
-			if _, ok := errors.AsType[*febe.Error](err); ok {
-				continue
-			}
-			return err
-		}
-		if h.Type() == 'Z' {
-			_, err := c.fc.ReadReadyForQuery()
-			return err
-		}
-	}
+	return c.discardUntilReady(ctx)
 }
 
 func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
@@ -907,6 +887,14 @@ func (c *Conn) discardUntilReady(ctx context.Context) error {
 	for {
 		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
+			// Non-fatal ErrorResponses are expected during
+			// recovery (e.g. Postgres echoing a CopyFail);
+			// keep draining until ReadyForQuery. Fatal errors
+			// mean the backend closed the connection and no
+			// ReadyForQuery will follow.
+			if fe, ok := errors.AsType[*febe.Error](err); ok && !fe.IsFatal() {
+				continue
+			}
 			return err
 		}
 		if h.Type() == 'Z' {
