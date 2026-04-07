@@ -20,7 +20,7 @@ var (
 	ErrDone                  = errors.New("polite: done")
 	ErrTLSRefused            = errors.New("polite: TLS refused by backend")
 	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
-	ErrCopyFrom              = errors.New("polite: COPY FROM in progress; use Exec(ctx, \"\", args...) to send rows")
+	ErrCopyFrom              = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
 )
 
 type statement struct {
@@ -65,6 +65,11 @@ type Conn struct {
 	copyHeaderWritten bool
 
 	closed bool
+
+	// stickyErr is set when an error occurs after the iterator yield
+	// returns false (caller broke out of the loop). It is surfaced on
+	// the next operation.
+	stickyErr error
 }
 
 // Close sends a Terminate message, flushes it, and then closes the underlying
@@ -411,10 +416,17 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 }
 
 // Query executes sql and returns the sequence of rows returned by the query.
-// Each iteration yields a [Row] and an error. Query errors, COPY mode
-// transitions, and row materialization errors are reported in the range body.
+// Each iteration yields a [Row] and an error. Query errors and row
+// materialization errors are reported in the range body. When COPY FROM enters
+// copy mode, Query yields a [Row] whose [Row.Err] reports [ErrCopyFrom].
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
 	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
+		if c.stickyErr != nil {
+			err := c.stickyErr
+			c.stickyErr = nil
+			yield(nil, err)
+			return
+		}
 		if c.now != nil {
 			if err := c.updateGoTime(ctx); err != nil {
 				yield(nil, err)
@@ -437,20 +449,20 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 				if errors.Is(err, ErrDone) {
 					return
 				}
-				if errors.Is(err, ErrCopyFrom) {
-					if !yield(nil, nil) {
-						if err := c.finalizeCopyFrom(ctx); err != nil {
-							fmt.Printf("polite: COPY FROM cleanup error: %v\n", err)
-						}
-						return
-					}
+				err = c.maybeRecoverFrom(ctx, err)
+				yield(nil, err)
+				return
+			}
+			if row != nil && row.err != nil {
+				if !yield(row, nil) {
 					if err := c.finalizeCopyFrom(ctx); err != nil {
-						yield(nil, err)
+						c.stickyErr = err
 					}
 					return
 				}
-				err = c.maybeRecoverFrom(ctx, err)
-				yield(nil, err)
+				if err := c.finalizeCopyFrom(ctx); err != nil {
+					yield(nil, err)
+				}
 				return
 			}
 			processed++
@@ -463,7 +475,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 						}
 						err = c.maybeRecoverFrom(ctx, err)
 						if err != nil {
-							fmt.Printf("polite: stopped early with error: %v\n", err)
+							c.stickyErr = err
 							return
 						}
 						continue
@@ -486,17 +498,31 @@ func (c *Conn) execAndSync(portal string) error {
 // It assumes the caller wrote the query and knows the number of result columns
 // ahead of time. Use [Row.Column] to read a specific column by index. For more
 // general row processing, use [Row.Columns] to range over all columns, for
-// example to map them into a struct or another destination. The returned
+// example to map them into a struct or another destination. Some rows carry a
+// sticky error, reported by [Row.Err], instead of column data. The returned
 // columns refer to storage owned by the current row and remain valid only
 // while this row is current.
 type Row struct {
 	data    []byte
 	columns []Column
+	err     error
+}
+
+// Err reports a sticky row error.
+//
+// Some rows, such as the row returned when Query enters COPY FROM mode, carry
+// an error instead of data. Accessing their columns panics with that error.
+func (r *Row) Err() error {
+	if r == nil {
+		return nil
+	}
+	return r.err
 }
 
 // Columns returns the columns in the row.
 func (r *Row) Columns() iter.Seq[Column] {
 	return func(yield func(Column) bool) {
+		r.check()
 		for i := range r.columns {
 			if !yield(r.Column(i)) {
 				return
@@ -510,7 +536,14 @@ func (r *Row) Columns() iter.Seq[Column] {
 // It panics if i is out of range. The returned Column refers to storage owned
 // by the current row and remains valid only while this row is current.
 func (r *Row) Column(i int) Column {
+	r.check()
 	return r.columns[i]
+}
+
+func (r *Row) check() {
+	if r != nil && r.err != nil {
+		panic(r.err)
+	}
 }
 
 // Column describes one column returned by [Conn.Query].
@@ -678,7 +711,7 @@ func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDe
 			}
 			c.inCopyFrom = true
 			c.copyHeaderWritten = false
-			return nil, ErrCopyFrom
+			return &Row{err: ErrCopyFrom}, nil
 		case 'D', 'd':
 			discardBinaryHeader := processed == 0 && h.Type() == 'd'
 			m, err := c.fc.ReadDataRow(discardBinaryHeader)
