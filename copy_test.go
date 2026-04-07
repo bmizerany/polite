@@ -15,12 +15,7 @@ func TestCopyFreestyle(t *testing.T) {
 	ctx := context.Background()
 	cn := newSession(t)
 
-	defer func() {
-		// Make sure the connection is still alive and in a good state.
-		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	defer checkReady(t, cn)
 
 	const q = `
 		COPY (SELECT 1 AS id, 'foo' AS name) TO STDOUT WITH (FORMAT binary)
@@ -48,12 +43,7 @@ func TestCopyNonBinary(t *testing.T) {
 	ctx := context.Background()
 	cn := newSession(t)
 
-	defer func() {
-		// ensure recovery
-		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	defer checkReady(t, cn)
 
 	const q = `
 		COPY (SELECT 1) TO STDOUT WITH (FORMAT text)
@@ -76,12 +66,7 @@ func TestCopyFromNonBinary(t *testing.T) {
 	ctx := context.Background()
 	cn := newSession(t)
 
-	defer func() {
-		// ensure recovery
-		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	defer checkReady(t, cn)
 
 	err := cn.Exec(ctx, "CREATE TEMP TABLE foo (id INT, name TEXT)")
 	if err != nil {
@@ -181,11 +166,7 @@ func TestCopyFromConstraintViolation(t *testing.T) {
 	ctx := context.Background()
 	cn := newSession(t)
 
-	defer func() {
-		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	defer checkReady(t, cn)
 
 	err := cn.Exec(ctx, "CREATE TEMP TABLE strict (id INT NOT NULL)")
 	if err != nil {
@@ -350,10 +331,7 @@ func TestCopyFrom(t *testing.T) {
 	}
 	diff.Test(t, t.Errorf, got, want)
 
-	// Make sure the connection is still usable.
-	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
-		t.Fatal(err)
-	}
+	checkReady(t, cn)
 }
 
 func TestCopyFromEmpty(t *testing.T) {
@@ -392,7 +370,5 @@ func TestCopyFromEmpty(t *testing.T) {
 		t.Fatalf("count = %d, want 0", count)
 	}
 
-	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
-		t.Fatal(err)
-	}
+	checkReady(t, cn)
 }
