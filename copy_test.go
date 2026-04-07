@@ -69,6 +69,40 @@ func TestCopyNonBinary(t *testing.T) {
 	}
 }
 
+func TestCopyFromNonBinary(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+
+	defer func() {
+		// ensure recovery
+		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	err := cn.Exec(ctx, "CREATE TEMP TABLE foo (id INT, name TEXT)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var gotErr error
+	for _, err := range cn.Query(ctx, "COPY foo FROM STDIN") {
+		if err != nil {
+			gotErr = err
+			// A well-behaved caller stops here; Exec must not run.
+			continue
+		}
+		// If we reach here, no error was reported and Exec would
+		// run blindly — that's the bug this test guards against.
+		t.Fatal("expected an error from Query, got nil")
+	}
+	if !errors.Is(gotErr, ErrUnsupportedCopyFormat) {
+		t.Fatalf("got %v, want ErrUnsupportedCopyFormat", gotErr)
+	}
+}
+
 func TestCopyTo(t *testing.T) {
 	t.Parallel()
 
@@ -163,7 +197,13 @@ func TestCopyFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !errors.Is(row.Err(), ErrCopyFrom) {
+			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		}
 		if err := cn.Exec(ctx, "", int32(4), "qux"); err != nil {
 			t.Fatal(err)
 		}
@@ -213,7 +253,13 @@ func TestCopyFromEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !errors.Is(row.Err(), ErrCopyFrom) {
+			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		}
 		// Send no rows, just let the iterator end.
 	}
 
