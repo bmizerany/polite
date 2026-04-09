@@ -176,11 +176,14 @@ func (c *Conn) Status() ReadyStatus {
 	return c.readyStatus
 }
 
-// Flush flushes any buffered writes.
+// Flush flushes any buffered writes. It also resets the ready status to zero
+// so that Status() == 0 reliably indicates "request flushed but ReadyForQuery
+// not yet received". ReadReadyForQuery restores it to the actual status.
 func (c *Conn) Flush() error {
 	if err := c.Err(); err != nil {
 		return err
 	}
+	c.readyStatus = 0
 	return c.c.Flush()
 }
 

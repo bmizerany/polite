@@ -92,8 +92,7 @@ func TestCopyFromNonBinary(t *testing.T) {
 func TestDiscardUntilReadyFatal(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	cn, err := Dial(ctx, testDSN, nil)
+	cn, err := Dial(t.Context(), testDSN, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,52 +100,26 @@ func TestDiscardUntilReadyFatal(t *testing.T) {
 		cn.cn.Close()
 	})
 
-	// Create a table with enough rows to generate many CopyData
-	// messages during COPY TO, giving us a window to terminate.
-	err = cn.Exec(ctx, "CREATE TEMP TABLE big (id INT)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = cn.Exec(ctx, "INSERT INTO big SELECT generate_series(1, 10000)")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Get the backend PID of the connection under test.
-	var pid int64
-	for row, err := range cn.Query(ctx, "SELECT pg_backend_pid()") {
-		if err != nil {
-			t.Fatal(err)
-		}
-		pid, err = row.Column(0).DecodeInt()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Open a second connection to terminate the first.
-	killer := newSession(t)
-
-	// Terminate the backend while discardUntilReady is draining the
-	// COPY TO stream. The large number of rows ensures there is still
-	// data in flight when the terminate arrives.
-	killed := make(chan struct{})
-	go func() {
-		defer close(killed)
-		killer.Exec(ctx, "SELECT pg_terminate_backend($1)", int32(pid))
-	}()
-	// Issue a non-binary COPY TO. The format check rejects it and
-	// maybeRecoverFrom calls discardUntilReady to drain the stream.
-	// The terminate will cause a FATAL error mid-drain.
+	// Unsupported text COPY TO triggers recovery. Recovery then drains
+	// real CopyData, and the same backend kills itself before
+	// ReadyForQuery, so Query must return the fatal error without any
+	// cross-connection timing race.
 	//
 	// Without the IsFatal guard in discardUntilReady, this loops
 	// forever; with the guard it returns the fatal error.
 	var gotErr error
-	for _, err := range cn.Query(ctx, "COPY big TO STDOUT WITH (FORMAT text)") {
+	for _, err := range cn.Query(t.Context(), `
+		COPY (
+			SELECT i
+			FROM generate_series(1, 5) AS series(i)
+			WHERE CASE
+				WHEN i = 3 THEN pg_terminate_backend(pg_backend_pid())
+				ELSE true
+			END
+		) TO STDOUT WITH (FORMAT text)
+	`) {
 		gotErr = err
 	}
-
-	<-killed
 
 	if gotErr == nil {
 		t.Fatal("expected an error from Query")
@@ -157,6 +130,9 @@ func TestDiscardUntilReadyFatal(t *testing.T) {
 	}
 	if !fe.IsFatal() {
 		t.Fatalf("got non-fatal error %v, want fatal", fe)
+	}
+	if err := cn.Exec(t.Context(), "SELECT 1"); !errors.Is(err, gotErr) {
+		t.Fatalf("Exec(SELECT 1) = %v; want error matching %v", err, gotErr)
 	}
 }
 

@@ -431,18 +431,6 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // copy mode, Query yields a [Row] whose [Row.Err] reports [ErrCopyFrom].
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
 	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
-		if ctx.Done() != nil {
-			stop := context.AfterFunc(ctx, c.cancel)
-			defer func() {
-				if stop() {
-					return
-				}
-				// AfterFunc fired — clear the deadline so
-				// maybeRecoverFrom can drain normally.
-				c.cn.SetReadDeadline(time.Time{})
-			}()
-		}
-
 		if c.stickyErr != nil {
 			err := c.stickyErr
 			c.stickyErr = nil
@@ -456,6 +444,37 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 				return
 			}
 		}
+
+		// Install cancel machinery before prepare so that long-running
+		// parse/describe round-trips are also cancellable.
+		//
+		// getStmt and execAndSync call ResetStatus before each flush so
+		// that Status() == 0 reliably indicates "flushed but no
+		// ReadyForQuery received yet". The defer uses this to decide
+		// whether a drain is needed without a separate inFlight flag.
+		//
+		// defer close(cancelDone) inside the goroutine ensures the
+		// channel is closed even if c.cancel() panics.
+		if ctx.Done() != nil {
+			cancelDone := make(chan struct{})
+			stop := context.AfterFunc(ctx, func() {
+				defer close(cancelDone)
+				c.cancel()
+			})
+			defer func() {
+				if stop() {
+					return
+				}
+				// Wait for cancel goroutine before clearing the deadline
+				// it may have set, then drain to ReadyForQuery.
+				// discardUntilReady returns immediately if Status()
+				// is non-zero (ReadyForQuery already received).
+				<-cancelDone
+				c.cn.SetReadDeadline(time.Time{})
+				c.discardUntilReady(context.Background())
+			}()
+		}
+
 		stmt, err := c.prepare(ctx, "", sql, args...)
 		if err != nil {
 			yield(nil, err)
@@ -465,11 +484,18 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 			yield(nil, err)
 			return
 		}
+
 		var processed int
 		for {
 			row, err := c.nextRow(ctx, processed, stmt.out.Fields)
 			if err != nil {
 				if errors.Is(err, ErrDone) {
+					return
+				}
+				if ctx.Err() != nil {
+					// Cancel is in flight; the defer drains after the
+					// cancel goroutine finishes and the deadline is cleared.
+					yield(nil, ctx.Err())
 					return
 				}
 				err = c.maybeRecoverFrom(ctx, err)
@@ -494,6 +520,10 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 					_, err := c.nextRow(ctx, processed, stmt.out.Fields)
 					if err != nil {
 						if errors.Is(err, ErrDone) {
+							return
+						}
+						if ctx.Err() != nil {
+							// Cancel in flight; defer drains.
 							return
 						}
 						err = c.maybeRecoverFrom(ctx, err)
@@ -886,13 +916,9 @@ func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
 		return nil
 	}
 
-	// If the context is canceled, a cancel request is in flight.
-	// Drain to ReadyForQuery so the connection is reusable, then
-	// return the context error as the root cause.
+	// The cancel goroutine is active; return the context error and let
+	// the Query defer drain to ReadyForQuery after clearing the deadline.
 	if ctx.Err() != nil {
-		if err := c.discardUntilReady(ctx); err != nil {
-			return err
-		}
 		return ctx.Err()
 	}
 
@@ -915,6 +941,9 @@ func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
 }
 
 func (c *Conn) discardUntilReady(ctx context.Context) error {
+	if c.fc.Status() != 0 {
+		return nil // ReadyForQuery already received since last flush
+	}
 	if ctx.Done() != nil {
 		ctx = context.WithoutCancel(ctx)
 	}
