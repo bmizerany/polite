@@ -941,20 +941,6 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 	diff.Test(t, t.Errorf, gotFloat, []byte{0x40, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 }
 
-func TestExecSelectTag(t *testing.T) {
-	t.Parallel()
-
-	cn := newSession(t)
-	if err := cn.Exec(t.Context(), "SELECT 1"); err != nil {
-		t.Fatal(err)
-	}
-	want := febe.Tag{
-		Command:      "SELECT",
-		RowsAffected: 1,
-	}
-	diff.Test(t, t.Errorf, cn.LastResult(), want)
-}
-
 func TestExecLimit1(t *testing.T) {
 	t.Parallel()
 
@@ -983,11 +969,6 @@ func TestExec(t *testing.T) {
 	if err := cn.Exec(t.Context(), "INSERT INTO foo VALUES (1)"); err != nil {
 		t.Fatal(err)
 	}
-	want := febe.Tag{
-		Command:      "INSERT",
-		RowsAffected: 1,
-	}
-	diff.Test(t, t.Errorf, cn.LastResult(), want)
 }
 
 func TestExecExtended(t *testing.T) {
@@ -1000,12 +981,6 @@ func TestExecExtended(t *testing.T) {
 	if err := cn.Exec(t.Context(), "INSERT INTO foo_any VALUES ($1, $2, $3)", "hello", []byte("world"), uint32(7)); err != nil {
 		t.Fatal(err)
 	}
-
-	want := febe.Tag{
-		Command:      "INSERT",
-		RowsAffected: 1,
-	}
-	diff.Test(t, t.Errorf, cn.LastResult(), want)
 
 	got := collectRows(t, cn.Query(t.Context(), "SELECT name, payload, n FROM foo_any"))
 	diff.Test(t, t.Errorf, got, [][]string{{"hello", "world", "\x00\x00\x00\x00\x00\x00\x00\a"}})

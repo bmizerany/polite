@@ -18,8 +18,6 @@ func ExampleDial() {
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		return
 	}
-
-	_ = cn.LastResult()
 }
 
 func ExampleConn_Query() {

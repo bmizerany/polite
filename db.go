@@ -21,7 +21,6 @@ var (
 	ErrTLSRefused            = errors.New("polite: TLS refused by backend")
 	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 	ErrCopyFrom              = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
-
 )
 
 type statement struct {
@@ -56,8 +55,6 @@ type Conn struct {
 
 	nstmt int
 	cache map[string]*statement
-
-	tag febe.Tag
 
 	// current row
 	row *Row
@@ -105,9 +102,6 @@ func (c *Conn) Close() (err error) {
 // Exec executes a query that is not intended to return rows, such as an
 // INSERT, UPDATE, or DELETE. It returns only an error.
 //
-// After Exec returns, call [Conn.LastResult] to get the number of rows
-// affected (not the number of rows matched).
-//
 // When a COPY FROM is in progress, calling Exec with an empty sql string sends
 // a single COPY data row encoded from args.
 func (c *Conn) Exec(ctx context.Context, sql string, args ...any) error {
@@ -144,13 +138,6 @@ func (c *Conn) copyFromRow(args ...any) error {
 	}
 	c.copyHeaderWritten = true
 	return nil
-}
-
-// LastResult returns the parsed command tag for the most recent completed
-// command on c. The tag includes the command name, such as SELECT or INSERT,
-// and any row count reported by PostgreSQL.
-func (c *Conn) LastResult() febe.Tag {
-	return c.tag
 }
 
 // Status reports the backend transaction status from the most recent
@@ -613,8 +600,10 @@ func (c Column) DecodeFloat() (float64, error) {
 	}
 }
 
-var pgEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-var pgEpochUnix = pgEpoch.Unix()
+var (
+	pgEpoch     = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	pgEpochUnix = pgEpoch.Unix()
+)
 
 var timeZoneOffsetLayoutsList = []string{
 	"Z07:00:00",
@@ -694,11 +683,10 @@ func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDe
 			// Header-only; no body to discard.
 			continue
 		case 'C':
-			m, err := c.fc.ReadCommandComplete()
+			_, err := c.fc.ReadCommandComplete()
 			if err != nil {
 				return nil, err
 			}
-			c.tag = m.Tag
 		case 'H':
 			// TODO(bmizerany): maybe save NumCols for comparing against 'd' messages?
 			m, err := c.fc.ReadCopyOut()
@@ -832,11 +820,10 @@ func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
 		}
 		switch h.Type() {
 		case 'C':
-			m, err := c.fc.ReadCommandComplete()
+			_, err := c.fc.ReadCommandComplete()
 			if err != nil {
 				return err
 			}
-			c.tag = m.Tag
 		case 'Z':
 			_, err := c.fc.ReadReadyForQuery()
 			return err
