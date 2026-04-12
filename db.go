@@ -62,13 +62,6 @@ type Conn struct {
 	// COPY FROM state
 	inCopyFrom        bool
 	copyHeaderWritten bool
-
-	closed bool
-
-	// stickyErr is set when an error occurs after the iterator yield
-	// returns false (caller broke out of the loop). It is surfaced on
-	// the next operation.
-	stickyErr error
 }
 
 // Close sends a Terminate message, flushes it, and then closes the underlying
@@ -78,13 +71,8 @@ type Conn struct {
 // connection is still closed, and any error from that final Close is only
 // returned when the shutdown path succeeds.
 func (c *Conn) Close() (err error) {
-	if c.closed {
-		return net.ErrClosed
-	}
-
 	c.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
 	defer func() {
-		c.closed = true
 		if cerr := c.cn.Close(); err == nil && cerr != nil {
 			err = cerr
 		}
@@ -93,10 +81,7 @@ func (c *Conn) Close() (err error) {
 	if err = c.fc.WriteTerminate(); err != nil {
 		return err
 	}
-	if err = c.fc.Flush(); err != nil {
-		return err
-	}
-	return nil
+	return c.fc.Flush()
 }
 
 // Exec executes a query that is not intended to return rows, such as an
@@ -410,12 +395,6 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // copy mode, Query yields a [Row] whose [Row.Err] reports [ErrCopyFrom].
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
 	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
-		if c.stickyErr != nil {
-			err := c.stickyErr
-			c.stickyErr = nil
-			yield(nil, err)
-			return
-		}
 		if c.now != nil {
 			if err := c.updateGoTime(ctx); err != nil {
 				yield(nil, err)
@@ -445,7 +424,9 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 			if row != nil && row.err != nil {
 				if !yield(row, nil) {
 					if err := c.finalizeCopyFrom(ctx); err != nil {
-						c.stickyErr = err
+						if _, ok := errors.AsType[*febe.Error](err); !ok {
+							febe.TraceObservedError(ctx, err)
+						}
 					}
 					return
 				}
@@ -464,7 +445,9 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 						}
 						err = c.maybeRecoverFrom(ctx, err)
 						if err != nil {
-							c.stickyErr = err
+							if _, ok := errors.AsType[*febe.Error](err); !ok {
+								febe.TraceObservedError(ctx, err)
+							}
 							return
 						}
 						continue
@@ -837,11 +820,14 @@ func unexpectedMessage(h febe.MessageHeader) error {
 	return fmt.Errorf("polite: unexpected message type: %q", h.Type())
 }
 
-var errsWeCanRecoverFrom = errors.Join(
+var recoverableQueryErrors = errors.Join(
 	ErrUnsupportedCopyFormat,
 	febe.ErrEmptyQuery,
 )
 
+// maybeRecoverFrom drains a query to ReadyForQuery when the error is one of
+// the query errors polite can recover from. It does not decide whether the
+// connection itself is terminal.
 func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
 	if initErr == nil {
 		return nil
@@ -856,7 +842,7 @@ func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
 	// TODO(bmizerany): add "IsRecovering" to trace
 	_, isFE := errors.AsType[*febe.Error](initErr)
 	recoverable := isFE ||
-		errors.Is(errsWeCanRecoverFrom, initErr)
+		errors.Is(recoverableQueryErrors, initErr)
 	if recoverable {
 		if err := c.discardUntilReady(ctx); err != nil {
 			return err

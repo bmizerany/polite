@@ -13,7 +13,7 @@ import (
 func BenchmarkPoolContention(b *testing.B) {
 	p := &Pool{
 		Dial: func(context.Context) (*Conn, error) {
-			return &Conn{closed: true}, nil
+			return newTestConn(), nil
 		},
 		MaxItems:   10,
 		MaxWaiters: 100,

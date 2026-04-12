@@ -17,6 +17,7 @@ const postgresBufferSize = 8 << 10
 // See: https://www.postgresql.org/docs/current/protocol-message-types.html for
 // more information about the postgres message data types.
 type Conn struct {
+	rw *setErrReadWriter
 	r *byteReader
 	w *bufio.Writer
 	n int // number of bytes read
@@ -27,21 +28,14 @@ type Conn struct {
 type setErrReadWriter struct {
 	r io.Reader
 	w io.Writer
-
-	// setErr is called with any error returned by the underlying reader or
-	// writer, and should return the error to be returned by the Read or
-	// Write method.
-	setErr func(error) error
 }
 
 func (rw *setErrReadWriter) Read(p []byte) (int, error) {
-	n, err := rw.r.Read(p)
-	return n, rw.setErr(err)
+	return rw.r.Read(p)
 }
 
 func (rw *setErrReadWriter) Write(p []byte) (int, error) {
-	n, err := rw.w.Write(p)
-	return n, rw.setErr(err)
+	return rw.w.Write(p)
 }
 
 // NewConn returns a Conn ready for use.
@@ -51,12 +45,8 @@ func (rw *setErrReadWriter) Write(p []byte) (int, error) {
 // clients may use a buffer size larger than the default by passing
 // bufio.Reader and bufio.Writer.
 func NewConn(r io.Reader, w io.Writer) *Conn {
-	cn := &Conn{}
-	rw := &setErrReadWriter{
-		r:      r,
-		w:      w,
-		setErr: cn.setErr,
-	}
+	rw := &setErrReadWriter{r: r, w: w}
+	cn := &Conn{rw: rw}
 	cn.r = &byteReader{r: rw}
 	cn.w = bufio.NewWriterSize(rw, postgresBufferSize)
 	return cn
@@ -65,15 +55,25 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 func (c *Conn) N() int  { return c.n }
 func (c *Conn) ResetN() { c.n = 0 }
 
+func isTimeout(err error) bool {
+	type timeout interface {
+		Timeout() bool
+	}
+	t, ok := err.(timeout)
+	return ok && t.Timeout()
+}
+
 func (c *Conn) setErr(err error) error {
-	if err == nil || errors.Is(err, io.EOF) {
-		// Ignore nil and EOF errors, since EOF is expected when the
-		// connection is closed, and nil is not an error.
+	if err == nil {
+		return nil
+	}
+	if c.err != nil {
+		return c.err
+	}
+	if isTimeout(err) {
 		return err
 	}
-	if c.err == nil {
-		c.err = err
-	}
+	c.err = err
 	return c.err
 }
 
@@ -83,6 +83,9 @@ func (c *Conn) Err() error {
 	}
 	_, err := c.w.Write(nil)
 	if err != nil {
+		if isTimeout(err) {
+			c.w.Reset(c.rw)
+		}
 		return c.setErr(err)
 	}
 	return nil
@@ -94,8 +97,14 @@ func (c *Conn) peek(n int) ([]byte, error) {
 	}
 	w := c.r.window()
 	for len(w) < n {
-		if c.r.extend() == 0 {
-			return nil, c.setErr(io.ErrUnexpectedEOF)
+		_, err := c.r.extend()
+		if err != nil {
+			if errors.Is(err, io.EOF) && len(c.r.window()) < n {
+				return nil, c.setErr(io.ErrUnexpectedEOF)
+			}
+			if len(c.r.window()) < n {
+				return nil, c.setErr(err)
+			}
 		}
 		w = c.r.window()
 	}
@@ -218,10 +227,16 @@ func (c *Conn) ReadString() ([]byte, error) {
 			c.releaseAndCount(i + 1)
 			return w[:i], nil
 		}
-		if c.r.extend() == 0 {
-			return nil, c.setErr(io.ErrUnexpectedEOF)
+		_, err := c.r.extend()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, c.setErr(io.ErrUnexpectedEOF)
+			}
 		}
 		w = c.r.window()
+		if err != nil && bytes.IndexByte(w, 0) < 0 {
+			return nil, c.setErr(err)
+		}
 	}
 }
 
@@ -237,8 +252,12 @@ func (c *Conn) Discard(n int) error {
 		if n <= 0 {
 			return nil
 		}
-		if c.r.extend() == 0 {
-			return c.setErr(io.ErrUnexpectedEOF)
+		_, err := c.r.extend()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return c.setErr(io.ErrUnexpectedEOF)
+			}
+			return c.setErr(err)
 		}
 		w = c.r.window()
 	}
@@ -249,5 +268,9 @@ func (c *Conn) Flush() error {
 	if c.err != nil {
 		return c.err
 	}
-	return c.setErr(c.w.Flush())
+	err := c.w.Flush()
+	if err != nil && isTimeout(err) {
+		c.w.Reset(c.rw)
+	}
+	return c.setErr(err)
 }

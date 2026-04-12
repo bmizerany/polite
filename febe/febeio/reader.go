@@ -8,7 +8,6 @@ type byteReader struct {
 	data   []byte
 	offset int
 	r      io.Reader
-	err    error
 }
 
 // release discards n bytes from the front of the window.
@@ -29,11 +28,7 @@ const (
 )
 
 // extend extends the window with data from the underlying reader.
-func (b *byteReader) extend() int {
-	if b.err != nil {
-		return 0
-	}
-
+func (b *byteReader) extend() (int, error) {
 	remaining := len(b.data) - b.offset
 	if remaining == 0 {
 		b.data = b.data[:0]
@@ -52,8 +47,7 @@ func (b *byteReader) extend() int {
 	n, err := b.r.Read(b.data[remaining:cap(b.data)])
 	// reduce length to the existing plus the data we read.
 	b.data = b.data[:remaining+n]
-	b.err = err
-	return n
+	return n, err
 }
 
 // grow grows the buffer, moving the active data to the front.

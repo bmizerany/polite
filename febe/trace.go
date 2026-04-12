@@ -33,6 +33,10 @@ type Trace struct {
 
 	// ReceivedParameterStatus is called for each ParameterStatus response.
 	ReceivedParameterStatus func(context.Context, Parameter)
+
+	// ObservedError is called for non-message errors observed while
+	// processing protocol traffic.
+	ObservedError func(context.Context, error)
 }
 
 type traceContextKey struct{}
@@ -55,4 +59,14 @@ var emptyTrace = &Trace{}
 func traceFromContext(ctx context.Context) *Trace {
 	trace, _ := ctx.Value(traceKey).(*Trace)
 	return cmp.Or(trace, emptyTrace)
+}
+
+// TraceObservedError reports err to the trace attached to ctx, if any.
+func TraceObservedError(ctx context.Context, err error) {
+	if err == nil {
+		return
+	}
+	if trace := traceFromContext(ctx); trace.ObservedError != nil {
+		trace.ObservedError(ctx, err)
+	}
 }

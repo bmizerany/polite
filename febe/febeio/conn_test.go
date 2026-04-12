@@ -153,24 +153,64 @@ func TestN(t *testing.T) {
 	checkN(0)
 }
 
-func TestErrStickyAfterTruncatedRead(t *testing.T) {
-	cn := NewConn(strings.NewReader("\x00"), io.Discard)
+type readErrThenData struct {
+	err   error
+	data  []byte
+	read  bool
+}
+
+func (r *readErrThenData) Read(p []byte) (int, error) {
+	if !r.read {
+		r.read = true
+		return 0, r.err
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	if len(r.data) == 0 {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "timeout" }
+func (timeoutError) Timeout() bool   { return true }
+
+func TestTimeoutReadNotSticky(t *testing.T) {
+	r := &readErrThenData{
+		err:  timeoutError{},
+		data: []byte{0, 0, 0, 7},
+	}
+	cn := NewConn(r, io.Discard)
 
 	_, err := cn.ReadInt32()
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("ReadInt32() = %v; want %v", err, io.ErrUnexpectedEOF)
+	if _, ok := err.(timeoutError); !ok {
+		t.Fatalf("ReadInt32() = %v; want timeout", err)
 	}
-	err = cn.Err()
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("Err() = %v; want %v", err, io.ErrUnexpectedEOF)
+	got, err := cn.ReadInt32()
+	if err != nil {
+		t.Fatalf("second ReadInt32() = %v; want nil", err)
 	}
-	err = cn.Flush()
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("Flush() = %v; want %v", err, io.ErrUnexpectedEOF)
+	if got != 7 {
+		t.Fatalf("second ReadInt32() = %d; want 7", got)
 	}
-	_, err = cn.ReadByte()
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("ReadByte() = %v; want %v", err, io.ErrUnexpectedEOF)
+}
+
+func TestReadErrorSticky(t *testing.T) {
+	r := &readErrThenData{
+		err:  errTest,
+		data: []byte{0, 0, 0, 7},
+	}
+	cn := NewConn(r, io.Discard)
+
+	_, err := cn.ReadInt32()
+	if !errors.Is(err, errTest) {
+		t.Fatalf("ReadInt32() = %v; want %v", err, errTest)
+	}
+	_, err = cn.ReadInt32()
+	if !errors.Is(err, errTest) {
+		t.Fatalf("second ReadInt32() = %v; want %v", err, errTest)
 	}
 }
 
@@ -180,8 +220,45 @@ func (errWriter) Write([]byte) (int, error) {
 	return 0, errTest
 }
 
-func TestErrStickyAfterWriteError(t *testing.T) {
-	cn := NewConn(strings.NewReader(""), errWriter{})
+type writeErrThenData struct {
+	err  error
+	seen bool
+	buf  bytes.Buffer
+}
+
+func (w *writeErrThenData) Write(p []byte) (int, error) {
+	if !w.seen {
+		w.seen = true
+		return 0, w.err
+	}
+	return w.buf.Write(p)
+}
+
+func TestTimeoutWriteNotSticky(t *testing.T) {
+	w := &writeErrThenData{err: timeoutError{}}
+	cn := NewConn(strings.NewReader(""), w)
+
+	if err := cn.WriteByte('x'); err != nil {
+		t.Fatalf("WriteByte() = %v; want nil", err)
+	}
+	err := cn.Flush()
+	if _, ok := err.(timeoutError); !ok {
+		t.Fatalf("Flush() = %v; want timeout", err)
+	}
+	if err := cn.WriteByte('y'); err != nil {
+		t.Fatalf("second WriteByte() = %v; want nil", err)
+	}
+	if err := cn.Flush(); err != nil {
+		t.Fatalf("second Flush() = %v; want nil", err)
+	}
+	if got := w.buf.String(); got != "y" {
+		t.Fatalf("written = %q; want %q", got, "y")
+	}
+}
+
+func TestWriteErrorSticky(t *testing.T) {
+	w := &writeErrThenData{err: errTest}
+	cn := NewConn(strings.NewReader(""), w)
 
 	if err := cn.WriteByte('x'); err != nil {
 		t.Fatalf("WriteByte() = %v; want nil", err)
@@ -189,11 +266,30 @@ func TestErrStickyAfterWriteError(t *testing.T) {
 	if err := cn.Flush(); !errors.Is(err, errTest) {
 		t.Fatalf("Flush() = %v; want %v", err, errTest)
 	}
-	if err := cn.Err(); !errors.Is(err, errTest) {
-		t.Fatalf("Err() = %v; want %v", err, errTest)
+	if err := cn.WriteByte('y'); !errors.Is(err, errTest) {
+		t.Fatalf("second WriteByte() = %v; want %v", err, errTest)
 	}
 	if err := cn.Flush(); !errors.Is(err, errTest) {
 		t.Fatalf("second Flush() = %v; want %v", err, errTest)
+	}
+}
+
+func TestTruncatedReadSticky(t *testing.T) {
+	cn := NewConn(strings.NewReader("\x00"), io.Discard)
+
+	_, err := cn.ReadInt32()
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("ReadInt32() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+	if err := cn.Err(); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("Err() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+	if err := cn.Flush(); !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("Flush() = %v; want %v", err, io.ErrUnexpectedEOF)
+	}
+	_, err = cn.ReadByte()
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("ReadByte() = %v; want %v", err, io.ErrUnexpectedEOF)
 	}
 }
 

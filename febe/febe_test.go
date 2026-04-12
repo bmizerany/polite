@@ -72,39 +72,6 @@ func TestReadHeaderEmpty(t *testing.T) {
 	diff.Test(t, t.Errorf, gotErr, io.ErrUnexpectedEOF)
 }
 
-func TestReadHeaderStickyTerminalError(t *testing.T) {
-	var b bytes.Buffer
-	cn := New(&b, &b)
-	cn.c.WriteByte('N')
-	cn.c.WriteInt32(4)
-	cn.c.Flush()
-
-	ctx := context.Background()
-	_, err := cn.ReadHeader(ctx)
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("ReadHeader() = %v; want %v", err, io.ErrUnexpectedEOF)
-	}
-	if !errors.Is(cn.Err(), io.ErrUnexpectedEOF) {
-		t.Fatalf("Err() = %v; want %v", cn.Err(), io.ErrUnexpectedEOF)
-	}
-
-	// Replace the buffer with a valid message so the next ReadHeader has
-	// real data available; if it still returns the sticky error, we know the
-	// error is coming from the latched state, not from an empty buffer.
-	b.Reset()
-	b.WriteByte('Z')
-	b.Write([]byte{0, 0, 0, 5})
-	b.WriteByte('I')
-
-	_, err = cn.ReadHeader(ctx)
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("second ReadHeader() = %v; want %v", err, io.ErrUnexpectedEOF)
-	}
-	if got := b.Len(); got != 6 {
-		t.Fatalf("buffer len after sticky read = %d; want 6", got)
-	}
-}
-
 func TestReadHeaderDiscard(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
@@ -146,108 +113,11 @@ func TestReadHeaderDiscard(t *testing.T) {
 	}
 }
 
-func TestTerminatedSticky(t *testing.T) {
-	var b bytes.Buffer
-	cn := New(&b, &b)
-	cn.c.WriteByte('X')
-	cn.c.WriteInt32(4)
-	cn.c.Flush()
-
-	_, err := cn.ReadHeader(context.Background())
-	if !errors.Is(err, ErrTerminated) {
-		t.Fatalf("ReadHeader() = %v; want %v", err, ErrTerminated)
-	}
-	_, err = cn.ReadHeader(context.Background())
-	if !errors.Is(err, ErrTerminated) {
-		t.Fatalf("ReadHeader() = %v; want %v", err, ErrTerminated)
-	}
-	err = cn.Flush()
-	if !errors.Is(err, ErrTerminated) {
-		t.Fatalf("Flush() = %v; want %v", err, ErrTerminated)
-	}
-	err = cn.WriteSync()
-	if !errors.Is(err, ErrTerminated) {
-		t.Fatalf("WriteSync() = %v; want %v", err, ErrTerminated)
-	}
-	err = cn.Err()
-	if !errors.Is(err, ErrTerminated) {
-		t.Fatalf("Err() = %v; want %v", err, ErrTerminated)
-	}
-}
-
-func TestFatalErrorSticky(t *testing.T) {
-	var b bytes.Buffer
-	cn := New(&b, &b)
-	cn.WriteNotice('E', &Notice{
-		Severity:  "FATAL",
-		Code:      "25P03",
-		Message:   "terminating connection due to idle-in-transaction timeout",
-		Verbosity: "FATAL",
-	})
-	cn.Flush()
-
-	ctx := context.Background()
-
-	// First ReadHeader should return the FATAL *Error.
-	_, err := cn.ReadHeader(ctx)
-	var fe *Error
-	if !errors.As(err, &fe) {
-		t.Fatalf("ReadHeader() = %v; want *febe.Error", err)
-	}
-	if fe.Code != "25P03" {
-		t.Fatalf("error code = %q; want 25P03", fe.Code)
-	}
-	if !fe.IsFatal() {
-		t.Fatalf("IsFatal() = false; want true")
-	}
-
-	// Subsequent ReadHeader calls should return the same sticky error.
-	_, err = cn.ReadHeader(ctx)
-	if !errors.As(err, &fe) || fe.Code != "25P03" {
-		t.Fatalf("second ReadHeader() = %v; want sticky FATAL *febe.Error with code 25P03", err)
-	}
-
-	// Flush and WriteSync should also return the sticky error.
-	if err := cn.Flush(); !errors.As(err, &fe) || fe.Code != "25P03" {
-		t.Fatalf("Flush() = %v; want sticky FATAL error", err)
-	}
-	if err := cn.WriteSync(); !errors.As(err, &fe) || fe.Code != "25P03" {
-		t.Fatalf("WriteSync() = %v; want sticky FATAL error", err)
-	}
-}
-
-func TestPanicErrorSticky(t *testing.T) {
-	var b bytes.Buffer
-	cn := New(&b, &b)
-	cn.WriteNotice('E', &Notice{
-		Severity:  "PANIC",
-		Code:      "XX000",
-		Message:   "could not write to file",
-		Verbosity: "PANIC",
-	})
-	cn.Flush()
-
-	ctx := context.Background()
-	_, err := cn.ReadHeader(ctx)
-	var fe *Error
-	if !errors.As(err, &fe) {
-		t.Fatalf("ReadHeader() = %v; want *febe.Error", err)
-	}
-	if !fe.IsFatal() {
-		t.Fatalf("IsFatal() = false; want true for PANIC")
-	}
-
-	// Should be sticky
-	_, err = cn.ReadHeader(ctx)
-	if !errors.As(err, &fe) {
-		t.Fatalf("second ReadHeader() = %v; want sticky PANIC *febe.Error", err)
-	}
-}
-
 func TestErrorSeverityNotSticky(t *testing.T) {
-	// ERROR severity should NOT be latched — the connection remains usable.
+	// ERROR severity should not poison the connection.
 	var b bytes.Buffer
 	cn := New(&b, &b)
+	cn.readyStatus = ReadyStatusBusy
 	cn.WriteNotice('E', &Notice{
 		Severity:  "ERROR",
 		Code:      "42601",
@@ -275,6 +145,9 @@ func TestErrorSeverityNotSticky(t *testing.T) {
 	if fe.IsFatal() {
 		t.Fatalf("IsFatal() = true; want false for ERROR severity")
 	}
+	if got := cn.Status(); got != ReadyStatusBusy {
+		t.Fatalf("status after ERROR = %q; want busy", got)
+	}
 
 	// Connection should NOT be sticky — next ReadHeader should succeed (returns 'Z').
 	h, err := cn.ReadHeader(ctx)
@@ -285,6 +158,97 @@ func TestErrorSeverityNotSticky(t *testing.T) {
 		t.Fatalf("h.Type() = %c; want Z", h.Type())
 	}
 }
+
+type timeoutError struct{}
+
+func (timeoutError) Error() string { return "timeout" }
+func (timeoutError) Timeout() bool { return true }
+
+type timeoutThenDataReader struct {
+	err  error
+	data *bytes.Reader
+	done bool
+}
+
+func (r *timeoutThenDataReader) Read(p []byte) (int, error) {
+	if !r.done {
+		r.done = true
+		return 0, r.err
+	}
+	return r.data.Read(p)
+}
+
+func TestTimeoutDoesNotPoisonConnection(t *testing.T) {
+	// Provide a valid ReadyForQuery message after the timeout so the
+	// connection can be used again on the next call.
+	data := bytes.NewReader([]byte{
+		'Z', 0, 0, 0, 5, 'I',
+	})
+	cn := New(&timeoutThenDataReader{
+		err:  timeoutError{},
+		data: data,
+	}, io.Discard)
+	cn.readyStatus = ReadyStatusBusy
+
+	ctx := context.Background()
+	_, err := cn.ReadHeader(ctx)
+	if _, ok := err.(timeoutError); !ok {
+		t.Fatalf("ReadHeader() = %v; want timeout", err)
+	}
+	if got := cn.Status(); got != ReadyStatusBusy {
+		t.Fatalf("status after timeout = %q; want busy", got)
+	}
+
+	h, err := cn.ReadHeader(ctx)
+	if err != nil {
+		t.Fatalf("second ReadHeader() = %v; want nil", err)
+	}
+	if h.Type() != 'Z' {
+		t.Fatalf("h.Type() = %c; want Z", h.Type())
+	}
+}
+
+func testFatalErrorSticky(t *testing.T, severity string) {
+	t.Helper()
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	cn.readyStatus = ReadyStatusBusy
+	cn.WriteNotice('E', &Notice{
+		Severity:  severity,
+		Code:      "25P03",
+		Message:   "terminating connection",
+		Verbosity: severity,
+	})
+	cn.Flush()
+
+	ctx := context.Background()
+	_, err := cn.ReadHeader(ctx)
+	var fe *Error
+	if !errors.As(err, &fe) {
+		t.Fatalf("ReadHeader() = %v; want *febe.Error", err)
+	}
+	if !fe.IsFatal() {
+		t.Fatalf("IsFatal() = false; want true for %s", severity)
+	}
+	if got := cn.Status(); got != 0 {
+		t.Fatalf("status after %s = %q; want zero", severity, got)
+	}
+
+	_, err = cn.ReadHeader(ctx)
+	if !errors.As(err, &fe) || !fe.IsFatal() {
+		t.Fatalf("second ReadHeader() = %v; want sticky fatal *febe.Error", err)
+	}
+	if err := cn.Flush(); !errors.As(err, &fe) || !fe.IsFatal() {
+		t.Fatalf("Flush() = %v; want sticky fatal error", err)
+	}
+	if err := cn.WriteSync(); !errors.As(err, &fe) || !fe.IsFatal() {
+		t.Fatalf("WriteSync() = %v; want sticky fatal error", err)
+	}
+}
+
+func TestFatalErrorSticky(t *testing.T) { testFatalErrorSticky(t, "FATAL") }
+
+func TestPanicErrorSticky(t *testing.T) { testFatalErrorSticky(t, "PANIC") }
 
 func TestNoticeResponse(t *testing.T) {
 	var b bytes.Buffer
@@ -321,7 +285,8 @@ func TestNotificationResponseTrace(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
 	cn.WriteNotification(1234, "hello", "world")
-	cn.WriteTerminate()
+	cn.c.WriteByte('X')
+	cn.c.WriteInt32(4)
 	cn.Flush()
 
 	var got *Notification
@@ -379,8 +344,14 @@ func TestWriteTerminate(t *testing.T) {
 	if err := cn.WriteTerminate(); err != nil {
 		t.Fatal(err)
 	}
-	if err := cn.Err(); err != nil {
-		t.Fatal(err)
+	if err := cn.WriteTerminate(); !errors.Is(err, ErrTerminated) {
+		t.Fatalf("second WriteTerminate() = %v; want %v", err, ErrTerminated)
+	}
+	if err := cn.Err(); !errors.Is(err, ErrTerminated) {
+		t.Fatalf("Err() = %v; want %v", err, ErrTerminated)
+	}
+	if got := b.Len(); got != 0 {
+		t.Fatalf("buffer len before flush = %d; want 0", got)
 	}
 	if err := cn.Flush(); err != nil {
 		t.Fatal(err)
@@ -390,6 +361,10 @@ func TestWriteTerminate(t *testing.T) {
 		'X',
 		// length of message
 		0, 0, 0, 4,
+	}
+	diff.Test(t, t.Errorf, b.Bytes(), want)
+	if err := cn.Flush(); !errors.Is(err, ErrTerminated) {
+		t.Fatalf("second Flush() = %v; want %v", err, ErrTerminated)
 	}
 	diff.Test(t, t.Errorf, b.Bytes(), want)
 }

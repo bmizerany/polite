@@ -120,7 +120,8 @@ type Conn struct {
 
 	parameterStatusHook func(Parameter)
 
-	err error
+	terminatePending bool
+	err              error
 }
 
 // New returns a Conn that reads from r and writes to w.
@@ -135,11 +136,59 @@ func (c *Conn) SetParameterStatusHook(fn func(Parameter)) {
 	c.parameterStatusHook = fn
 }
 
+func isTimeout(err error) bool {
+	type timeout interface {
+		Timeout() bool
+	}
+	t, ok := err.(timeout)
+	return ok && t.Timeout()
+}
+
+func shouldTraceObservedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrEmptyQuery) || errors.Is(err, ErrTerminated) {
+		return false
+	}
+	var fe *Error
+	return !errors.As(err, &fe)
+}
+
 func (c *Conn) setErr(err error) error {
-	if err != nil && c.err == nil {
+	if err == nil {
+		return nil
+	}
+	if c.err != nil {
+		return c.err
+	}
+	if isTimeout(err) {
+		return err
+	}
+	var fe *Error
+	switch {
+	case errors.Is(err, ErrTerminated):
+		c.err = ErrTerminated
+	case errors.As(err, &fe):
+		if fe.IsFatal() {
+			c.err = err
+		} else {
+			return err
+		}
+	default:
 		c.err = err
 	}
+	if c.err != nil {
+		c.readyStatus = 0
+	}
 	return c.err
+}
+
+func (c *Conn) handleErr(ctx context.Context, err error) error {
+	if shouldTraceObservedError(err) {
+		TraceObservedError(ctx, err)
+	}
+	return c.setErr(err)
 }
 
 func (c *Conn) checkMessageHeader(want ...byte) error {
@@ -154,7 +203,7 @@ func (c *Conn) Err() error {
 	if c.err != nil {
 		return c.err
 	}
-	return c.c.Err()
+	return c.setErr(c.c.Err())
 }
 
 // Status reports the backend status from the most recent ReadyForQuery
@@ -165,10 +214,14 @@ func (c *Conn) Status() ReadyStatus {
 
 // Flush flushes any buffered writes.
 func (c *Conn) Flush() error {
-	if err := c.Err(); err != nil {
-		return err
+	if c.terminatePending {
+		c.terminatePending = false
+		return c.c.Flush()
 	}
-	return c.c.Flush()
+	if c.err != nil {
+		return c.err
+	}
+	return c.setErr(c.c.Flush())
 }
 
 // Message is implemented by decoded backend messages that expose their header.
@@ -213,8 +266,11 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	var zero MessageHeader
 	t := traceFromContext(ctx)
 	for {
-		if err := c.Err(); err != nil {
-			return zero, err
+		if c.err != nil {
+			return zero, c.err
+		}
+		if err := c.c.Err(); err != nil && !isTimeout(err) {
+			return zero, c.setErr(err)
 		}
 
 		// TODO(bmizerany): We need to thread ctx through to the
@@ -225,10 +281,10 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		}
 
 		if err := c.discardRemainingMessageBytes(); err != nil {
-			return zero, err
+			return zero, c.handleErr(ctx, err)
 		}
 		if err := c.readAndSetCurrentHeader(); err != nil {
-			return zero, err
+			return zero, c.handleErr(ctx, err)
 		}
 		if t.ReceivedHeader != nil {
 			t.ReceivedHeader(ctx, c.h)
@@ -237,7 +293,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		case 'N':
 			m, err := c.readNoticeResponse()
 			if err != nil {
-				return zero, err
+				return zero, c.handleErr(ctx, err)
 			}
 			if t.ReceivedNotice != nil {
 				t.ReceivedNotice(ctx, m.Notice)
@@ -246,29 +302,29 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		case 'E':
 			m, err := c.readNoticeResponse()
 			if err != nil {
-				return zero, err
+				return zero, c.handleErr(ctx, err)
 			}
 			e := m.AsError()
-			if e.IsFatal() {
-				c.setErr(e)
-			}
 			if t.ReceivedError != nil {
 				t.ReceivedError(ctx, e)
+			}
+			if e.IsFatal() {
+				return zero, c.setErr(e)
 			}
 			return zero, e
 		case 'f': // CopyFail
 			e, err := c.readCopyFailResponse()
 			if err != nil {
-				return zero, err
+				return zero, c.handleErr(ctx, err)
 			}
 			if t.ReceivedError != nil {
 				t.ReceivedError(ctx, e)
 			}
-			return zero, e
+			return zero, c.setErr(e)
 		case 'S':
 			s, err := c.readParameterStatus()
 			if err != nil {
-				return zero, err
+				return zero, c.handleErr(ctx, err)
 			}
 			if c.parameterStatusHook != nil {
 				c.parameterStatusHook(Parameter{
@@ -286,7 +342,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		case 'A':
 			m, err := c.readNotification()
 			if err != nil {
-				return zero, err
+				return zero, c.handleErr(ctx, err)
 			}
 			if t.ReceivedNotification != nil {
 				t.ReceivedNotification(ctx, &m)
@@ -364,9 +420,18 @@ func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 
 // WriteTerminate writes a frontend Terminate message.
 func (c *Conn) WriteTerminate() error {
+	if c.err != nil {
+		return c.err
+	}
+	if err := c.c.Err(); err != nil && !isTimeout(err) {
+		return c.setErr(err)
+	}
 	c.c.WriteByte('X')
 	c.c.WriteInt32(4)
-	return c.Err()
+	c.terminatePending = true
+	c.err = ErrTerminated
+	c.readyStatus = 0
+	return nil
 }
 
 // AuthenticationType identifies the authentication request in an

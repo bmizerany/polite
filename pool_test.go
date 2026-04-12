@@ -3,6 +3,7 @@ package polite
 import (
 	"context"
 	"errors"
+	"io"
 	"math/rand/v2"
 	"net"
 	"runtime"
@@ -14,8 +15,28 @@ import (
 	"time"
 
 	"blake.io/polite/dsn"
+	"blake.io/polite/febe"
 	"blake.io/polite/internal/testutil"
 )
+
+type noopConn struct{}
+
+func (noopConn) Read([]byte) (int, error)         { return 0, io.EOF }
+func (noopConn) Write(p []byte) (int, error)      { return len(p), nil }
+func (noopConn) Close() error                     { return nil }
+func (noopConn) LocalAddr() net.Addr              { return dummyAddr("local") }
+func (noopConn) RemoteAddr() net.Addr             { return dummyAddr("remote") }
+func (noopConn) SetDeadline(time.Time) error      { return nil }
+func (noopConn) SetReadDeadline(time.Time) error  { return nil }
+func (noopConn) SetWriteDeadline(time.Time) error { return nil }
+
+func newTestConn() *Conn {
+	raw := noopConn{}
+	return &Conn{
+		cn: raw,
+		fc: febe.New(raw, raw),
+	}
+}
 
 func newTestPool(t *testing.T) *Pool {
 	p := &Pool{
@@ -128,8 +149,8 @@ func TestPoolPutClosedPool(t *testing.T) {
 		t.Fatalf("expected connection alive after pool close, got %v", err)
 	}
 	p.Put(cn)
-	if err := cn.Close(); !errors.Is(err, net.ErrClosed) {
-		t.Fatal("expected connection to be closed")
+	if err := cn.Close(); !errors.Is(err, febe.ErrTerminated) {
+		t.Fatalf("Close() = %v; want %v", err, febe.ErrTerminated)
 	}
 }
 
@@ -173,7 +194,7 @@ func TestPoolGetAllocations(t *testing.T) {
 
 	p := &Pool{
 		Dial: func(context.Context) (*Conn, error) {
-			return &Conn{closed: true}, nil
+			return newTestConn(), nil
 		},
 	}
 	defer p.Close()
@@ -193,7 +214,7 @@ func TestPoolGetAllocations(t *testing.T) {
 func BenchmarkPoolGetPut(b *testing.B) {
 	b.ReportAllocs()
 
-	closedConn := &Conn{closed: true}
+	closedConn := newTestConn()
 
 	p := &Pool{
 		Dial: func(context.Context) (*Conn, error) {
@@ -219,7 +240,7 @@ func BenchmarkPoolStartNewConn(b *testing.B) {
 
 	p := &Pool{
 		Dial: func(context.Context) (*Conn, error) {
-			return &Conn{closed: true}, nil
+			return newTestConn(), nil
 		},
 
 		MaxItems:   1<<63 - 1,

@@ -91,6 +91,9 @@ func newSessionDB(t testing.TB) *Conn {
 	}
 	t.Cleanup(func() {
 		if err := cn.Close(); err != nil {
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, febe.ErrTerminated) {
+				return
+			}
 			t.Fatal(err)
 		}
 	})
@@ -110,7 +113,7 @@ func newSession(t testing.TB) *Conn {
 	}
 	t.Cleanup(func() {
 		if err := cn.Close(); err != nil {
-			if errors.Is(err, net.ErrClosed) {
+			if errors.Is(err, net.ErrClosed) || errors.Is(err, febe.ErrTerminated) {
 				return
 			}
 			t.Fatal(err)
@@ -233,13 +236,13 @@ func TestConnClose(t *testing.T) {
 	if err := cn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := cn.Close(); !errors.Is(err, net.ErrClosed) {
-		t.Fatalf("Close() = %v; want %v", err, ErrPoolClosed)
+	if err := cn.Close(); !errors.Is(err, febe.ErrTerminated) {
+		t.Fatalf("Close() = %v; want %v", err, febe.ErrTerminated)
 	}
 
 	// Ensure we can't use the connection after closing.
-	if err := cn.Exec(t.Context(), "SELECT 1"); !errors.Is(err, net.ErrClosed) {
-		t.Fatalf("query(SELECT 1) = %v; want %v", err, ErrPoolClosed)
+	if err := cn.Exec(t.Context(), "SELECT 1"); !errors.Is(err, febe.ErrTerminated) {
+		t.Fatalf("query(SELECT 1) = %v; want %v", err, febe.ErrTerminated)
 	}
 }
 
@@ -617,6 +620,56 @@ func TestQueryBreakInAll(t *testing.T) {
 		{"\x00\x00\x00\x01"},
 	}
 	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestQueryBreakCleanupErrorIsTraced(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cn, err := Dial(ctx, testDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = cn.cn.Close()
+	})
+
+	startCleanup := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		<-startCleanup
+		_ = cn.cn.Close()
+		close(done)
+	}()
+
+	var observed error
+	traceCtx := febe.WithTrace(ctx, &febe.Trace{
+		ObservedError: func(ctx context.Context, err error) {
+			observed = err
+		},
+	})
+
+	for row, err := range cn.Query(traceCtx, "SELECT * FROM generate_series(1, 100000)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = row
+		close(startCleanup)
+		break
+	}
+	<-done
+
+	if observed == nil {
+		t.Fatal("expected ObservedError during cleanup")
+	}
+	var fe *febe.Error
+	if errors.As(observed, &fe) {
+		t.Fatalf("ObservedError = %T; want non-message cleanup error", observed)
+	}
+
+	if err := cn.Exec(ctx, "SELECT 1"); err == nil {
+		t.Fatal("expected Exec after cleanup failure to fail")
+	}
 }
 
 func TestQueryEmptyQueryResponse(t *testing.T) {
