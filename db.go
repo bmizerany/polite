@@ -67,21 +67,31 @@ type Conn struct {
 // Close sends a Terminate message, flushes it, and then closes the underlying
 // connection.
 //
-// If WriteTerminate or Flush fails, that error is returned. The underlying
-// connection is still closed, and any error from that final Close is only
-// returned when the shutdown path succeeds.
+// If shutdown encounters an error other than [febe.ErrTerminated] or
+// [net.ErrClosed], that error is returned. The underlying connection is still
+// closed, and any error from that final Close is only returned when the
+// shutdown path succeeds.
 func (c *Conn) Close() (err error) {
 	c.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
 	defer func() {
-		if cerr := c.cn.Close(); err == nil && cerr != nil {
+		if errors.Is(err, febe.ErrTerminated) || errors.Is(err, net.ErrClosed) {
+			err = nil
+		}
+		if cerr := c.cn.Close(); err == nil && cerr != nil && !errors.Is(cerr, net.ErrClosed) {
 			err = cerr
 		}
 	}()
 
 	if err = c.fc.WriteTerminate(); err != nil {
+		if errors.Is(err, febe.ErrTerminated) || errors.Is(err, net.ErrClosed) {
+			return nil
+		}
 		return err
 	}
-	return c.fc.Flush()
+	if err = c.fc.Flush(); errors.Is(err, febe.ErrTerminated) || errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
 }
 
 // Exec executes a query that is not intended to return rows, such as an

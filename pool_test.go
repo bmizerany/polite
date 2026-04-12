@@ -149,8 +149,8 @@ func TestPoolPutClosedPool(t *testing.T) {
 		t.Fatalf("expected connection alive after pool close, got %v", err)
 	}
 	p.Put(cn)
-	if err := cn.Close(); !errors.Is(err, febe.ErrTerminated) {
-		t.Fatalf("Close() = %v; want %v", err, febe.ErrTerminated)
+	if err := cn.Close(); err != nil {
+		t.Fatalf("Close() = %v; want nil", err)
 	}
 }
 

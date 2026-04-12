@@ -236,8 +236,8 @@ func TestConnClose(t *testing.T) {
 	if err := cn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := cn.Close(); !errors.Is(err, febe.ErrTerminated) {
-		t.Fatalf("Close() = %v; want %v", err, febe.ErrTerminated)
+	if err := cn.Close(); err != nil {
+		t.Fatalf("second Close() = %v; want nil", err)
 	}
 
 	// Ensure we can't use the connection after closing.
@@ -283,6 +283,25 @@ func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 	err := cn.Close()
 	if !errors.Is(err, flushErr) {
 		t.Fatalf("Close() = %v; want %v", err, flushErr)
+	}
+	if !raw.closed {
+		t.Fatal("underlying connection was not closed")
+	}
+}
+
+func TestConnCloseIgnoresNetErrClosed(t *testing.T) {
+	t.Parallel()
+
+	raw := &closeFailConn{
+		writeErr: net.ErrClosed,
+	}
+	cn := &Conn{
+		cn: raw,
+		fc: febe.New(raw, raw),
+	}
+
+	if err := cn.Close(); err != nil {
+		t.Fatalf("Close() = %v; want nil", err)
 	}
 	if !raw.closed {
 		t.Fatal("underlying connection was not closed")
