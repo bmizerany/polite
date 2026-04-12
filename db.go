@@ -69,27 +69,17 @@ type Conn struct {
 //
 // If shutdown encounters an error other than [febe.ErrTerminated] or
 // [net.ErrClosed], that error is returned. The underlying connection is still
-// closed, and any error from that final Close is only returned when the
-// shutdown path succeeds.
-func (c *Conn) Close() (err error) {
+// closed.
+func (c *Conn) Close() error {
 	c.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
-	defer func() {
-		if errors.Is(err, febe.ErrTerminated) || errors.Is(err, net.ErrClosed) {
-			err = nil
-		}
-		if cerr := c.cn.Close(); err == nil && cerr != nil && !errors.Is(cerr, net.ErrClosed) {
-			err = cerr
-		}
-	}()
+	defer c.cn.Close()
 
-	if err = c.fc.WriteTerminate(); err != nil {
-		if errors.Is(err, febe.ErrTerminated) || errors.Is(err, net.ErrClosed) {
-			return nil
-		}
-		return err
+	err := c.fc.WriteTerminate()
+	if err == nil {
+		err = c.fc.Flush()
 	}
-	if err = c.fc.Flush(); errors.Is(err, febe.ErrTerminated) || errors.Is(err, net.ErrClosed) {
-		return nil
+	if errors.Is(err, febe.ErrTerminated) || errors.Is(err, net.ErrClosed) {
+		err = nil
 	}
 	return err
 }

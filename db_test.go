@@ -308,7 +308,7 @@ func TestConnCloseIgnoresNetErrClosed(t *testing.T) {
 	}
 }
 
-func TestConnCloseReturnsCloseError(t *testing.T) {
+func TestConnCloseIgnoresRawCloseError(t *testing.T) {
 	t.Parallel()
 
 	closeErr := errors.New("close")
@@ -320,8 +320,8 @@ func TestConnCloseReturnsCloseError(t *testing.T) {
 		fc: febe.New(raw, raw),
 	}
 
-	if err := cn.Close(); !errors.Is(err, closeErr) {
-		t.Fatalf("Close() = %v; want %v", err, closeErr)
+	if err := cn.Close(); err != nil {
+		t.Fatalf("Close() = %v; want nil", err)
 	}
 	if !raw.closed {
 		t.Fatal("underlying connection was not closed")
