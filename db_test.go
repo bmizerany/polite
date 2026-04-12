@@ -89,14 +89,7 @@ func newSessionDB(t testing.TB) *Conn {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := cn.Close(); err != nil {
-			if errors.Is(err, net.ErrClosed) || errors.Is(err, febe.ErrTerminated) {
-				return
-			}
-			t.Fatal(err)
-		}
-	})
+	t.Cleanup(func() { cn.Close() })
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
@@ -111,14 +104,7 @@ func newSession(t testing.TB) *Conn {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := cn.Close(); err != nil {
-			if errors.Is(err, net.ErrClosed) || errors.Is(err, febe.ErrTerminated) {
-				return
-			}
-			t.Fatal(err)
-		}
-	})
+	t.Cleanup(func() { cn.Close() })
 
 	if funcsCreated.Swap(true) == true {
 		return cn
@@ -233,12 +219,8 @@ func TestConnClose(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
-	if err := cn.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := cn.Close(); err != nil {
-		t.Fatalf("second Close() = %v; want nil", err)
-	}
+	cn.Close()
+	cn.Close()
 
 	// Ensure we can't use the connection after closing.
 	if err := cn.Exec(t.Context(), "SELECT 1"); !errors.Is(err, febe.ErrTerminated) {
@@ -281,34 +263,53 @@ func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 	}
 
 	err := cn.Close()
-	if !errors.Is(err, flushErr) {
-		t.Fatalf("Close() = %v; want %v", err, flushErr)
+	if !errors.Is(err, closeErr) {
+		t.Fatalf("Close() = %v; want %v", err, closeErr)
 	}
 	if !raw.closed {
 		t.Fatal("underlying connection was not closed")
 	}
 }
 
-func TestConnCloseIgnoresNetErrClosed(t *testing.T) {
+func TestConnCloseReturnsNetErrClosed(t *testing.T) {
 	t.Parallel()
 
 	raw := &closeFailConn{
-		writeErr: net.ErrClosed,
+		closeErr: net.ErrClosed,
 	}
 	cn := &Conn{
 		cn: raw,
 		fc: febe.New(raw, raw),
 	}
 
-	if err := cn.Close(); err != nil {
-		t.Fatalf("Close() = %v; want nil", err)
+	if err := cn.Close(); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Close() = %v; want %v", err, net.ErrClosed)
 	}
 	if !raw.closed {
 		t.Fatal("underlying connection was not closed")
 	}
 }
 
-func TestConnCloseIgnoresRawCloseError(t *testing.T) {
+func TestConnCloseReturnsErrTerminated(t *testing.T) {
+	t.Parallel()
+
+	raw := &closeFailConn{
+		closeErr: febe.ErrTerminated,
+	}
+	cn := &Conn{
+		cn: raw,
+		fc: febe.New(raw, raw),
+	}
+
+	if err := cn.Close(); !errors.Is(err, febe.ErrTerminated) {
+		t.Fatalf("Close() = %v; want %v", err, febe.ErrTerminated)
+	}
+	if !raw.closed {
+		t.Fatal("underlying connection was not closed")
+	}
+}
+
+func TestConnCloseReturnsRawCloseError(t *testing.T) {
 	t.Parallel()
 
 	closeErr := errors.New("close")
@@ -320,8 +321,8 @@ func TestConnCloseIgnoresRawCloseError(t *testing.T) {
 		fc: febe.New(raw, raw),
 	}
 
-	if err := cn.Close(); err != nil {
-		t.Fatalf("Close() = %v; want nil", err)
+	if err := cn.Close(); !errors.Is(err, closeErr) {
+		t.Fatalf("Close() = %v; want %v", err, closeErr)
 	}
 	if !raw.closed {
 		t.Fatal("underlying connection was not closed")

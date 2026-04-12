@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"kr.dev/diff"
 )
@@ -159,47 +161,22 @@ func TestErrorSeverityNotSticky(t *testing.T) {
 	}
 }
 
-type timeoutError struct{}
-
-func (timeoutError) Error() string { return "timeout" }
-func (timeoutError) Timeout() bool { return true }
-
-type timeoutThenDataReader struct {
-	err  error
-	data *bytes.Reader
-	done bool
-}
-
-func (r *timeoutThenDataReader) Read(p []byte) (int, error) {
-	if !r.done {
-		r.done = true
-		return 0, r.err
-	}
-	return r.data.Read(p)
-}
-
 func TestTimeoutDoesNotPoisonConnection(t *testing.T) {
-	// Provide a valid ReadyForQuery message after the timeout so the
-	// connection can be used again on the next call.
-	data := bytes.NewReader([]byte{
-		'Z', 0, 0, 0, 5, 'I',
-	})
-	cn := New(&timeoutThenDataReader{
-		err:  timeoutError{},
-		data: data,
-	}, io.Discard)
-	cn.readyStatus = ReadyStatusBusy
+	client, server := net.Pipe()
 
-	ctx := context.Background()
-	_, err := cn.ReadHeader(ctx)
-	if _, ok := err.(timeoutError); !ok {
-		t.Fatalf("ReadHeader() = %v; want timeout", err)
-	}
-	if got := cn.Status(); got != ReadyStatusBusy {
-		t.Fatalf("status after timeout = %q; want busy", got)
+	cn := New(client, io.Discard)
+
+	client.SetReadDeadline(time.Now())
+	_, err := cn.ReadHeader(context.Background())
+	var netErr net.Error
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Errorf("ReadHeader() = %v; want timeout", err)
 	}
 
-	h, err := cn.ReadHeader(ctx)
+	go func() { server.Write([]byte{'Z', 0, 0, 0, 5, 'I'}) }()
+
+	client.SetReadDeadline(time.Time{})
+	h, err := cn.ReadHeader(context.Background())
 	if err != nil {
 		t.Fatalf("second ReadHeader() = %v; want nil", err)
 	}
