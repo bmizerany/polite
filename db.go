@@ -1,6 +1,7 @@
 package polite
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -822,15 +823,8 @@ var recoverableQueryErrors = errors.Join(
 // the query errors polite can recover from. It does not decide whether the
 // connection itself is terminal.
 func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
-	if initErr == nil {
-		return nil
-	}
-
 	if errors.Is(initErr, context.Canceled) || errors.Is(initErr, context.DeadlineExceeded) {
-		if err := c.discardUntilReady(context.Background()); err != nil {
-			return err
-		}
-		return initErr
+		return cmp.Or(c.discardUntilReady(context.Background()), initErr)
 	}
 
 	// FATAL and PANIC mean the backend closed the connection;
@@ -841,9 +835,7 @@ func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
 
 	// TODO(bmizerany): add "IsRecovering" to trace
 	_, isFE := errors.AsType[*febe.Error](initErr)
-	recoverable := isFE ||
-		errors.Is(recoverableQueryErrors, initErr)
-	if recoverable {
+	if isFE || errors.Is(recoverableQueryErrors, initErr) {
 		if err := c.discardUntilReady(ctx); err != nil {
 			return err
 		}
