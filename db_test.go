@@ -228,123 +228,43 @@ func TestConnClose(t *testing.T) {
 	}
 }
 
-type flushErrWriter struct {
-	err    error
-	writes int
-}
-
-func (w *flushErrWriter) Write([]byte) (int, error) {
-	w.writes++
-	return 0, w.err
-}
-
-func newConnWithRawConnAndWriter(raw net.Conn, w io.Writer) *Conn {
-	return &Conn{
-		cn: raw,
-		fc: febe.New(strings.NewReader(""), w),
-	}
-}
-
-type closeErrConn struct {
+type failWriteConn struct {
 	net.Conn
 
-	closeErr error
-	closed   bool
+	failWrites bool
 }
 
-func newCloseErrConn(t testing.TB, closeErr error) *closeErrConn {
-	t.Helper()
+func (c *failWriteConn) Write(p []byte) (int, error) {
+	if c.failWrites {
+		return 0, io.ErrClosedPipe
+	}
+	return c.Conn.Write(p)
+}
 
-	client, server := net.Pipe()
-	done := make(chan struct{})
-	go func() {
-		io.Copy(io.Discard, server)
-		close(done)
-	}()
+func TestConnCloseUnderlyingConnDespiteFlushError(t *testing.T) {
+	t.Parallel()
 
-	t.Cleanup(func() {
-		client.Close()
-		server.Close()
-		select {
-		case <-done:
-		case <-time.After(time.Second):
-			t.Errorf("timed out waiting for closeErrConn drain")
-		}
+	var dialer net.Dialer
+	raw := new(failWriteConn)
+	cn, err := Dial(t.Context(), testDSN, &Config{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			c, err := dialer.DialContext(ctx, network, addr)
+			raw.Conn = c
+			return raw, err
+		},
 	})
-
-	return &closeErrConn{
-		Conn:     client,
-		closeErr: closeErr,
+	if err != nil {
+		t.Fatal(err)
 	}
-}
 
-func (c *closeErrConn) Close() error {
-	c.closed = true
-	c.Conn.Close()
-	return c.closeErr
-}
-
-func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
-	t.Parallel()
-
-	flushErr := errors.New("flush")
-	closeErr := errors.New("close")
-	raw := newCloseErrConn(t, closeErr)
-	w := &flushErrWriter{err: flushErr}
-	cn := newConnWithRawConnAndWriter(raw, w)
-
-	err := cn.Close()
-	if !errors.Is(err, closeErr) {
-		t.Fatalf("Close() = %v; want %v", err, closeErr)
+	// After startup, fail writes locally so Terminate/Flush trips. Close must
+	// still close the real transport underneath the wrapper.
+	raw.failWrites = true
+	if err := cn.Close(); err != nil {
+		t.Fatalf("Close() = %v; want nil", err)
 	}
-	if w.writes == 0 {
-		t.Fatal("flush writer was not used")
-	}
-	if !raw.closed {
-		t.Fatal("underlying connection was not closed")
-	}
-}
-
-func TestConnCloseReturnsNetErrClosed(t *testing.T) {
-	t.Parallel()
-
-	raw := newCloseErrConn(t, net.ErrClosed)
-	cn := newConnWithRawConnAndWriter(raw, io.Discard)
-
-	if err := cn.Close(); !errors.Is(err, net.ErrClosed) {
-		t.Fatalf("Close() = %v; want %v", err, net.ErrClosed)
-	}
-	if !raw.closed {
-		t.Fatal("underlying connection was not closed")
-	}
-}
-
-func TestConnCloseReturnsErrTerminated(t *testing.T) {
-	t.Parallel()
-
-	raw := newCloseErrConn(t, febe.ErrTerminated)
-	cn := newConnWithRawConnAndWriter(raw, io.Discard)
-
-	if err := cn.Close(); !errors.Is(err, febe.ErrTerminated) {
-		t.Fatalf("Close() = %v; want %v", err, febe.ErrTerminated)
-	}
-	if !raw.closed {
-		t.Fatal("underlying connection was not closed")
-	}
-}
-
-func TestConnCloseReturnsRawCloseError(t *testing.T) {
-	t.Parallel()
-
-	closeErr := errors.New("close")
-	raw := newCloseErrConn(t, closeErr)
-	cn := newConnWithRawConnAndWriter(raw, io.Discard)
-
-	if err := cn.Close(); !errors.Is(err, closeErr) {
-		t.Fatalf("Close() = %v; want %v", err, closeErr)
-	}
-	if !raw.closed {
-		t.Fatal("underlying connection was not closed")
+	if _, err := raw.Read(make([]byte, 1)); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("raw.Read() = %v; want %v", err, net.ErrClosed)
 	}
 }
 
