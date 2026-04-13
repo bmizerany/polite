@@ -518,13 +518,17 @@ func (r *Row) check() {
 //
 // To obtain a Column, call [Conn.Query] and then [Row.Column].
 type Column struct {
-	name   string
-	size   int
-	typeID oids.ID
-	data   []byte
+	ordinal int
+	name    string
+	size    int
+	typeID  oids.ID
+	data    []byte
 
 	timeZone *time.Location
 }
+
+// Ordinal returns the column's zero-based position in the row.
+func (c Column) Ordinal() int { return c.ordinal }
 
 // Name returns the column name from the row description.
 func (c Column) Name() string { return c.name }
@@ -745,6 +749,7 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 		}
 		if v.Data == nil {
 			columns[i] = Column{
+				ordinal:  i,
 				name:     desc.Name,
 				size:     int(desc.DataTypeSize),
 				typeID:   desc.DataTypeOID,
@@ -755,6 +760,7 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 		start := len(data)
 		data = append(data, v.Data...)
 		columns[i] = Column{
+			ordinal:  i,
 			name:     desc.Name,
 			size:     int(desc.DataTypeSize),
 			typeID:   desc.DataTypeOID,

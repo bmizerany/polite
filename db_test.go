@@ -523,12 +523,34 @@ func TestRowColumnPanic(t *testing.T) {
 	})
 }
 
+func TestColumnOrdinal(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	for row, err := range cn.Query(t.Context(), `SELECT 11::int4 AS one, 22::int4 AS two`) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := row.Column(0).Ordinal(); got != 0 {
+			t.Fatalf("Column(0).Ordinal() = %d, want 0", got)
+		}
+		if got := row.Column(1).Ordinal(); got != 1 {
+			t.Fatalf("Column(1).Ordinal() = %d, want 1", got)
+		}
+		return
+	}
+	t.Fatal("expected 1 row")
+}
+
 func TestZeroColumn(t *testing.T) {
 	t.Parallel()
 
 	var col Column
 	if got := col.Bytes(); got != nil {
 		t.Fatalf("Bytes() = %v; want nil", got)
+	}
+	if got := col.Ordinal(); got != 0 {
+		t.Fatalf("Ordinal() = %d; want 0", got)
 	}
 	if got := col.Name(); got != "" {
 		t.Fatalf("Name = %q; want empty", got)
