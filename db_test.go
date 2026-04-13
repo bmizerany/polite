@@ -243,6 +243,30 @@ func (c *closeFailConn) SetDeadline(time.Time) error      { return nil }
 func (c *closeFailConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *closeFailConn) SetWriteDeadline(time.Time) error { return nil }
 
+type flushErrWriter struct {
+	err    error
+	writes int
+}
+
+func (w *flushErrWriter) Write([]byte) (int, error) {
+	w.writes++
+	return 0, w.err
+}
+
+type closeErrConn struct {
+	closeErr error
+	closed   bool
+}
+
+func (c *closeErrConn) Read([]byte) (int, error)         { return 0, io.EOF }
+func (c *closeErrConn) Write(p []byte) (int, error)      { return len(p), nil }
+func (c *closeErrConn) Close() error                     { c.closed = true; return c.closeErr }
+func (c *closeErrConn) LocalAddr() net.Addr              { return dummyAddr("local") }
+func (c *closeErrConn) RemoteAddr() net.Addr             { return dummyAddr("remote") }
+func (c *closeErrConn) SetDeadline(time.Time) error      { return nil }
+func (c *closeErrConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *closeErrConn) SetWriteDeadline(time.Time) error { return nil }
+
 type dummyAddr string
 
 func (a dummyAddr) Network() string { return string(a) }
@@ -253,18 +277,19 @@ func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 
 	flushErr := errors.New("flush")
 	closeErr := errors.New("close")
-	raw := &closeFailConn{
-		writeErr: flushErr,
-		closeErr: closeErr,
-	}
+	raw := &closeErrConn{closeErr: closeErr}
+	w := &flushErrWriter{err: flushErr}
 	cn := &Conn{
 		cn: raw,
-		fc: febe.New(raw, raw),
+		fc: febe.New(strings.NewReader(""), w),
 	}
 
 	err := cn.Close()
 	if !errors.Is(err, closeErr) {
 		t.Fatalf("Close() = %v; want %v", err, closeErr)
+	}
+	if w.writes == 0 {
+		t.Fatal("flush writer was not used")
 	}
 	if !raw.closed {
 		t.Fatal("underlying connection was not closed")
