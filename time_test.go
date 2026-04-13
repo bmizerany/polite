@@ -305,14 +305,22 @@ func TestDecodeTimeFromPostgres(t *testing.T) {
 func TestDecodeTimeHandlesNegativeRemainder(t *testing.T) {
 	t.Parallel()
 
-	col := Column{
-		typeID: oids.Timestamp,
-		data:   []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
-	}
+	cn := newSession(t)
 
-	got, err := col.DecodeTime()
-	if err != nil {
-		t.Fatal(err)
+	var got time.Time
+	rows := 0
+	for row, err := range cn.Query(t.Context(), `SELECT TIMESTAMPTZ '1999-12-31 23:59:59.999999+00'`) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows++
+		got, err = row.Column(0).DecodeTime()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rows != 1 {
+		t.Fatalf("rows = %d, want 1", rows)
 	}
 
 	want := time.Date(1999, 12, 31, 23, 59, 59, 999999000, time.UTC)
@@ -415,13 +423,12 @@ func decodeQueryTimes(t *testing.T, cn *Conn, sql string, args ...any) []time.Ti
 			t.Fatal(err)
 		}
 		rows++
-		got = make([]time.Time, len(row.columns))
-		for i := range row.columns {
-			ts, err := row.Column(i).DecodeTime()
+		for col := range row.Columns() {
+			ts, err := col.DecodeTime()
 			if err != nil {
 				t.Fatal(err)
 			}
-			got[i] = ts
+			got = append(got, ts)
 		}
 	}
 	if rows != 1 {

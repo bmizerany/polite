@@ -238,31 +238,56 @@ func (w *flushErrWriter) Write([]byte) (int, error) {
 	return 0, w.err
 }
 
+func newConnWithFEBEForTest(cn net.Conn, w io.Writer) *Conn {
+	return &Conn{
+		cn: cn,
+		fc: febe.New(strings.NewReader(""), w),
+	}
+}
+
 type closeErrConn struct {
+	net.Conn
+
 	closeErr error
 	closed   bool
 }
 
-func (c *closeErrConn) Read([]byte) (int, error)         { return 0, io.EOF }
-func (c *closeErrConn) Write(p []byte) (int, error)      { return len(p), nil }
-func (c *closeErrConn) Close() error                     { c.closed = true; return c.closeErr }
-func (c *closeErrConn) LocalAddr() net.Addr              { return dummyAddr("local") }
-func (c *closeErrConn) RemoteAddr() net.Addr             { return dummyAddr("remote") }
-func (c *closeErrConn) SetDeadline(time.Time) error      { return nil }
-func (c *closeErrConn) SetReadDeadline(time.Time) error  { return nil }
-func (c *closeErrConn) SetWriteDeadline(time.Time) error { return nil }
+func newCloseErrConn(t testing.TB, closeErr error) *closeErrConn {
+	t.Helper()
+
+	client, server := net.Pipe()
+	done := make(chan struct{})
+	go func() {
+		io.Copy(io.Discard, server)
+		close(done)
+	}()
+
+	t.Cleanup(func() {
+		client.Close()
+		server.Close()
+		<-done
+	})
+
+	return &closeErrConn{
+		Conn:     client,
+		closeErr: closeErr,
+	}
+}
+
+func (c *closeErrConn) Close() error {
+	c.closed = true
+	c.Conn.Close()
+	return c.closeErr
+}
 
 func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 	t.Parallel()
 
 	flushErr := errors.New("flush")
 	closeErr := errors.New("close")
-	raw := &closeErrConn{closeErr: closeErr}
+	raw := newCloseErrConn(t, closeErr)
 	w := &flushErrWriter{err: flushErr}
-	cn := &Conn{
-		cn: raw,
-		fc: febe.New(strings.NewReader(""), w),
-	}
+	cn := newConnWithFEBEForTest(raw, w)
 
 	err := cn.Close()
 	if !errors.Is(err, closeErr) {
@@ -279,11 +304,8 @@ func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 func TestConnCloseReturnsNetErrClosed(t *testing.T) {
 	t.Parallel()
 
-	raw := &closeErrConn{closeErr: net.ErrClosed}
-	cn := &Conn{
-		cn: raw,
-		fc: febe.New(strings.NewReader(""), io.Discard),
-	}
+	raw := newCloseErrConn(t, net.ErrClosed)
+	cn := newConnWithFEBEForTest(raw, io.Discard)
 
 	if err := cn.Close(); !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("Close() = %v; want %v", err, net.ErrClosed)
@@ -296,11 +318,8 @@ func TestConnCloseReturnsNetErrClosed(t *testing.T) {
 func TestConnCloseReturnsErrTerminated(t *testing.T) {
 	t.Parallel()
 
-	raw := &closeErrConn{closeErr: febe.ErrTerminated}
-	cn := &Conn{
-		cn: raw,
-		fc: febe.New(strings.NewReader(""), io.Discard),
-	}
+	raw := newCloseErrConn(t, febe.ErrTerminated)
+	cn := newConnWithFEBEForTest(raw, io.Discard)
 
 	if err := cn.Close(); !errors.Is(err, febe.ErrTerminated) {
 		t.Fatalf("Close() = %v; want %v", err, febe.ErrTerminated)
@@ -314,11 +333,8 @@ func TestConnCloseReturnsRawCloseError(t *testing.T) {
 	t.Parallel()
 
 	closeErr := errors.New("close")
-	raw := &closeErrConn{closeErr: closeErr}
-	cn := &Conn{
-		cn: raw,
-		fc: febe.New(strings.NewReader(""), io.Discard),
-	}
+	raw := newCloseErrConn(t, closeErr)
+	cn := newConnWithFEBEForTest(raw, io.Discard)
 
 	if err := cn.Close(); !errors.Is(err, closeErr) {
 		t.Fatalf("Close() = %v; want %v", err, closeErr)
@@ -650,7 +666,10 @@ func TestQueryBreakCleanupErrorIsTraced(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = cn.cn.Close()
+		err := cn.Close()
+		if err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, febe.ErrTerminated) {
+			t.Errorf("Close() = %v", err)
+		}
 	})
 
 	startCleanup := make(chan struct{})
@@ -1109,7 +1128,8 @@ func TestErrors(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() {
-			if err := cn.cn.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			err := cn.Close()
+			if err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, febe.ErrTerminated) {
 				t.Fatal(err)
 			}
 		})
@@ -1119,17 +1139,10 @@ func TestErrors(t *testing.T) {
 			t.Fatal("expected error")
 		}
 
-		sticky := cn.fc.Err()
-		if sticky == nil {
-			t.Fatal("expected sticky terminal error")
-		}
-		if !errors.Is(terminal, sticky) {
-			t.Fatalf("Query(pg_terminate_backend) = %v; want error matching %v", terminal, sticky)
-		}
-
-		err = cn.Exec(ctx, "SELECT 1")
-		if !errors.Is(err, sticky) {
-			t.Fatalf("Exec(SELECT 1) = %v; want error matching %v", err, sticky)
+		if err := cn.Exec(ctx, "SELECT 1"); err == nil {
+			t.Fatal("Exec(SELECT 1) = nil; want sticky terminal error")
+		} else if !errors.Is(err, terminal) && !errors.Is(terminal, err) {
+			t.Fatalf("Exec(SELECT 1) = %v; want sticky match for %v", err, terminal)
 		}
 	})
 }

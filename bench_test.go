@@ -12,9 +12,7 @@ import (
 // to measure variance in latency, which is a key metric for fairness.
 func BenchmarkPoolContention(b *testing.B) {
 	p := &Pool{
-		Dial: func(context.Context) (*Conn, error) {
-			return newTestConn(), nil
-		},
+		Dial:       testDialer,
 		MaxItems:   10,
 		MaxWaiters: 100,
 	}

@@ -2,6 +2,7 @@ package febeio
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -153,40 +154,30 @@ func TestN(t *testing.T) {
 	checkN(0)
 }
 
-type readErrThenData struct {
-	err   error
-	data  []byte
-	read  bool
+type failOnceReader struct {
+	err    error
+	failed bool
+	r      io.Reader
 }
 
-func (r *readErrThenData) Read(p []byte) (int, error) {
-	if !r.read {
-		r.read = true
+func (r *failOnceReader) Read(p []byte) (int, error) {
+	if !r.failed {
+		r.failed = true
 		return 0, r.err
 	}
-	n := copy(p, r.data)
-	r.data = r.data[n:]
-	if len(r.data) == 0 {
-		return n, io.EOF
-	}
-	return n, nil
+	return r.r.Read(p)
 }
 
-type timeoutError struct{}
-
-func (timeoutError) Error() string   { return "timeout" }
-func (timeoutError) Timeout() bool   { return true }
-
 func TestTimeoutReadNotSticky(t *testing.T) {
-	r := &readErrThenData{
-		err:  timeoutError{},
-		data: []byte{0, 0, 0, 7},
+	r := &failOnceReader{
+		err: context.DeadlineExceeded,
+		r:   strings.NewReader("\x00\x00\x00\x07"),
 	}
 	cn := NewConn(r, io.Discard)
 
 	_, err := cn.ReadInt32()
-	if _, ok := err.(timeoutError); !ok {
-		t.Fatalf("ReadInt32() = %v; want timeout", err)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ReadInt32() = %v; want %v", err, context.DeadlineExceeded)
 	}
 	got, err := cn.ReadInt32()
 	if err != nil {
@@ -198,9 +189,9 @@ func TestTimeoutReadNotSticky(t *testing.T) {
 }
 
 func TestReadErrorSticky(t *testing.T) {
-	r := &readErrThenData{
-		err:  errTest,
-		data: []byte{0, 0, 0, 7},
+	r := &failOnceReader{
+		err: errTest,
+		r:   strings.NewReader("\x00\x00\x00\x07"),
 	}
 	cn := NewConn(r, io.Discard)
 
@@ -214,30 +205,34 @@ func TestReadErrorSticky(t *testing.T) {
 	}
 }
 
-type writeErrThenData struct {
-	err  error
-	seen bool
-	buf  bytes.Buffer
+type failOnceWriter struct {
+	err    error
+	failed bool
+	w      io.Writer
 }
 
-func (w *writeErrThenData) Write(p []byte) (int, error) {
-	if !w.seen {
-		w.seen = true
+func (w *failOnceWriter) Write(p []byte) (int, error) {
+	if !w.failed {
+		w.failed = true
 		return 0, w.err
 	}
-	return w.buf.Write(p)
+	return w.w.Write(p)
 }
 
 func TestTimeoutWriteNotSticky(t *testing.T) {
-	w := &writeErrThenData{err: timeoutError{}}
+	var out bytes.Buffer
+	w := &failOnceWriter{
+		err: context.DeadlineExceeded,
+		w:   &out,
+	}
 	cn := NewConn(strings.NewReader(""), w)
 
 	if err := cn.WriteByte('x'); err != nil {
 		t.Fatalf("WriteByte() = %v; want nil", err)
 	}
 	err := cn.Flush()
-	if _, ok := err.(timeoutError); !ok {
-		t.Fatalf("Flush() = %v; want timeout", err)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Flush() = %v; want %v", err, context.DeadlineExceeded)
 	}
 	if err := cn.WriteByte('y'); err != nil {
 		t.Fatalf("second WriteByte() = %v; want nil", err)
@@ -245,13 +240,13 @@ func TestTimeoutWriteNotSticky(t *testing.T) {
 	if err := cn.Flush(); err != nil {
 		t.Fatalf("second Flush() = %v; want nil", err)
 	}
-	if got := w.buf.String(); got != "y" {
+	if got := out.String(); got != "y" {
 		t.Fatalf("written = %q; want %q", got, "y")
 	}
 }
 
 func TestWriteErrorSticky(t *testing.T) {
-	w := &writeErrThenData{err: errTest}
+	w := &failOnceWriter{err: errTest, w: io.Discard}
 	cn := NewConn(strings.NewReader(""), w)
 
 	if err := cn.WriteByte('x'); err != nil {

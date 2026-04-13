@@ -3,9 +3,7 @@ package polite
 import (
 	"context"
 	"errors"
-	"io"
 	"math/rand/v2"
-	"net"
 	"runtime"
 	"slices"
 	"sync"
@@ -15,34 +13,8 @@ import (
 	"time"
 
 	"blake.io/polite/dsn"
-	"blake.io/polite/febe"
 	"blake.io/polite/internal/testutil"
 )
-
-type noopConn struct{}
-
-func (noopConn) Read([]byte) (int, error)         { return 0, io.EOF }
-func (noopConn) Write(p []byte) (int, error)      { return len(p), nil }
-func (noopConn) Close() error                     { return nil }
-func (noopConn) LocalAddr() net.Addr              { return poolAddr("local") }
-func (noopConn) RemoteAddr() net.Addr             { return poolAddr("remote") }
-func (noopConn) SetDeadline(time.Time) error      { return nil }
-func (noopConn) SetReadDeadline(time.Time) error  { return nil }
-func (noopConn) SetWriteDeadline(time.Time) error { return nil }
-
-type poolAddr string
-
-func (a poolAddr) Network() string { return string(a) }
-
-func (a poolAddr) String() string { return string(a) }
-
-func newTestConn() *Conn {
-	raw := noopConn{}
-	return &Conn{
-		cn: raw,
-		fc: febe.New(raw, raw),
-	}
-}
 
 func newTestPool(t *testing.T) *Pool {
 	p := &Pool{
@@ -197,9 +169,7 @@ func TestPoolGetAllocations(t *testing.T) {
 	t.Skip("TODO: unskip and fix after synctest problems are fixed")
 
 	p := &Pool{
-		Dial: func(context.Context) (*Conn, error) {
-			return newTestConn(), nil
-		},
+		Dial: testDialer,
 	}
 	defer p.Close()
 
@@ -218,12 +188,8 @@ func TestPoolGetAllocations(t *testing.T) {
 func BenchmarkPoolGetPut(b *testing.B) {
 	b.ReportAllocs()
 
-	closedConn := newTestConn()
-
 	p := &Pool{
-		Dial: func(context.Context) (*Conn, error) {
-			return closedConn, nil
-		},
+		Dial: testDialer,
 
 		MaxItems:   1<<63 - 1,
 		MaxWaiters: 1<<63 - 1,
@@ -242,28 +208,21 @@ func BenchmarkPoolGetPut(b *testing.B) {
 func BenchmarkPoolStartNewConn(b *testing.B) {
 	b.ReportAllocs()
 
-	p := &Pool{
-		Dial: func(context.Context) (*Conn, error) {
-			return newTestConn(), nil
-		},
-
-		MaxItems:   1<<63 - 1,
-		MaxWaiters: 1<<63 - 1,
-	}
-	defer p.Close()
-
-	// Get a conn for setup side effects.
-	_, err := p.Get(context.Background())
-	if err != nil {
-		b.Fatal(err)
-	}
-
 	for b.Loop() {
-		cn := p.openConn()
-		if cn == nil {
-			b.Fatal("openConn() = nil")
+		p := &Pool{
+			Dial:       testDialer,
+			MaxItems:   1,
+			MaxWaiters: 1,
 		}
-		p.waitlist.Put(cn)
+		cn, err := p.Get(context.Background())
+		if err != nil {
+			p.Close()
+			b.Fatal(err)
+		}
+		cn.Close()
+		if err := p.Close(); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 

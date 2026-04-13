@@ -98,7 +98,7 @@ func TestDiscardUntilReadyFatal(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		cn.cn.Close()
+		cn.Close()
 	})
 
 	// Create a table with enough rows to generate many CopyData

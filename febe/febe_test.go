@@ -3,6 +3,7 @@ package febe
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -77,14 +78,9 @@ func TestReadHeaderEmpty(t *testing.T) {
 func TestReadHeaderDiscard(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	cn.c.WriteByte('D')
-	cn.c.WriteInt32(4 + 7)
-	cn.c.Write([]byte("DISCARD"))
-	cn.c.WriteByte('Z')
-	cn.c.WriteInt32(4)
-	cn.c.WriteByte('X')
-	cn.c.WriteInt32(4)
-	cn.c.Flush()
+	writeMessage(t, &b, 'D', []byte("DISCARD"))
+	writeMessage(t, &b, 'Z', nil)
+	writeMessage(t, &b, 'X', nil)
 
 	h, err := cn.ReadHeader(context.Background())
 	if err != nil {
@@ -119,7 +115,7 @@ func TestErrorSeverityNotSticky(t *testing.T) {
 	// ERROR severity should not poison the connection.
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	cn.readyStatus = ReadyStatusBusy
+	writeReadyForQuery(t, &b, ReadyStatusBusy)
 	cn.WriteNotice('E', &Notice{
 		Severity:  "ERROR",
 		Code:      "42601",
@@ -129,17 +125,22 @@ func TestErrorSeverityNotSticky(t *testing.T) {
 	cn.Flush()
 
 	// Write a ReadyForQuery + Terminate after the error so the conn has more to read.
-	cn.c.WriteByte('Z')
-	cn.c.WriteInt32(5)
-	cn.c.WriteByte('I')
-	cn.c.WriteByte('X')
-	cn.c.WriteInt32(4)
-	cn.c.Flush()
+	writeReadyForQuery(t, &b, ReadyStatusIdle)
+	writeMessage(t, &b, 'X', nil)
 
 	ctx := context.Background()
 
-	// First call returns the ERROR.
+	// First call returns the busy status and updates Conn status.
 	_, err := cn.ReadHeader(ctx)
+	if err != nil {
+		t.Fatalf("ReadHeader() = %v; want nil (got 'Z')", err)
+	}
+	if _, err := cn.ReadReadyForQuery(); err != nil {
+		t.Fatalf("ReadReadyForQuery() = %v; want nil", err)
+	}
+
+	// Next call returns the ERROR.
+	_, err = cn.ReadHeader(ctx)
 	var fe *Error
 	if !errors.As(err, &fe) {
 		t.Fatalf("ReadHeader() = %v; want *febe.Error", err)
@@ -189,7 +190,7 @@ func testFatalErrorSticky(t *testing.T, severity string) {
 	t.Helper()
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	cn.readyStatus = ReadyStatusBusy
+	writeReadyForQuery(t, &b, ReadyStatusBusy)
 	cn.WriteNotice('E', &Notice{
 		Severity:  severity,
 		Code:      "25P03",
@@ -200,6 +201,13 @@ func testFatalErrorSticky(t *testing.T, severity string) {
 
 	ctx := context.Background()
 	_, err := cn.ReadHeader(ctx)
+	if err != nil {
+		t.Fatalf("ReadHeader() = %v; want nil (got 'Z')", err)
+	}
+	if _, err := cn.ReadReadyForQuery(); err != nil {
+		t.Fatalf("ReadReadyForQuery() = %v; want nil", err)
+	}
+	_, err = cn.ReadHeader(ctx)
 	var fe *Error
 	if !errors.As(err, &fe) {
 		t.Fatalf("ReadHeader() = %v; want *febe.Error", err)
@@ -232,9 +240,7 @@ func TestNoticeResponse(t *testing.T) {
 	cn := New(&b, &b)
 	cn.WriteNotice('N', testNotice)
 	cn.Flush()
-	cn.c.WriteByte('X') // Terminate
-	cn.c.WriteInt32(4)
-	cn.c.Flush()
+	writeMessage(t, &b, 'X', nil) // Terminate
 
 	var got *Notice
 	ctx := WithTrace(context.Background(), &Trace{
@@ -262,9 +268,8 @@ func TestNotificationResponseTrace(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
 	cn.WriteNotification(1234, "hello", "world")
-	cn.c.WriteByte('X')
-	cn.c.WriteInt32(4)
 	cn.Flush()
+	writeMessage(t, &b, 'X', nil)
 
 	var got *Notification
 	ctx := WithTrace(context.Background(), &Trace{
@@ -361,10 +366,7 @@ func TestReadReadyForQuery(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var b bytes.Buffer
 			cn := New(&b, &b)
-			cn.c.WriteByte('Z')
-			cn.c.WriteInt32(5)
-			cn.c.WriteByte(byte(tt.status))
-			cn.c.Flush()
+			writeReadyForQuery(t, &b, tt.status)
 
 			if err := cn.readAndSetCurrentHeader(); err != nil {
 				t.Fatal(err)
@@ -394,13 +396,7 @@ func TestReadReadyForQuery(t *testing.T) {
 func TestReadBackendKeyData(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	defer cn.checkDone(t)
-
-	cn.c.WriteByte('K')
-	cn.c.WriteInt32(12)
-	cn.c.WriteInt32(1234) // pid
-	cn.c.WriteInt32(5678) // secret key
-	cn.c.Flush()
+	writeBackendKeyData(t, &b, 1234, 5678)
 
 	if err := cn.readAndSetCurrentHeader(); err != nil {
 		t.Fatal(err)
@@ -421,6 +417,9 @@ func TestReadBackendKeyData(t *testing.T) {
 	}
 
 	diff.Test(t, t.Errorf, got, want)
+
+	_, err = cn.ReadHeader(context.Background())
+	diff.Test(t, t.Errorf, err, io.ErrUnexpectedEOF)
 }
 
 func TestReadAuthentication(t *testing.T) {
@@ -434,10 +433,7 @@ func TestReadAuthentication(t *testing.T) {
 		var b bytes.Buffer
 		cn := New(&b, &b)
 
-		cn.c.WriteByte('R')
-		cn.c.WriteInt32(8)
-		cn.c.WriteInt32(int32(tt.typ))
-		cn.c.Flush()
+		writeAuthentication(t, &b, tt.typ)
 
 		_, err := cn.ReadHeader(context.Background())
 		if err != nil {
@@ -496,10 +492,7 @@ func BenchmarkParseCommandTag(b *testing.B) {
 func TestReadCommandComplete(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	cn.c.WriteByte('C')
-	cn.c.WriteInt32(13)
-	cn.c.WriteString("SELECT 1")
-	cn.c.Flush()
+	writeMessageCString(t, &b, 'C', "SELECT 1")
 
 	if err := cn.readAndSetCurrentHeader(); err != nil {
 		t.Fatal(err)
@@ -542,14 +535,7 @@ func TestReadDataRow(t *testing.T) {
 
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	defer cn.checkDone(t)
-
-	cn.c.WriteByte('D')
-	cn.c.WriteInt32(24)
-	cn.c.WriteInt16(2) // number of cols
-	cn.c.WriteSizedBytes([]byte("hello"))
-	cn.c.WriteSizedBytes([]byte("world"))
-	cn.c.Flush()
+	writeDataRow(t, &b, []byte("hello"), []byte("world"))
 
 	_, err := cn.ReadHeader(ctx)
 	if err != nil {
@@ -582,14 +568,15 @@ func TestReadDataRow(t *testing.T) {
 		[]byte("world"),
 	}
 	diff.Test(t, t.Errorf, gotValues, wantValues)
+
+	_, err = cn.ReadHeader(ctx)
+	diff.Test(t, t.Errorf, err, io.ErrUnexpectedEOF)
 }
 
 func TestReadEmptyQueryResponse(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	cn.c.WriteByte('I')
-	cn.c.WriteInt32(4)
-	cn.c.Flush()
+	writeMessage(t, &b, 'I', nil)
 	if err := cn.Flush(); err != nil {
 		t.Fatal(err)
 	}
@@ -612,8 +599,6 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 	var checked int
 
 	to := reflect.TypeFor[*Conn]()
-	cn := &Conn{}
-	vo := reflect.ValueOf(cn)
 
 	exempt := map[string]bool{
 		"ReadHeader":  true,
@@ -631,10 +616,15 @@ func TestReadUnknownTypeChecks(t *testing.T) {
 		t.Run(m.Name, func(t *testing.T) {
 			testReadMethodSignature(t, m)
 
-			vm := vo.Method(i)
-			cn.h = MessageHeader{
-				msgType: '!',
-				msgLen:  1,
+			var b bytes.Buffer
+			cn := New(&b, io.Discard)
+			writeMessage(t, &b, '!', nil)
+			if _, err := cn.ReadHeader(context.Background()); err != nil {
+				t.Fatalf("ReadHeader() = %v; want nil", err)
+			}
+			vm := reflect.ValueOf(cn).MethodByName(m.Name)
+			if !vm.IsValid() {
+				t.Fatalf("method not found: %s", m.Name)
 			}
 
 			// This is only a superficial check that the method is
@@ -665,14 +655,7 @@ func TestReadNotification(t *testing.T) {
 
 	var b bytes.Buffer
 	cn := New(&b, &b)
-	defer cn.checkDone(t)
-
-	cn.c.WriteByte('A')
-	cn.c.WriteInt32(33)
-	cn.c.WriteInt32(1234) // pid
-	cn.c.WriteString("hello")
-	cn.c.WriteString("world")
-	cn.c.Flush()
+	writeNotification(t, &b, 1234, "hello", "world")
 
 	if err := cn.readAndSetCurrentHeader(); err != nil {
 		t.Fatal(err)
@@ -686,7 +669,7 @@ func TestReadNotification(t *testing.T) {
 	want := Notification{
 		MessageHeader: MessageHeader{
 			msgType: 'A',
-			msgLen:  33,
+			msgLen:  20,
 		},
 		PID:     1234,
 		Channel: []byte("hello"),
@@ -694,6 +677,9 @@ func TestReadNotification(t *testing.T) {
 	}
 
 	diff.Test(t, t.Errorf, got, want)
+
+	_, err = cn.ReadHeader(context.Background())
+	diff.Test(t, t.Errorf, err, io.ErrUnexpectedEOF)
 }
 
 func TestWriteParse(t *testing.T) {
@@ -791,12 +777,8 @@ func TestReadParameterStatus(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
 
-	cn.c.WriteByte('S')
-	cn.c.WriteInt32(25)
-	cn.c.WriteString("server_version")
-	cn.c.WriteString("9.6.5")
-	cn.c.WriteByte('X')
-	cn.c.WriteInt32(4)
+	writeParameterStatus(t, &b, "server_version", "9.6.5")
+	writeMessage(t, &b, 'X', nil)
 	cn.Flush()
 
 	var got []Parameter
@@ -867,10 +849,117 @@ func testReadMethodSignature(t *testing.T, m reflect.Method) {
 	}
 }
 
-func (c *Conn) checkDone(t *testing.T) {
+func writeMessage(t *testing.T, b *bytes.Buffer, typ byte, body []byte) {
 	t.Helper()
-	_, err := c.c.ReadByte()
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Errorf("expected io.UnexpectedEOF, got %v", err)
+	if err := b.WriteByte(typ); err != nil {
+		t.Fatal(err)
 	}
+	if err := binary.Write(b, binary.BigEndian, int32(len(body)+4)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := b.Write(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(body) {
+		t.Fatalf("short write: wrote %d bytes, want %d", n, len(body))
+	}
+}
+
+func writeMessageCString(t *testing.T, b *bytes.Buffer, typ byte, s string) {
+	t.Helper()
+	var body bytes.Buffer
+	n, err := body.WriteString(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(s) {
+		t.Fatalf("short write: wrote %d bytes, want %d", n, len(s))
+	}
+	if err := body.WriteByte(0); err != nil {
+		t.Fatal(err)
+	}
+	writeMessage(t, b, typ, body.Bytes())
+}
+
+func writeInt16(t *testing.T, b *bytes.Buffer, v int16) {
+	t.Helper()
+	if err := binary.Write(b, binary.BigEndian, v); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeInt32(t *testing.T, b *bytes.Buffer, v int32) {
+	t.Helper()
+	if err := binary.Write(b, binary.BigEndian, v); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeCString(t *testing.T, b *bytes.Buffer, s string) {
+	t.Helper()
+	n, err := b.WriteString(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(s) {
+		t.Fatalf("short write: wrote %d bytes, want %d", n, len(s))
+	}
+	if err := b.WriteByte(0); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeReadyForQuery(t *testing.T, b *bytes.Buffer, status ReadyStatus) {
+	t.Helper()
+	writeMessage(t, b, 'Z', []byte{byte(status)})
+}
+
+func writeBackendKeyData(t *testing.T, b *bytes.Buffer, pid, secretKey int32) {
+	t.Helper()
+	var body bytes.Buffer
+	writeInt32(t, &body, pid)
+	writeInt32(t, &body, secretKey)
+	writeMessage(t, b, 'K', body.Bytes())
+}
+
+func writeAuthentication(t *testing.T, b *bytes.Buffer, typ AuthenticationType) {
+	t.Helper()
+	var body bytes.Buffer
+	writeInt32(t, &body, int32(typ))
+	writeMessage(t, b, 'R', body.Bytes())
+}
+
+func writeDataRow(t *testing.T, b *bytes.Buffer, values ...[]byte) {
+	t.Helper()
+	var body bytes.Buffer
+	writeInt16(t, &body, int16(len(values)))
+	for _, v := range values {
+		writeInt32(t, &body, int32(len(v)))
+		n, err := body.Write(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n != len(v) {
+			t.Fatalf("short write: wrote %d bytes, want %d", n, len(v))
+		}
+	}
+	writeMessage(t, b, 'D', body.Bytes())
+}
+
+func writeNotification(t *testing.T, b *bytes.Buffer, pid int32, channel, payload string) {
+	t.Helper()
+	var body bytes.Buffer
+	writeInt32(t, &body, pid)
+	writeCString(t, &body, channel)
+	writeCString(t, &body, payload)
+	writeMessage(t, b, 'A', body.Bytes())
+}
+
+func writeParameterStatus(t *testing.T, b *bytes.Buffer, name, value string) {
+	t.Helper()
+	var body bytes.Buffer
+	writeCString(t, &body, name)
+	writeCString(t, &body, value)
+	writeMessage(t, b, 'S', body.Bytes())
 }
