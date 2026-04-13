@@ -214,12 +214,6 @@ func TestReadErrorSticky(t *testing.T) {
 	}
 }
 
-type errWriter struct{}
-
-func (errWriter) Write([]byte) (int, error) {
-	return 0, errTest
-}
-
 type writeErrThenData struct {
 	err  error
 	seen bool

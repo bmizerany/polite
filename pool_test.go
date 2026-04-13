@@ -24,11 +24,17 @@ type noopConn struct{}
 func (noopConn) Read([]byte) (int, error)         { return 0, io.EOF }
 func (noopConn) Write(p []byte) (int, error)      { return len(p), nil }
 func (noopConn) Close() error                     { return nil }
-func (noopConn) LocalAddr() net.Addr              { return dummyAddr("local") }
-func (noopConn) RemoteAddr() net.Addr             { return dummyAddr("remote") }
+func (noopConn) LocalAddr() net.Addr              { return poolAddr("local") }
+func (noopConn) RemoteAddr() net.Addr             { return poolAddr("remote") }
 func (noopConn) SetDeadline(time.Time) error      { return nil }
 func (noopConn) SetReadDeadline(time.Time) error  { return nil }
 func (noopConn) SetWriteDeadline(time.Time) error { return nil }
+
+type poolAddr string
+
+func (a poolAddr) Network() string { return string(a) }
+
+func (a poolAddr) String() string { return string(a) }
 
 func newTestConn() *Conn {
 	raw := noopConn{}

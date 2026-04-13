@@ -252,11 +252,6 @@ func (c *closeErrConn) SetDeadline(time.Time) error      { return nil }
 func (c *closeErrConn) SetReadDeadline(time.Time) error  { return nil }
 func (c *closeErrConn) SetWriteDeadline(time.Time) error { return nil }
 
-type dummyAddr string
-
-func (a dummyAddr) Network() string { return string(a) }
-func (a dummyAddr) String() string  { return string(a) }
-
 func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 	t.Parallel()
 
