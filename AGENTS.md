@@ -60,6 +60,9 @@ EOF
 - When referencing columns by index, it is idiomatic to keep the read on one
   line, for example `id, err := row.Column(0).DecodeInt()`. Exceptions exist,
   but this is usually the preferred form.
+- Do not use `_ = foo()` or similar blank-identifier assignments to signal that
+  a function is being called while ignoring its error or result. If the call is
+  intentionally ignored, just invoke the function directly.
 
 Good:
 
