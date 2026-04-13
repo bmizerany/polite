@@ -228,21 +228,6 @@ func TestConnClose(t *testing.T) {
 	}
 }
 
-type closeFailConn struct {
-	writeErr error
-	closeErr error
-	closed   bool
-}
-
-func (c *closeFailConn) Read([]byte) (int, error)         { return 0, io.EOF }
-func (c *closeFailConn) Write(p []byte) (int, error)      { return len(p), c.writeErr }
-func (c *closeFailConn) Close() error                     { c.closed = true; return c.closeErr }
-func (c *closeFailConn) LocalAddr() net.Addr              { return dummyAddr("local") }
-func (c *closeFailConn) RemoteAddr() net.Addr             { return dummyAddr("remote") }
-func (c *closeFailConn) SetDeadline(time.Time) error      { return nil }
-func (c *closeFailConn) SetReadDeadline(time.Time) error  { return nil }
-func (c *closeFailConn) SetWriteDeadline(time.Time) error { return nil }
-
 type flushErrWriter struct {
 	err    error
 	writes int
@@ -334,12 +319,10 @@ func TestConnCloseReturnsRawCloseError(t *testing.T) {
 	t.Parallel()
 
 	closeErr := errors.New("close")
-	raw := &closeFailConn{
-		closeErr: closeErr,
-	}
+	raw := &closeErrConn{closeErr: closeErr}
 	cn := &Conn{
 		cn: raw,
-		fc: febe.New(raw, raw),
+		fc: febe.New(strings.NewReader(""), io.Discard),
 	}
 
 	if err := cn.Close(); !errors.Is(err, closeErr) {
