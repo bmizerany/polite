@@ -316,12 +316,10 @@ func TestConnCloseReturnsNetErrClosed(t *testing.T) {
 func TestConnCloseReturnsErrTerminated(t *testing.T) {
 	t.Parallel()
 
-	raw := &closeFailConn{
-		closeErr: febe.ErrTerminated,
-	}
+	raw := &closeErrConn{closeErr: febe.ErrTerminated}
 	cn := &Conn{
 		cn: raw,
-		fc: febe.New(raw, raw),
+		fc: febe.New(strings.NewReader(""), io.Discard),
 	}
 
 	if err := cn.Close(); !errors.Is(err, febe.ErrTerminated) {
