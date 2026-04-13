@@ -12,6 +12,17 @@ that could complicate its usage.
   parameter OID is unknown, do not add client-side heuristics based on payload
   width or shape.
 
+## Tests
+
+- Prefer exported setup over unexported field construction. If the package has a
+  real entry point such as `Dial`, use it unless the test is specifically about
+  malformed internal state that cannot be reached otherwise.
+- Do not simulate impossible states just to hit a branch. A test should model a
+  situation a real client, server, or network transport could actually produce.
+- Each test should prove one real thing with the fewest moving parts possible.
+  If a helper starts hiding too much setup or behavior, inline the essential
+  path and delete the fiction instead.
+
 ## Commit message rules for this repository
 
 - For commits that touch the root package (`package polite`), use the
