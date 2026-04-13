@@ -238,9 +238,9 @@ func (w *flushErrWriter) Write([]byte) (int, error) {
 	return 0, w.err
 }
 
-func newConnWithFEBEForTest(cn net.Conn, w io.Writer) *Conn {
+func newConnWithRawConnAndWriter(raw net.Conn, w io.Writer) *Conn {
 	return &Conn{
-		cn: cn,
+		cn: raw,
 		fc: febe.New(strings.NewReader(""), w),
 	}
 }
@@ -265,7 +265,11 @@ func newCloseErrConn(t testing.TB, closeErr error) *closeErrConn {
 	t.Cleanup(func() {
 		client.Close()
 		server.Close()
-		<-done
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Errorf("timed out waiting for closeErrConn drain")
+		}
 	})
 
 	return &closeErrConn{
@@ -287,7 +291,7 @@ func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 	closeErr := errors.New("close")
 	raw := newCloseErrConn(t, closeErr)
 	w := &flushErrWriter{err: flushErr}
-	cn := newConnWithFEBEForTest(raw, w)
+	cn := newConnWithRawConnAndWriter(raw, w)
 
 	err := cn.Close()
 	if !errors.Is(err, closeErr) {
@@ -305,7 +309,7 @@ func TestConnCloseReturnsNetErrClosed(t *testing.T) {
 	t.Parallel()
 
 	raw := newCloseErrConn(t, net.ErrClosed)
-	cn := newConnWithFEBEForTest(raw, io.Discard)
+	cn := newConnWithRawConnAndWriter(raw, io.Discard)
 
 	if err := cn.Close(); !errors.Is(err, net.ErrClosed) {
 		t.Fatalf("Close() = %v; want %v", err, net.ErrClosed)
@@ -319,7 +323,7 @@ func TestConnCloseReturnsErrTerminated(t *testing.T) {
 	t.Parallel()
 
 	raw := newCloseErrConn(t, febe.ErrTerminated)
-	cn := newConnWithFEBEForTest(raw, io.Discard)
+	cn := newConnWithRawConnAndWriter(raw, io.Discard)
 
 	if err := cn.Close(); !errors.Is(err, febe.ErrTerminated) {
 		t.Fatalf("Close() = %v; want %v", err, febe.ErrTerminated)
@@ -334,7 +338,7 @@ func TestConnCloseReturnsRawCloseError(t *testing.T) {
 
 	closeErr := errors.New("close")
 	raw := newCloseErrConn(t, closeErr)
-	cn := newConnWithFEBEForTest(raw, io.Discard)
+	cn := newConnWithRawConnAndWriter(raw, io.Discard)
 
 	if err := cn.Close(); !errors.Is(err, closeErr) {
 		t.Fatalf("Close() = %v; want %v", err, closeErr)
