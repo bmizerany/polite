@@ -299,12 +299,10 @@ func TestConnCloseFlushErrorStillClosesUnderlyingConn(t *testing.T) {
 func TestConnCloseReturnsNetErrClosed(t *testing.T) {
 	t.Parallel()
 
-	raw := &closeFailConn{
-		closeErr: net.ErrClosed,
-	}
+	raw := &closeErrConn{closeErr: net.ErrClosed}
 	cn := &Conn{
 		cn: raw,
-		fc: febe.New(raw, raw),
+		fc: febe.New(strings.NewReader(""), io.Discard),
 	}
 
 	if err := cn.Close(); !errors.Is(err, net.ErrClosed) {
