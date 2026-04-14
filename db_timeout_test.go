@@ -7,12 +7,6 @@ import (
 	"time"
 )
 
-type dummyAddr string
-
-func (a dummyAddr) Network() string { return string(a) }
-
-func (a dummyAddr) String() string { return string(a) }
-
 func TestQueryDeadlineAllowsReuse(t *testing.T) {
 	t.Parallel()
 
