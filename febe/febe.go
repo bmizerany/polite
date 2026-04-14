@@ -447,9 +447,6 @@ const (
 	// AuthenticationTypeCleartext requests a cleartext password.
 	AuthenticationTypeCleartext AuthenticationType = 3
 
-	// AuthenticationTypeMD5 requests an MD5 password response.
-	AuthenticationTypeMD5 AuthenticationType = 5
-
 	// AuthenticationTypeSCMCredential requests SCM credentials.
 	AuthenticationTypeSCMCredential AuthenticationType = 6
 
@@ -486,8 +483,6 @@ type AuthenticationResponse struct {
 	// SASLMechanisms lists the advertised SASL mechanisms.
 	SASLMechanisms []string
 
-	// MD5Salt holds the 4-byte salt for MD5 authentication.
-	MD5Salt []byte
 }
 
 // ReadAuthentication reads an Authentication response.
@@ -530,12 +525,6 @@ func (c *Conn) ReadAuthentication() (AuthenticationResponse, error) {
 			return zero, err
 		}
 		r.SASLData = data
-	case AuthenticationTypeMD5:
-		salt, err := c.c.ReadByteN(4)
-		if err != nil {
-			return zero, err
-		}
-		r.MD5Salt = salt
 	}
 
 	return r, nil

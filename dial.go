@@ -3,12 +3,9 @@ package polite
 import (
 	"cmp"
 	"context"
-	"crypto/md5"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -141,25 +138,6 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 	// TODO(bmizerany): add tracing
 
-	nextResponse := func(wantType febe.AuthenticationType) (febe.AuthenticationResponse, error) {
-		var zero febe.AuthenticationResponse
-		if err := c.fc.Flush(); err != nil {
-			return zero, err
-		}
-		_, err := c.fc.ReadHeader(ctx)
-		if err != nil {
-			return zero, err
-		}
-		cr, err := c.fc.ReadAuthentication()
-		if err != nil {
-			return zero, err
-		}
-		if cr.Type != wantType {
-			return zero, fmt.Errorf("unexpected authentication type %s; want %d", cr.Type, wantType)
-		}
-		return cr, nil
-	}
-
 	cr, err := c.fc.ReadAuthentication()
 	if err != nil {
 		return err
@@ -170,22 +148,6 @@ func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 		return nil
 	case febe.AuthenticationTypeSASL:
 		return scram.Handshake(c.fc, cr, o.User, o.Password)
-	case febe.AuthenticationTypeMD5:
-		// See: https://www.postgresql.org/docs/current/protocol-flow.html#PROTOCOL-FLOW-START-UP
-		md5 := func(s ...string) string {
-			h := md5.New()
-			for _, s := range s {
-				io.WriteString(h, s)
-			}
-			return hex.EncodeToString(h.Sum(nil))
-		}
-
-		msg := "md5" + md5(md5(o.Password, o.User), string(cr.MD5Salt))
-		if err := c.fc.WritePasswordMessage(msg); err != nil {
-			return err
-		}
-		_, err := nextResponse(febe.AuthenticationTypeOK)
-		return err
 	default:
 		return fmt.Errorf("unexpected authentication type %s", cr.Type)
 	}

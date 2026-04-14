@@ -34,64 +34,6 @@ func TestOpenAuthNone(t *testing.T) {
 	}
 }
 
-func TestOpenAuthMD5(t *testing.T) {
-	t.Parallel()
-
-	// hba postgres that will accept md5 passwords for md5only db, and
-	// trust non-md5only database names using regexp
-	mainDSN := startPG(t, withHBA(t, []string{
-		"-c", "password_encryption=md5",
-	}, `
-		# order is paramount; first match takes precedence
-		local  all  test  md5
-		local  all  all   trust
-	`)...)
-
-	func() {
-		// Create test user with pass
-		cn, err := Dial(context.Background(), mainDSN, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cn.Close()
-
-		const q = `CREATE USER test WITH PASSWORD 'pass'`
-		if err := cn.Exec(context.Background(), q); err != nil {
-			t.Fatal(err)
-		}
-	}()
-
-	cases := []struct {
-		user, pass string
-		wantErr    bool
-	}{
-		{"test", "pass", false},
-		{"test", "wrong", true},
-		{"wrong", "pass", true},
-	}
-
-	for _, tt := range cases {
-		t.Run(tt.user+"/"+tt.pass, func(t *testing.T) {
-			// connect with password
-			dsn := fmt.Sprintf("%s user=%s password=%s", mainDSN, tt.user, tt.pass)
-			cn, err := Dial(context.Background(), dsn, nil)
-			if tt.wantErr && err == nil {
-				t.Fatal("expected error")
-			} else if !tt.wantErr && err != nil {
-				t.Fatal(err)
-			}
-			if err != nil {
-				return
-			}
-			defer cn.Close()
-
-			if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
-				t.Fatal(err)
-			}
-		})
-	}
-}
-
 func TestOpenAuthSCRAM(t *testing.T) {
 	t.Parallel()
 

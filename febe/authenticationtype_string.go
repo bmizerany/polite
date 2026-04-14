@@ -10,7 +10,6 @@ func _() {
 	var x [1]struct{}
 	_ = x[AuthenticationTypeOK-0]
 	_ = x[AuthenticationTypeCleartext-3]
-	_ = x[AuthenticationTypeMD5-5]
 	_ = x[AuthenticationTypeSCMCredential-6]
 	_ = x[AuthenticationTypeGSS-7]
 	_ = x[AuthenticationTypeGSSContinue-8]
@@ -23,11 +22,11 @@ func _() {
 const (
 	_AuthenticationType_name_0 = "AuthenticationTypeOK"
 	_AuthenticationType_name_1 = "AuthenticationTypeCleartext"
-	_AuthenticationType_name_2 = "AuthenticationTypeMD5AuthenticationTypeSCMCredentialAuthenticationTypeGSSAuthenticationTypeGSSContinueAuthenticationTypeSSPIAuthenticationTypeSASLAuthenticationTypeSASLContinueAuthenticationTypeSASLFinal"
+	_AuthenticationType_name_2 = "AuthenticationTypeSCMCredentialAuthenticationTypeGSSAuthenticationTypeGSSContinueAuthenticationTypeSSPIAuthenticationTypeSASLAuthenticationTypeSASLContinueAuthenticationTypeSASLFinal"
 )
 
 var (
-	_AuthenticationType_index_2 = [...]uint8{0, 21, 52, 73, 102, 124, 146, 176, 203}
+	_AuthenticationType_index_2 = [...]uint8{0, 31, 52, 81, 103, 125, 155, 182}
 )
 
 func (i AuthenticationType) String() string {
@@ -36,8 +35,8 @@ func (i AuthenticationType) String() string {
 		return _AuthenticationType_name_0
 	case i == 3:
 		return _AuthenticationType_name_1
-	case 5 <= i && i <= 12:
-		i -= 5
+	case 6 <= i && i <= 12:
+		i -= 6
 		return _AuthenticationType_name_2[_AuthenticationType_index_2[i]:_AuthenticationType_index_2[i+1]]
 	default:
 		return "AuthenticationType(" + strconv.FormatInt(int64(i), 10) + ")"
