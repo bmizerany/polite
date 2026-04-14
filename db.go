@@ -197,13 +197,13 @@ func appendArg(dst []byte, arg any, oid oids.ID, loc *time.Location) ([]byte, in
 	case uint:
 		u := uint64(v)
 		if u > maxInt64 {
-			return fmt.Appendf(dst, "%d", u), formatText, nil
+			return strconv.AppendUint(dst, u, 10), formatText, nil
 		}
 		return appendBinaryArg(dst, int64(u))
 	case uint64:
 		// Encode as NUMERIC text only for values that overflow signed 64-bit.
 		if v > maxInt64 {
-			return fmt.Appendf(dst, "%d", v), formatText, nil
+			return strconv.AppendUint(dst, v, 10), formatText, nil
 		}
 		return appendBinaryArg(dst, int64(v))
 	case int:
