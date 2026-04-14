@@ -8,6 +8,74 @@ import (
 	"kr.dev/diff"
 )
 
+func FuzzScanDSN(f *testing.F) {
+	f.Add("host=localhost port=5432")
+	f.Add("dbname='my db' user=foo")
+	f.Add("key='it\\'s escaped'")
+	f.Add("key='escaped at end\\\\'")
+	f.Add("a = b")
+	f.Add("===")
+	f.Add("")
+	f.Add("  \t\n  ")
+	f.Add("'unclosed")
+	f.Add("''")
+	f.Add("a=b c=d e=f")
+
+	f.Fuzz(func(t *testing.T, dsn string) {
+		var tokens []string
+		var scanErr error
+		for tok, err := range ScanDSN(dsn) {
+			if err != nil {
+				scanErr = err
+				break
+			}
+			tokens = append(tokens, tok)
+		}
+
+		if scanErr != nil {
+			if !strings.Contains(scanErr.Error(), "unclosed quoted string") {
+				t.Fatalf("unexpected error: %v", scanErr)
+			}
+			return
+		}
+
+		for i, tok := range tokens {
+			if tok == "" {
+				t.Fatalf("token %d is empty", i)
+			}
+			if tok == "=" {
+				continue
+			}
+			if tok[0] == '\'' {
+				if tok[len(tok)-1] != '\'' {
+					t.Fatalf("token %d: %q starts with quote but does not end with one", i, tok)
+				}
+				continue
+			}
+			for j := 0; j < len(tok); j++ {
+				c := tok[j]
+				if c == '=' || isWhitespace[c] {
+					t.Fatalf("token %d: unquoted %q contains whitespace or '=' at byte %d", i, tok, j)
+				}
+			}
+		}
+
+		// Round-trip: joining with spaces and re-scanning must
+		// produce the same token sequence.
+		joined := strings.Join(tokens, " ")
+		var tokens2 []string
+		for tok, err := range ScanDSN(joined) {
+			if err != nil {
+				t.Fatalf("round-trip scan of %q failed: %v", joined, err)
+			}
+			tokens2 = append(tokens2, tok)
+		}
+		if !slices.Equal(tokens, tokens2) {
+			t.Fatalf("round-trip mismatch:\n  got:  %q\n  want: %q", tokens2, tokens)
+		}
+	})
+}
+
 func TestParseOptions(t *testing.T) {
 	cases := []struct {
 		dsn  string
