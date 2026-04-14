@@ -91,6 +91,68 @@ func TestDecodeTimeTracksSessionTimeZone(t *testing.T) {
 	assertTime(t, decodeQueryTimes(t, cn, `SELECT $1::timestamp`, same)[0], wantTimestampInLocation(la, same))
 }
 
+func TestDecodeTimeTracksSessionTimeZoneAcrossStatements(t *testing.T) {
+	t.Parallel()
+
+	t.Run("timestamp", func(t *testing.T) {
+		cn := newSession(t)
+		ctx := t.Context()
+
+		ny, err := time.LoadLocation("America/New_York")
+		if err != nil {
+			t.Fatal(err)
+		}
+		la, err := time.LoadLocation("America/Los_Angeles")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Trailing comments produce distinct cache keys,
+		// giving each query its own prepared statement.
+		const a = `SELECT '2024-06-01 12:00:00'::timestamp -- a`
+		const b = `SELECT '2024-06-01 12:00:00'::timestamp -- b`
+
+		// Run A under New_York.
+		if err := cn.Exec(ctx, `SET TimeZone TO 'America/New_York'`); err != nil {
+			t.Fatal(err)
+		}
+		assertTime(t, decodeQueryTimes(t, cn, a)[0], time.Date(2024, 6, 1, 12, 0, 0, 0, ny))
+
+		// Change to Los_Angeles, run B (new prepared statement).
+		if err := cn.Exec(ctx, `SET TimeZone TO 'America/Los_Angeles'`); err != nil {
+			t.Fatal(err)
+		}
+		assertTime(t, decodeQueryTimes(t, cn, b)[0], time.Date(2024, 6, 1, 12, 0, 0, 0, la))
+
+		// Re-run A (cache hit). Must use the current zone, not
+		// the zone that was active when A was first prepared.
+		assertTime(t, decodeQueryTimes(t, cn, a)[0], time.Date(2024, 6, 1, 12, 0, 0, 0, la))
+	})
+
+	t.Run("timestamptz", func(t *testing.T) {
+		cn := newSession(t)
+		ctx := t.Context()
+
+		const a = `SELECT '2024-06-01 12:00:00-04'::timestamptz -- a`
+		const b = `SELECT '2024-06-01 12:00:00-04'::timestamptz -- b`
+
+		// Binary timestamptz always decodes as UTC regardless
+		// of session timezone.
+		want := time.Date(2024, 6, 1, 16, 0, 0, 0, time.UTC)
+
+		if err := cn.Exec(ctx, `SET TimeZone TO 'America/New_York'`); err != nil {
+			t.Fatal(err)
+		}
+		assertTime(t, decodeQueryTimes(t, cn, a)[0], want)
+
+		if err := cn.Exec(ctx, `SET TimeZone TO 'America/Los_Angeles'`); err != nil {
+			t.Fatal(err)
+		}
+		assertTime(t, decodeQueryTimes(t, cn, b)[0], want)
+		assertTime(t, decodeQueryTimes(t, cn, a)[0], want)
+	})
+}
+
 func TestLoadTimeZoneOffset(t *testing.T) {
 	cases := []struct {
 		name    string
