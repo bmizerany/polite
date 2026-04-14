@@ -370,8 +370,18 @@ func (c *Conn) readAndSetCurrentHeader() (err error) {
 	c.c.ResetN()
 
 	h.msgLen, err = c.c.ReadInt32()
+	if err != nil {
+		return err
+	}
+
+	// The wire-protocol length includes the 4-byte length field itself,
+	// so any value below 4 is malformed.
+	if h.msgLen < 4 {
+		return fmt.Errorf("febe: invalid message length %d", h.msgLen)
+	}
+
 	c.h = h
-	return err
+	return nil
 }
 
 func (c *Conn) discardRemainingMessageBytes() error {
