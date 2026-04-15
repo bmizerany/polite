@@ -2,7 +2,9 @@ package polite
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"net/url"
 	"testing"
 
 	"blake.io/polite/febe"
@@ -334,4 +336,49 @@ func TestCopyFromEmpty(t *testing.T) {
 	}
 
 	checkReady(t, cn)
+}
+
+func TestCopyBoth(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+
+	slot := "polite_test_" + rand.Text()[:6]
+	err := cn.Exec(ctx, "SELECT pg_create_logical_replication_slot($1, 'test_decoding')", slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cn.Exec(context.Background(), "SELECT pg_drop_replication_slot($1)", slot)
+	})
+
+	// Build a DSN with replication=database so the backend will accept
+	// START_REPLICATION and reply with CopyBothResponse ('W').
+	u, urlErr := url.Parse(testDSN)
+	var replDSN string
+	if urlErr == nil && u.Scheme != "" {
+		q := u.Query()
+		q.Set("replication", "database")
+		u.RawQuery = q.Encode()
+		replDSN = u.String()
+	} else {
+		replDSN = testDSN + " replication=database"
+	}
+
+	repl, err := Dial(ctx, replDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { repl.Close() })
+
+	// START_REPLICATION triggers CopyBothResponse ('W'). Verify the
+	// connection handles it and yields replication data without error.
+	for row, err := range repl.Query(ctx, "START_REPLICATION SLOT "+slot+" LOGICAL 0/0") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = row
+		break
+	}
 }
