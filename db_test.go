@@ -185,7 +185,7 @@ func BenchmarkQueryAllocations(b *testing.B) {
 			if _, err := row.Column(0).DecodeInt(); err != nil {
 				b.Fatal(err)
 			}
-			_ = row.Column(1).Text()
+			_ = row.Column(1).Bytes()
 		}
 	}
 
