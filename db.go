@@ -117,6 +117,35 @@ func (c *Conn) reset(ctx context.Context) error {
 	return nil
 }
 
+// Events blocks and yields each [febe.Notification] received on cn.
+// It returns on the first protocol or transport error, or when the
+// caller breaks out of the range loop.
+//
+// Typical usage with LISTEN:
+//
+//	cn.Exec(ctx, "LISTEN chat")
+//	for n := range polite.Events(ctx, cn) {
+//		fmt.Printf("%s: %s\n", n.Channel, n.Payload)
+//	}
+func Events(ctx context.Context, cn *Conn) iter.Seq[*febe.Notification] {
+	return func(yield func(*febe.Notification) bool) {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		ctx = febe.WithTrace(ctx, &febe.Trace{
+			ReceivedNotification: func(_ context.Context, n *febe.Notification) {
+				if !yield(n) {
+					cancel()
+				}
+			},
+		})
+		for ctx.Err() == nil {
+			if _, err := cn.fc.ReadHeader(ctx); err != nil {
+				return
+			}
+		}
+	}
+}
+
 // Exec executes a query that is not intended to return rows, such as an
 // INSERT, UPDATE, or DELETE. It returns only an error.
 //

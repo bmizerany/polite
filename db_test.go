@@ -247,7 +247,7 @@ func TestConnCloseUnderlyingConnDespiteFlushError(t *testing.T) {
 	var dialer net.Dialer
 	raw := new(failWriteConn)
 	cn, err := Dial(t.Context(), testDSN, &Config{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			c, err := dialer.DialContext(ctx, network, addr)
 			raw.Conn = c
 			return raw, err
@@ -1399,6 +1399,44 @@ func TestPoolPutResetsPartialQuery(t *testing.T) {
 		t.Fatalf("Status() = %v; want idle after pool reset", cn.Status())
 	}
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEvents(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	listener, err := Dial(ctx, testDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	notifier := newSession(t)
+
+	if err := listener.Exec(ctx, "LISTEN test_events"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Send a notification from the other connection.
+	go func() {
+		notifier.Exec(ctx, "NOTIFY test_events, 'hello'")
+	}()
+
+	for n := range Events(ctx, listener) {
+		if got := string(n.Channel); got != "test_events" {
+			t.Fatalf("Channel = %q; want %q", got, "test_events")
+		}
+		if got := string(n.Payload); got != "hello" {
+			t.Fatalf("Payload = %q; want %q", got, "hello")
+		}
+		break
+	}
+
+	// Connection should still be usable after breaking out of Events.
+	if err := listener.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
