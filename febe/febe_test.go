@@ -111,6 +111,36 @@ func TestReadHeaderDiscard(t *testing.T) {
 	}
 }
 
+func TestReadHeaderTracesProtocolError(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	cn.WriteNotice('E', &Notice{
+		Severity:  "ERROR",
+		Verbosity: "ERROR",
+		Code:      "42601",
+		Message:   "syntax error",
+	})
+	cn.Flush()
+
+	var count int
+	ctx := WithTrace(context.Background(), &Trace{
+		ReceivedError: func(_ context.Context, err error) {
+			count++
+		},
+	})
+
+	_, err := cn.ReadHeader(ctx)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if _, ok := errors.AsType[*Error](err); !ok {
+		t.Fatalf("unexpected error type %T: %v", err, err)
+	}
+	if count != 1 {
+		t.Fatalf("ReceivedError called %d times; want 1", count)
+	}
+}
+
 func TestErrorSeverityNotSticky(t *testing.T) {
 	// ERROR severity should not poison the connection.
 	var b bytes.Buffer

@@ -171,11 +171,6 @@ func (c *Conn) setErr(err error) error {
 	return c.err
 }
 
-func (c *Conn) handleErr(ctx context.Context, err error) error {
-	TraceEmitError(ctx, err)
-	return c.setErr(err)
-}
-
 func (c *Conn) checkMessageHeader(want ...byte) error {
 	if slices.Contains(want, c.h.Type()) {
 		return nil
@@ -266,10 +261,10 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		}
 
 		if err := c.discardRemainingMessageBytes(); err != nil {
-			return zero, c.handleErr(ctx, err)
+			return zero, c.setErr(err)
 		}
 		if err := c.readAndSetCurrentHeader(); err != nil {
-			return zero, c.handleErr(ctx, err)
+			return zero, c.setErr(err)
 		}
 		if t.ReceivedHeader != nil {
 			t.ReceivedHeader(ctx, c.h)
@@ -278,7 +273,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		case 'N':
 			m, err := c.readNoticeResponse()
 			if err != nil {
-				return zero, c.handleErr(ctx, err)
+				return zero, c.setErr(err)
 			}
 			if t.ReceivedNotice != nil {
 				t.ReceivedNotice(ctx, m.Notice)
@@ -287,7 +282,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		case 'E':
 			m, err := c.readNoticeResponse()
 			if err != nil {
-				return zero, c.handleErr(ctx, err)
+				return zero, c.setErr(err)
 			}
 			e := m.AsError()
 			if t.ReceivedError != nil {
@@ -300,7 +295,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		case 'f': // CopyFail
 			e, err := c.readCopyFailResponse()
 			if err != nil {
-				return zero, c.handleErr(ctx, err)
+				return zero, c.setErr(err)
 			}
 			if t.ReceivedError != nil {
 				t.ReceivedError(ctx, e)
@@ -309,7 +304,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		case 'S':
 			s, err := c.readParameterStatus()
 			if err != nil {
-				return zero, c.handleErr(ctx, err)
+				return zero, c.setErr(err)
 			}
 			if c.parameterStatusHook != nil {
 				c.parameterStatusHook(Parameter{
@@ -327,7 +322,7 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 		case 'A':
 			m, err := c.readNotification()
 			if err != nil {
-				return zero, c.handleErr(ctx, err)
+				return zero, c.setErr(err)
 			}
 			if t.ReceivedNotification != nil {
 				t.ReceivedNotification(ctx, &m)
