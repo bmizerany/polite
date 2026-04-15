@@ -704,6 +704,14 @@ func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDe
 			if m.Format != febe.CopyFormatBinary {
 				return nil, ErrUnsupportedCopyFormat
 			}
+		case 'W':
+			m, err := c.fc.ReadCopyBoth()
+			if err != nil {
+				return nil, err
+			}
+			if m.Format != febe.CopyFormatBinary {
+				return nil, ErrUnsupportedCopyFormat
+			}
 		case 'G':
 			m, err := c.fc.ReadCopyIn()
 			if err != nil {

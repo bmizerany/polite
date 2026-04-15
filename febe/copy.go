@@ -66,6 +66,18 @@ func (c *Conn) ReadCopyIn() (CopyResponse, error) {
 	return c.readCopy()
 }
 
+// ReadCopyBoth reads the response to the COPY BOTH command.
+//
+// It discards the format codes for each column since they are always all 0
+// or all 1 depending on the Format field (currently for PostgreSQL 16).
+func (c *Conn) ReadCopyBoth() (CopyResponse, error) {
+	var zero CopyResponse
+	if err := c.checkMessageHeader('W'); err != nil {
+		return zero, err
+	}
+	return c.readCopy()
+}
+
 func (c *Conn) readCopy() (CopyResponse, error) {
 	var zero CopyResponse
 	format, err := c.c.ReadByte()

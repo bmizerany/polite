@@ -105,3 +105,32 @@ func TestCopyData(t *testing.T) {
 		t.Fatalf("ReadHeader() = %v; want error", h)
 	}
 }
+
+func TestReadCopyBoth(t *testing.T) {
+	var b bytes.Buffer
+
+	// CopyBothResponse: type 'W', format binary, 2 columns
+	b.WriteByte('W')
+	b.Write([]byte{0, 0, 0, 11})  // length: 4 + 1 + 2 + 2*2 = 11
+	b.WriteByte(1)                 // format: binary
+	b.Write([]byte{0, 2})         // numCols: 2
+	b.Write([]byte{0, 1, 0, 1})   // format codes (ignored)
+
+	ctx := context.Background()
+	cn := New(&b, nil)
+
+	_, err := cn.ReadHeader(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr, err := cn.ReadCopyBoth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cr.Format != CopyFormatBinary {
+		t.Fatalf("Format = %v; want binary", cr.Format)
+	}
+	if cr.NumCols != 2 {
+		t.Fatalf("NumCols = %d; want 2", cr.NumCols)
+	}
+}
