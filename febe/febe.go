@@ -81,16 +81,9 @@ const (
 	ReadyStatusFailed ReadyStatus = 'E'
 )
 
-var inTransaction = [255]bool{
-	ReadyStatusIdle:   false,
-	ReadyStatusBusy:   true,
-	ReadyStatusFailed: true,
-}
-
-// InTransaction reports whether s indicates the backend is inside a
-// transaction block, including a failed transaction block.
-func (s ReadyStatus) InTransaction() bool {
-	return inTransaction[s]
+// Idle reports whether s indicates the backend status is [ReadyStatusIdle].
+func (s ReadyStatus) Idle() bool {
+	return s == ReadyStatusIdle
 }
 
 var statusNames = [255]string{

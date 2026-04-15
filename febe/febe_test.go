@@ -355,11 +355,11 @@ func TestReadReadyForQuery(t *testing.T) {
 	tests := []struct {
 		name   string
 		status ReadyStatus
-		inTx   bool
+		isIdle bool
 	}{
-		{name: "idle", status: ReadyStatusIdle},
-		{name: "busy", status: ReadyStatusBusy, inTx: true},
-		{name: "failed", status: ReadyStatusFailed, inTx: true},
+		{name: "idle", status: ReadyStatusIdle, isIdle: true},
+		{name: "busy", status: ReadyStatusBusy, isIdle: false},
+		{name: "failed", status: ReadyStatusFailed, isIdle: false},
 	}
 
 	for _, tt := range tests {
@@ -386,8 +386,8 @@ func TestReadReadyForQuery(t *testing.T) {
 			if got := cn.Status(); got != tt.status {
 				t.Fatalf("Status() = %q; want %q", got, tt.status)
 			}
-			if got := cn.Status().InTransaction(); got != tt.inTx {
-				t.Fatalf("Status().InTransaction() = %v; want %v", got, tt.inTx)
+			if got := cn.Status().Idle(); got != tt.isIdle {
+				t.Fatalf("Status().Idle() = %v; want %v", got, tt.isIdle)
 			}
 		})
 	}
