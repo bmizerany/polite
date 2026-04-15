@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
-	"blake.io/polite/internal/backoff"
 	"blake.io/polite/febe"
 	"kr.dev/diff"
 )
@@ -99,86 +97,26 @@ func TestDiscardUntilReadyFatal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		cn.Close()
-	})
+	t.Cleanup(func() { cn.Close() })
 
-	// Create a table with enough rows to generate many CopyData
-	// messages during COPY TO, giving us a window to terminate.
-	err = cn.Exec(ctx, "CREATE TEMP TABLE big (id INT)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = cn.Exec(ctx, "INSERT INTO big SELECT generate_series(1, 10000)")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Get the backend PID of the connection under test.
-	var pid int64
-	for row, err := range cn.Query(ctx, "SELECT pg_backend_pid()") {
-		if err != nil {
-			t.Fatal(err)
-		}
-		pid, err = row.Column(0).DecodeInt()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// Open a second connection to terminate the first.
-	killer := newSession(t)
-
-	// Hold an advisory lock on the killer connection so the COPY
-	// query stalls mid-stream when it hits pg_advisory_lock. This
-	// gives us a deterministic window to terminate the backend.
-	if err := killer.Exec(ctx, "SELECT pg_advisory_lock(12345)"); err != nil {
-		t.Fatal(err)
-	}
-
-	// Issue the COPY query in a goroutine. The subquery calls
-	// pg_advisory_lock on each row, which blocks when it reaches
-	// the killer's held lock. The non-binary format is rejected
-	// and maybeRecoverFrom calls discardUntilReady, which stalls
-	// on the blocked backend. Terminating the backend mid-drain
-	// provokes a FATAL error.
+	// The subquery terminates its own backend mid-COPY. The
+	// non-binary format causes polite to reject the CopyOutResponse
+	// and call discardUntilReady. While draining, the backend
+	// processes the pending SIGTERM and sends a FATAL error.
 	//
 	// Without the IsFatal guard in discardUntilReady, this loops
 	// forever; with the guard it returns the fatal error.
-	type result struct{ err error }
-	done := make(chan result, 1)
-	go func() {
-		var gotErr error
-		for _, err := range cn.Query(ctx, "COPY (SELECT id, pg_advisory_lock(12345) FROM big) TO STDOUT WITH (FORMAT text)") {
-			gotErr = err
-		}
-		done <- result{gotErr}
-	}()
-
-	// Wait until the backend is blocked on the advisory lock.
-	for range backoff.Loop(ctx, 100*time.Millisecond) {
-		var waitType string
-		for row, err := range killer.Query(ctx, "SELECT coalesce(wait_event_type, '') FROM pg_stat_activity WHERE pid = $1", int32(pid)) {
-			if err != nil {
-				t.Fatal(err)
-			}
-			waitType = row.Column(0).Text()
-		}
-		if waitType == "Lock" {
-			break
-		}
+	var gotErr error
+	for _, err := range cn.Query(ctx, "COPY (SELECT pg_terminate_backend(pg_backend_pid())) TO STDOUT WITH (FORMAT text)") {
+		gotErr = err
 	}
 
-	killer.Exec(ctx, "SELECT pg_terminate_backend($1)", int32(pid))
-
-	got := <-done
-
-	if got.err == nil {
+	if gotErr == nil {
 		t.Fatal("expected an error from Query")
 	}
-	fe, ok := errors.AsType[*febe.Error](got.err)
+	fe, ok := errors.AsType[*febe.Error](gotErr)
 	if !ok {
-		t.Fatalf("got %T (%v), want *febe.Error", got.err, got.err)
+		t.Fatalf("got %T (%v), want *febe.Error", gotErr, gotErr)
 	}
 	if !fe.IsFatal() {
 		t.Fatalf("got non-fatal error %v, want fatal", fe)
