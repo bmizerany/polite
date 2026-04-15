@@ -3,6 +3,7 @@ package febe
 import (
 	"cmp"
 	"fmt"
+	"iter"
 	"strings"
 	"unsafe"
 )
@@ -62,34 +63,36 @@ type Notice struct {
 	Verbosity string
 }
 
-// Fields calls yield with each known notice field in protocol key order.
-// Fields omitted by the backend are reported as empty strings.
-func (e *Notice) Fields(yield func(fieldID byte, val string) bool) {
-	fields := []struct {
-		k byte
-		v string
-	}{
-		{'S', e.Severity},
-		{'C', e.Code},
-		{'M', e.Message},
-		{'D', e.Detail},
-		{'H', e.Hint},
-		{'P', e.Position},
-		{'p', e.Internal},
-		{'W', e.Where},
-		{'s', e.Schema},
-		{'t', e.Table},
-		{'c', e.Column},
-		{'d', e.DataType},
-		{'n', e.Constraint},
-		{'F', e.File},
-		{'L', e.Line},
-		{'R', e.Routine},
-		{'V', e.Verbosity},
-	}
-	for _, f := range fields {
-		if !yield(f.k, f.v) {
-			return
+// Fields returns an iterator over each known notice field in protocol
+// key order. Fields omitted by the backend are reported as empty strings.
+func (e *Notice) Fields() iter.Seq2[byte, string] {
+	return func(yield func(byte, string) bool) {
+		fields := []struct {
+			k byte
+			v string
+		}{
+			{'S', e.Severity},
+			{'C', e.Code},
+			{'M', e.Message},
+			{'D', e.Detail},
+			{'H', e.Hint},
+			{'P', e.Position},
+			{'p', e.Internal},
+			{'W', e.Where},
+			{'s', e.Schema},
+			{'t', e.Table},
+			{'c', e.Column},
+			{'d', e.DataType},
+			{'n', e.Constraint},
+			{'F', e.File},
+			{'L', e.Line},
+			{'R', e.Routine},
+			{'V', e.Verbosity},
+		}
+		for _, f := range fields {
+			if !yield(f.k, f.v) {
+				return
+			}
 		}
 	}
 }

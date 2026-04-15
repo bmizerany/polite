@@ -686,7 +686,7 @@ func (c *Conn) WriteNotification(pid int32, channel, payload string) error {
 func (c *Conn) WriteNotice(msgType byte, n *Notice) error {
 	var s sizer
 	s.addInt32() // length
-	for _, v := range n.Fields {
+	for _, v := range n.Fields() {
 		s.addByte()
 		s.addString(v)
 	}
@@ -694,7 +694,7 @@ func (c *Conn) WriteNotice(msgType byte, n *Notice) error {
 
 	c.c.WriteByte(msgType)
 	c.c.WriteInt32(s.size())
-	for k, v := range n.Fields {
+	for k, v := range n.Fields() {
 		c.c.WriteByte(k)
 		c.c.WriteString(v)
 	}
