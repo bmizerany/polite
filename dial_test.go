@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"blake.io/polite/backoff"
+	"blake.io/polite/internal/backoff"
 	"blake.io/polite/febe"
 )
 
