@@ -1290,6 +1290,91 @@ func checkReady(t *testing.T, c *Conn) {
 	}
 }
 
+func TestResetIdleIsNoop(t *testing.T) {
+	t.Parallel()
+	cn, err := Dial(t.Context(), testDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cn.Close()
+
+	if err := cn.reset(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !cn.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle", cn.Status())
+	}
+}
+
+func TestResetRollsBackTransaction(t *testing.T) {
+	t.Parallel()
+	cn, err := Dial(t.Context(), testDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cn.Close()
+
+	if err := cn.Exec(t.Context(), "BEGIN"); err != nil {
+		t.Fatal(err)
+	}
+	if cn.Status().Idle() {
+		t.Fatal("expected non-idle after BEGIN")
+	}
+	if err := cn.reset(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !cn.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle after reset", cn.Status())
+	}
+	// Verify connection is usable.
+	if err := cn.Exec(t.Context(), "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResetRollsBackFailedTransaction(t *testing.T) {
+	t.Parallel()
+	cn, err := Dial(t.Context(), testDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cn.Close()
+
+	if err := cn.Exec(t.Context(), "BEGIN"); err != nil {
+		t.Fatal(err)
+	}
+	// Force transaction into failed state.
+	cn.Exec(t.Context(), "SELECT * FROM nonexistent_table_xyz")
+	if cn.Status() != febe.ReadyStatusFailed {
+		t.Fatalf("Status() = %v; want failed", cn.Status())
+	}
+	if err := cn.reset(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !cn.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle after reset", cn.Status())
+	}
+	if err := cn.Exec(t.Context(), "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResetPoisonedConnReturnsError(t *testing.T) {
+	t.Parallel()
+	cn, err := Dial(t.Context(), testDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Close the underlying net.Conn and trigger an I/O error so
+	// febe.Conn latches the error.
+	cn.cn.Close()
+	cn.Exec(t.Context(), "SELECT 1") // force the error
+
+	if err := cn.reset(t.Context()); err == nil {
+		t.Fatal("expected error from reset on poisoned connection")
+	}
+}
+
 var testDSN = cmp.Or(
 	os.Getenv("DATABASE_URL"),
 	"dbname=postgres host=/tmp port=5411 sslmode=disable user=postgres password=postgres",

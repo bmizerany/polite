@@ -75,10 +75,19 @@ func (p *Pool) init() {
 
 // Put returns cn to the pool. If the pool is closed, Put closes cn instead.
 //
+// If cn is not idle, Put attempts to reset it (abort any in-progress
+// COPY, roll back any open transaction). If the reset fails, Put
+// closes and discards the connection.
+//
 // Put does not block.
 func (p *Pool) Put(cn *Conn) {
 	p.init()
 	if p.cancelCtx.Err() != nil {
+		cn.Close()
+		return
+	}
+	if err := cn.reset(context.Background()); err != nil {
+		p.log().Info("polite: pool: discarding unrecoverable connection", "err", err)
 		cn.Close()
 		return
 	}
