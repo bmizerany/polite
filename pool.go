@@ -76,10 +76,9 @@ func (p *Pool) init() {
 // Put returns cn to the pool. If the pool is closed, Put closes cn instead.
 //
 // If cn is not idle, Put attempts to reset it (abort any in-progress
-// COPY, roll back any open transaction). If the reset fails, Put
-// closes and discards the connection.
-//
-// Put does not block.
+// COPY, roll back any open transaction). The reset is bounded by a
+// 5-second deadline; if it does not complete in time, cn is closed
+// and discarded.
 func (p *Pool) Put(cn *Conn) {
 	p.init()
 	if p.cancelCtx.Err() != nil {
