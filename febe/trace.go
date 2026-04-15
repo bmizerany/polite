@@ -67,13 +67,3 @@ func traceFromContext(ctx context.Context) *Trace {
 	trace, _ := ctx.Value(traceKey).(*Trace)
 	return cmp.Or(trace, emptyTrace)
 }
-
-// TraceEmitError reports err to the trace attached to ctx, if any.
-func TraceEmitError(ctx context.Context, err error) {
-	if err == nil {
-		return
-	}
-	if trace := traceFromContext(ctx); trace.ReceivedError != nil {
-		trace.ReceivedError(ctx, err)
-	}
-}

@@ -603,7 +603,7 @@ func TestQueryBreakInAll(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
-func TestQueryBreakCleanupErrorIsTraced(t *testing.T) {
+func TestQueryBreakCleanupPoisonsConn(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
@@ -626,16 +626,7 @@ func TestQueryBreakCleanupErrorIsTraced(t *testing.T) {
 		close(done)
 	}()
 
-	var count int
-	var observed error
-	traceCtx := febe.WithTrace(ctx, &febe.Trace{
-		ReceivedError: func(ctx context.Context, err error) {
-			count++
-			observed = err
-		},
-	})
-
-	for row, err := range cn.Query(traceCtx, "SELECT * FROM generate_series(1, 100000)") {
+	for row, err := range cn.Query(ctx, "SELECT * FROM generate_series(1, 100000)") {
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -643,16 +634,6 @@ func TestQueryBreakCleanupErrorIsTraced(t *testing.T) {
 		close(startCleanup)
 		<-done
 		break
-	}
-
-	if observed == nil {
-		t.Fatal("expected ReceivedError during cleanup")
-	}
-	if count != 1 {
-		t.Fatalf("ReceivedError called %d times; want 1", count)
-	}
-	if _, ok := errors.AsType[*febe.Error](observed); ok {
-		t.Fatalf("ReceivedError = %T; want non-message cleanup error", observed)
 	}
 
 	if err := cn.Exec(ctx, "SELECT 1"); err == nil {

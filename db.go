@@ -435,7 +435,6 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 						}
 						err = c.maybeRecoverFrom(ctx, err)
 						if err != nil {
-							febe.TraceEmitError(ctx, err)
 							return
 						}
 						continue
