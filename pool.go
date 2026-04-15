@@ -58,7 +58,6 @@ type Pool struct {
 	Logger *slog.Logger
 
 	waitlist  wait.List[*Conn]
-	loadFunc  func() *Conn // load function created once in init
 	initOnce  sync.Once
 	cancelCtx context.Context
 	cancel    context.CancelCauseFunc
@@ -69,27 +68,23 @@ func (p *Pool) init() {
 		p.cancelCtx, p.cancel = context.WithCancelCause(context.Background())
 		p.waitlist.MaxItems = p.maxItems()
 		p.waitlist.MaxWaiters = p.maxWaiters()
-		p.loadFunc = p.openConn // create method value once during init
+		p.waitlist.New = p.openConn
 	})
 }
 
-// Put returns cn to the pool. If the pool is closed, Put closes cn instead.
+// Put returns cn to the pool. If the pool is closed or cn is not idle,
+// Put closes cn instead.
 //
-// If cn is not idle, Put attempts to reset it (abort any in-progress
-// COPY, roll back any open transaction). The reset is bounded by a
-// 5-second deadline; if it does not complete in time, cn is closed
-// and discarded.
+// A connection is idle when it has no error, no in-progress COPY, and
+// its transaction status is [febe.ReadyStatusIdle]. Callers that leave
+// a connection in any other state (open transaction, failed
+// transaction, mid-COPY) must clean it up before calling Put, or
+// accept that Put will discard it.
 func (p *Pool) Put(cn *Conn) {
 	p.init()
-	if p.cancelCtx.Err() != nil {
+	if p.cancelCtx.Err() != nil || !cn.idle() {
 		cn.Close()
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := cn.reset(ctx); err != nil {
-		p.log().Info("polite: pool: discarding unrecoverable connection", "err", err)
-		cn.Close()
+		p.waitlist.Retire()
 		return
 	}
 	p.waitlist.Put(cn)
@@ -117,7 +112,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
 	}
 
-	cn, err := p.waitlist.Take(ctx, p.loadFunc)
+	cn, err := p.waitlist.Take(ctx)
 	switch {
 	case errors.Is(err, wait.ErrMaxWaiters):
 		return nil, ErrPoolFull

@@ -1,5 +1,7 @@
 blake.io/wait v0.0.0-20251229075418-37c5686254da h1:o7ChK52RynHsQnoGBhzI33wOnXVDtbnkwMSgoJ6gkTk=
 blake.io/wait v0.0.0-20251229075418-37c5686254da/go.mod h1:MdvsuLRdx3fTep8YSerBaxiQYrSpmd9VCG0spMQ3zbg=
+blake.io/wait v0.0.0-20260313223221-354793b3b0e0 h1:2A4n6E6WpRM+w7fslTAthJj1oCbM7Nhd1O7Gg54DAJU=
+blake.io/wait v0.0.0-20260313223221-354793b3b0e0/go.mod h1:c8yXyEAbIfTq4zwQW6/PVMgIPEC7+d0xwFmmu9J7N4Q=
 github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c h1:pxW6RcqyfI9/kWtOwnv/G+AzdKuy2ZrqINhenH4HyNs=
 github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=

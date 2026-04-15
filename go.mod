@@ -3,7 +3,7 @@ module blake.io/polite
 go 1.26.0
 
 require (
-	blake.io/wait v0.0.0-20251229075418-37c5686254da
+	blake.io/wait v0.0.0-20260313223221-354793b3b0e0
 	kr.dev/diff v0.3.0
 )
 

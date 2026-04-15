@@ -78,43 +78,9 @@ func (c *Conn) Close() error {
 	return c.cn.Close()
 }
 
-// reset restores the connection to an idle state so it can be reused.
-// It returns an error if the connection cannot be recovered; the caller
-// should close and discard it.
-//
-// If ctx carries a deadline, reset sets a corresponding read/write
-// deadline on the underlying net.Conn so that blocked I/O is
-// interrupted even though ReadHeader does not yet thread context
-// through to febeio.
-func (c *Conn) reset(ctx context.Context) error {
-	if c.fc.Err() != nil {
-		return c.fc.Err()
-	}
-	if d, ok := ctx.Deadline(); ok {
-		c.cn.SetDeadline(d)
-		defer c.cn.SetDeadline(time.Time{})
-	}
-	if c.inCopyFrom {
-		c.inCopyFrom = false
-		c.copyHeaderWritten = false
-		c.fc.WriteCopyFail("connection returned to pool")
-		c.fc.WriteSync()
-		if err := c.fc.Flush(); err != nil {
-			return err
-		}
-		if err := c.discardUntilReady(ctx); err != nil {
-			return err
-		}
-	}
-	if !c.Status().Idle() {
-		if err := c.Exec(ctx, "ROLLBACK"); err != nil {
-			return err
-		}
-	}
-	if !c.Status().Idle() {
-		return errors.New("polite: connection not idle after reset")
-	}
-	return nil
+// idle reports whether the connection is in a clean, reusable state.
+func (c *Conn) idle() bool {
+	return c.fc.Err() == nil && !c.inCopyFrom && c.Status().Idle()
 }
 
 // Events blocks and yields each [febe.Notification] received on cn.

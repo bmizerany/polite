@@ -1290,7 +1290,7 @@ func checkReady(t *testing.T, c *Conn) {
 	}
 }
 
-func TestPoolPutResetsTransaction(t *testing.T) {
+func TestPoolPutDiscardsTransaction(t *testing.T) {
 	t.Parallel()
 
 	p := newTestPool(t)
@@ -1305,12 +1305,8 @@ func TestPoolPutResetsTransaction(t *testing.T) {
 	if err := cn.Exec(ctx, "BEGIN"); err != nil {
 		t.Fatal(err)
 	}
-	if cn.Status().Idle() {
-		t.Fatal("expected non-idle after BEGIN")
-	}
-	p.Put(cn)
+	p.Put(cn) // not idle — discarded and retired
 
-	// Next Get should return an idle connection.
 	cn, err = p.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -1318,14 +1314,14 @@ func TestPoolPutResetsTransaction(t *testing.T) {
 	defer p.Put(cn)
 
 	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle after pool reset", cn.Status())
+		t.Fatalf("Status() = %v; want idle", cn.Status())
 	}
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestPoolPutResetsFailedTransaction(t *testing.T) {
+func TestPoolPutDiscardsFailedTransaction(t *testing.T) {
 	t.Parallel()
 
 	p := newTestPool(t)
@@ -1340,12 +1336,11 @@ func TestPoolPutResetsFailedTransaction(t *testing.T) {
 	if err := cn.Exec(ctx, "BEGIN"); err != nil {
 		t.Fatal(err)
 	}
-	// Force a failed transaction state.
 	cn.Exec(ctx, "SELECT * FROM nonexistent_table_xyz")
 	if cn.Status() != febe.ReadyStatusFailed {
 		t.Fatalf("Status() = %v; want failed", cn.Status())
 	}
-	p.Put(cn)
+	p.Put(cn) // not idle — discarded and retired
 
 	cn, err = p.Get(ctx)
 	if err != nil {
@@ -1354,14 +1349,14 @@ func TestPoolPutResetsFailedTransaction(t *testing.T) {
 	defer p.Put(cn)
 
 	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle after pool reset", cn.Status())
+		t.Fatalf("Status() = %v; want idle", cn.Status())
 	}
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestPoolPutResetsPartialQuery(t *testing.T) {
+func TestPoolPutIdle(t *testing.T) {
 	t.Parallel()
 
 	p := newTestPool(t)
@@ -1373,19 +1368,8 @@ func TestPoolPutResetsPartialQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cn.Exec(ctx, "BEGIN"); err != nil {
-		t.Fatal(err)
-	}
-	// Start a multi-row query and break out mid-stream.
-	for _, err := range cn.Query(ctx, "SELECT generate_series(1, 100)") {
-		if err != nil {
-			t.Fatal(err)
-		}
-		break
-	}
-	// Connection is still in a transaction, not idle.
-	if cn.Status().Idle() {
-		t.Fatal("expected non-idle after partial query in transaction")
+	if !cn.Status().Idle() {
+		t.Fatal("expected idle after Get")
 	}
 	p.Put(cn)
 
@@ -1396,9 +1380,46 @@ func TestPoolPutResetsPartialQuery(t *testing.T) {
 	defer p.Put(cn)
 
 	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle after pool reset", cn.Status())
+		t.Fatalf("Status() = %v; want idle", cn.Status())
 	}
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPoolPutPoisoned(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPool(t)
+	p.MaxItems = 1
+
+	ctx := t.Context()
+
+	cn, err := p.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Poison the connection by closing the underlying net.Conn.
+	cn.cn.Close()
+	cn.Exec(ctx, "SELECT 1") // force the error to latch
+	p.Put(cn)
+
+	// The pool should discard the poisoned connection and open a
+	// fresh one. If the pool leaks the item slot, this Get will
+	// hang because MaxItems=1 and no load will be triggered.
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	cn, err = p.Get(ctx)
+	if err != nil {
+		t.Fatalf("Get after poisoned Put: %v", err)
+	}
+	defer p.Put(cn)
+
+	if !cn.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle", cn.Status())
+	}
+	if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
