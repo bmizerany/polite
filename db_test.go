@@ -1290,88 +1290,116 @@ func checkReady(t *testing.T, c *Conn) {
 	}
 }
 
-func TestResetIdleIsNoop(t *testing.T) {
+func TestPoolPutResetsTransaction(t *testing.T) {
 	t.Parallel()
-	cn, err := Dial(t.Context(), testDSN, nil)
+
+	p := newTestPool(t)
+	p.MaxItems = 1
+
+	ctx := t.Context()
+
+	cn, err := p.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cn.Close()
-
-	if err := cn.reset(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle", cn.Status())
-	}
-}
-
-func TestResetRollsBackTransaction(t *testing.T) {
-	t.Parallel()
-	cn, err := Dial(t.Context(), testDSN, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cn.Close()
-
-	if err := cn.Exec(t.Context(), "BEGIN"); err != nil {
+	if err := cn.Exec(ctx, "BEGIN"); err != nil {
 		t.Fatal(err)
 	}
 	if cn.Status().Idle() {
 		t.Fatal("expected non-idle after BEGIN")
 	}
-	if err := cn.reset(t.Context()); err != nil {
+	p.Put(cn)
+
+	// Next Get should return an idle connection.
+	cn, err = p.Get(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer p.Put(cn)
+
 	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle after reset", cn.Status())
+		t.Fatalf("Status() = %v; want idle after pool reset", cn.Status())
 	}
-	// Verify connection is usable.
-	if err := cn.Exec(t.Context(), "SELECT 1"); err != nil {
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestResetRollsBackFailedTransaction(t *testing.T) {
+func TestPoolPutResetsFailedTransaction(t *testing.T) {
 	t.Parallel()
-	cn, err := Dial(t.Context(), testDSN, nil)
+
+	p := newTestPool(t)
+	p.MaxItems = 1
+
+	ctx := t.Context()
+
+	cn, err := p.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cn.Close()
-
-	if err := cn.Exec(t.Context(), "BEGIN"); err != nil {
+	if err := cn.Exec(ctx, "BEGIN"); err != nil {
 		t.Fatal(err)
 	}
-	// Force transaction into failed state.
-	cn.Exec(t.Context(), "SELECT * FROM nonexistent_table_xyz")
+	// Force a failed transaction state.
+	cn.Exec(ctx, "SELECT * FROM nonexistent_table_xyz")
 	if cn.Status() != febe.ReadyStatusFailed {
 		t.Fatalf("Status() = %v; want failed", cn.Status())
 	}
-	if err := cn.reset(t.Context()); err != nil {
+	p.Put(cn)
+
+	cn, err = p.Get(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer p.Put(cn)
+
 	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle after reset", cn.Status())
+		t.Fatalf("Status() = %v; want idle after pool reset", cn.Status())
 	}
-	if err := cn.Exec(t.Context(), "SELECT 1"); err != nil {
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestResetPoisonedConnReturnsError(t *testing.T) {
+func TestPoolPutResetsPartialQuery(t *testing.T) {
 	t.Parallel()
-	cn, err := Dial(t.Context(), testDSN, nil)
+
+	p := newTestPool(t)
+	p.MaxItems = 1
+
+	ctx := t.Context()
+
+	cn, err := p.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Close the underlying net.Conn and trigger an I/O error so
-	// febe.Conn latches the error.
-	cn.cn.Close()
-	cn.Exec(t.Context(), "SELECT 1") // force the error
+	if err := cn.Exec(ctx, "BEGIN"); err != nil {
+		t.Fatal(err)
+	}
+	// Start a multi-row query and break out mid-stream.
+	for _, err := range cn.Query(ctx, "SELECT generate_series(1, 100)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		break
+	}
+	// Connection is still in a transaction, not idle.
+	if cn.Status().Idle() {
+		t.Fatal("expected non-idle after partial query in transaction")
+	}
+	p.Put(cn)
 
-	if err := cn.reset(t.Context()); err == nil {
-		t.Fatal("expected error from reset on poisoned connection")
+	cn, err = p.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Put(cn)
+
+	if !cn.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle after pool reset", cn.Status())
+	}
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		t.Fatal(err)
 	}
 }
 

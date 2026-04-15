@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/rand/v2"
+	"net"
 	"runtime"
 	"slices"
 	"sync"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"blake.io/polite/dsn"
+	"blake.io/polite/febe"
 	"blake.io/polite/internal/testutil"
 )
 
@@ -280,6 +282,68 @@ func sleepUntilDeadline(ctx context.Context) {
 		panic("no deadline")
 	}
 	time.Sleep(time.Until(d))
+}
+
+func TestPoolPutResetTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		client, server := net.Pipe()
+		defer server.Close()
+
+		// Write ReadyForQuery('T') in a goroutine since net.Pipe
+		// is synchronous — the write blocks until the reader consumes.
+		go func() {
+			srvConn := febe.New(server, server)
+			srvConn.WriteReadyForQuery(febe.ReadyStatusBusy)
+			srvConn.Flush()
+			// After this, stop responding — simulate a hung backend.
+		}()
+
+		// Build a polite.Conn from the client side of the pipe.
+		fc := febe.New(client, client)
+		h, err := fc.ReadHeader(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if h.Type() != 'Z' {
+			t.Fatalf("unexpected message type %q", h.Type())
+		}
+		if _, err := fc.ReadReadyForQuery(); err != nil {
+			t.Fatal(err)
+		}
+
+		cn := &Conn{cn: client, fc: fc}
+
+		if cn.Status().Idle() {
+			t.Fatal("expected non-idle status")
+		}
+
+		p := &Pool{
+			Logger: testutil.Slogger(t),
+			Dial: func(context.Context) (*Conn, error) {
+				return nil, errors.New("no new conns")
+			},
+		}
+		defer p.Close()
+
+		// Put should not block forever: reset will time out and
+		// discard the connection.
+		done := make(chan struct{})
+		go func() {
+			p.Put(cn)
+			close(done)
+		}()
+
+		// Advance past the 5s reset timeout.
+		time.Sleep(6 * time.Second)
+		synctest.Wait()
+
+		select {
+		case <-done:
+			// Put returned — good.
+		default:
+			t.Fatal("Put is still blocked after reset timeout")
+		}
+	})
 }
 
 func BenchmarkPool(b *testing.B) {
