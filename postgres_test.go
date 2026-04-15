@@ -75,6 +75,6 @@ func shutThisDownAfterMyDeath(p *os.Process) {
 		// the stdin pipe will also be collected, ultimately causing
 		// sup to think it's parent has died, and it will shutdown
 		// postgres and exit.
-		_ = sup.Wait()
+		sup.Wait()
 	}()
 }

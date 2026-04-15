@@ -129,7 +129,7 @@ func TestPoolPutClosedPool(t *testing.T) {
 		t.Fatalf("expected connection alive after pool close, got %v", err)
 	}
 	p.Put(cn)
-	_ = cn.Close()
+	cn.Close()
 }
 
 func TestPoolGetMaxWaiters(t *testing.T) {

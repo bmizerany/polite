@@ -163,7 +163,7 @@ func TestQueryAllocations(t *testing.T) {
 			if _, err := row.Column(0).DecodeInt(); err != nil {
 				t.Fatal(err)
 			}
-			_ = row.Column(1).Text()
+			row.Column(1).Text()
 		}
 	})
 
@@ -185,7 +185,7 @@ func BenchmarkQueryAllocations(b *testing.B) {
 			if _, err := row.Column(0).DecodeInt(); err != nil {
 				b.Fatal(err)
 			}
-			_ = row.Column(1).Bytes()
+			row.Column(1).Bytes()
 		}
 	}
 
@@ -508,7 +508,7 @@ func TestRowColumnPanic(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					_ = row.Column(tc.index)
+					row.Column(tc.index)
 					if !tc.wantPanic {
 						continue
 					}
@@ -622,7 +622,7 @@ func TestQueryBreakCleanupPoisonsConn(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		<-startCleanup
-		_ = cn.cn.Close()
+		cn.cn.Close()
 		close(done)
 	}()
 
