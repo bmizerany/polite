@@ -18,8 +18,8 @@ import (
 )
 
 type Config struct {
-	// DialContext is used to open the connection to postgres. If nil, a net.Dialer is used.
-	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
+	// Dial is used to open the connection to postgres. If nil, a net.Dialer is used.
+	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 
 	// TLSConfig is cloned and used as the base TLS config for handshakes.
 	// Set Time there to override the clock used by crypto/tls.
@@ -58,11 +58,11 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	}
 
 	// TODO(bmizerany): check info is a valid file and socket
-	if cfg.DialContext == nil {
-		cfg.DialContext = (&net.Dialer{}).DialContext
+	if cfg.Dial == nil {
+		cfg.Dial = (&net.Dialer{}).DialContext
 	}
 
-	cn, err := cfg.DialContext(ctx, network, addr)
+	cn, err := cfg.Dial(ctx, network, addr)
 	if err != nil {
 		return nil, err
 	}

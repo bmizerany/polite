@@ -206,7 +206,7 @@ func TestOpenReadDeadline(t *testing.T) {
 
 	var gotConn net.Conn
 	cfg := &Config{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			cn, err := (&net.Dialer{}).DialContext(ctx, network, addr)
 			if err != nil {
 				return nil, err
@@ -233,11 +233,10 @@ func TestOpenReadDeadline(t *testing.T) {
 }
 
 func TestOpenDialError(t *testing.T) {
-	// prove that Dial uses the DialContext function from the Config if
-	// present
+	// prove that Dial uses Config.Dial if present
 	errBoom := errors.New("boom")
 	cfg := &Config{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return nil, errBoom
 		},
 	}
