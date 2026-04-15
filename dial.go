@@ -18,7 +18,9 @@ import (
 )
 
 type Config struct {
+	// DialContext is used to open the connection to postgres. If nil, a net.Dialer is used.
 	DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
+
 	// TLSConfig is cloned and used as the base TLS config for handshakes.
 	// Set Time there to override the clock used by crypto/tls.
 	TLSConfig *tls.Config
