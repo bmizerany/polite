@@ -393,6 +393,37 @@ func TestReadReadyForQuery(t *testing.T) {
 	}
 }
 
+func TestWriteReadyForQuery(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	if err := cn.WriteReadyForQuery(ReadyStatusIdle); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	h, err := cn.ReadHeader(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Type() != 'Z' {
+		t.Fatalf("h.Type() = %c; want Z", h.Type())
+	}
+	got, err := cn.ReadReadyForQuery()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ReadyForQueryResponse{
+		MessageHeader: MessageHeader{
+			msgType: 'Z',
+			msgLen:  5,
+		},
+		Status: ReadyStatusIdle,
+	}
+	diff.Test(t, t.Errorf, got, want)
+}
+
 func TestReadBackendKeyData(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
@@ -522,11 +553,69 @@ func TestReadCommandComplete(t *testing.T) {
 // The backend is ready to copy data from a table to the frontend; see Section
 // 55.2.6.
 
-// TODO: RowDescription (discarded for now)
-// Indicates that rows are about to be returned in response to a SELECT, FETCH,
-// etc. query. The contents of this message describe the column layout of the
-// rows. This will be followed by a DataRow message for each row being returned
-// to the frontend.
+func TestWriteRowDescription(t *testing.T) {
+	tests := []struct {
+		name   string
+		fields []FieldDescription
+	}{
+		{
+			name:   "zero fields",
+			fields: []FieldDescription{},
+		},
+		{
+			name: "two fields",
+			fields: []FieldDescription{
+				{
+					Name:             "id",
+					TableOID:         100,
+					TableAttributeID: 1,
+					DataTypeOID:      23, // int4
+					DataTypeSize:     4,
+					TypeModifier:     -1,
+					FormatCode:       123,
+				},
+				{
+					Name:             "name",
+					TableOID:         100,
+					TableAttributeID: 2,
+					DataTypeOID:      25, // text
+					DataTypeSize:     -1,
+					TypeModifier:     -1,
+					FormatCode:       123,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b bytes.Buffer
+			cn := New(&b, &b)
+
+			if err := cn.WriteRowDescription(tt.fields); err != nil {
+				t.Fatal(err)
+			}
+			if err := cn.Flush(); err != nil {
+				t.Fatal(err)
+			}
+
+			h, err := cn.ReadHeader(context.Background())
+			if err != nil {
+				t.Fatalf("ReadHeader() = %v; want nil", err)
+			}
+			if h.Type() != 'T' {
+				t.Fatalf("h.Type() = %c; want T", h.Type())
+			}
+
+			got, err := cn.ReadRowDescription()
+			if err != nil {
+				t.Fatalf("ReadRowDescription() = %v; want nil", err)
+			}
+
+			diff.Test(t, t.Errorf, got.Fields, tt.fields)
+		})
+	}
+}
 
 // DataRow
 // One of the set of rows returned by a SELECT, FETCH, etc. query.
@@ -577,6 +666,21 @@ func TestReadEmptyQueryResponse(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(&b, &b)
 	writeMessage(t, &b, 'I', nil)
+	if err := cn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	_, err := cn.ReadHeader(context.Background())
+	if !errors.Is(err, ErrEmptyQuery) {
+		t.Fatalf("got %v, want %v", err, ErrEmptyQuery)
+	}
+}
+
+func TestWriteEmptyQuery(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+	if err := cn.WriteEmptyQuery(); err != nil {
+		t.Fatal(err)
+	}
 	if err := cn.Flush(); err != nil {
 		t.Fatal(err)
 	}
@@ -802,6 +906,32 @@ func TestReadParameterStatus(t *testing.T) {
 		},
 	}
 	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestWriteParameterStatus(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(&b, &b)
+
+	if err := cn.WriteParameterStatus("client_encoding", "UTF8"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cn.readAndSetCurrentHeader(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cn.readParameterStatus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "client_encoding" {
+		t.Errorf("Name = %q; want %q", got.Name, "client_encoding")
+	}
+	if got.Value != "UTF8" {
+		t.Errorf("Value = %q; want %q", got.Value, "UTF8")
+	}
 }
 
 var errTest = errors.New("febe_test: test error")

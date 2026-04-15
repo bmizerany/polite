@@ -27,6 +27,11 @@ var (
 	// ErrEmptyQuery is returned when the server has terminated a
 	// query because it was empty.
 	ErrEmptyQuery = errors.New("febe: empty query")
+
+	// errShortMessage is returned when ReadHeader encounters a
+	// malformed message that it can decode enough to reject (e.g.
+	// an invalid length field). It is not used for I/O errors.
+	errShortMessage = errors.New("febe: messages must be at least 4 bytes long")
 )
 
 // RequestTLS sends the frontend message to request TLS to the server. If
@@ -377,7 +382,7 @@ func (c *Conn) readAndSetCurrentHeader() (err error) {
 	// The wire-protocol length includes the 4-byte length field itself,
 	// so any value below 4 is malformed.
 	if h.msgLen < 4 {
-		return fmt.Errorf("febe: invalid message length %d", h.msgLen)
+		return fmt.Errorf("%w: length was %d bytes", errShortMessage, h.msgLen)
 	}
 
 	c.h = h
@@ -425,6 +430,13 @@ func (c *Conn) WriteStartupMessage(params ...string) (err error) {
 		c.c.WriteString(v)
 	}
 	c.c.WriteString("")
+	return c.Err()
+}
+
+// WriteEmptyQuery writes a backend EmptyQueryResponse message.
+func (c *Conn) WriteEmptyQuery() error {
+	c.c.WriteByte('I')
+	c.c.WriteInt32(4)
 	return c.Err()
 }
 
@@ -492,7 +504,6 @@ type AuthenticationResponse struct {
 
 	// SASLMechanisms lists the advertised SASL mechanisms.
 	SASLMechanisms []string
-
 }
 
 // ReadAuthentication reads an Authentication response.
@@ -592,6 +603,15 @@ func (c *Conn) ReadReadyForQuery() (ReadyForQueryResponse, error) {
 	}, nil
 }
 
+// WriteReadyForQuery writes a backend ReadyForQuery message with the given
+// transaction status.
+func (c *Conn) WriteReadyForQuery(status ReadyStatus) error {
+	c.c.WriteByte('Z')
+	c.c.WriteInt32(5)
+	c.c.WriteByte(byte(status))
+	return c.Err()
+}
+
 // BackendKeyDataResponse is the backend BackendKeyData message.
 type BackendKeyDataResponse struct {
 	// MessageHeader is the decoded message header.
@@ -637,6 +657,19 @@ type Notification struct {
 
 	// Payload is the notification payload.
 	Payload []byte
+}
+
+// WriteParameterStatus writes a backend ParameterStatus ('S') message.
+func (c *Conn) WriteParameterStatus(name, value string) error {
+	var s sizer
+	s.addInt32() // length
+	s.addString(name)
+	s.addString(value)
+	c.c.WriteByte('S')
+	c.c.WriteInt32(s.size())
+	c.c.WriteString(name)
+	c.c.WriteString(value)
+	return c.Err()
 }
 
 // WriteNotification writes a NotificationResponse message.
@@ -758,6 +791,36 @@ type RowDescriptionResponse struct {
 
 	// Fields describes the returned columns in order.
 	Fields []FieldDescription
+}
+
+// WriteRowDescription writes a backend RowDescription ('T') message.
+func (c *Conn) WriteRowDescription(fields []FieldDescription) error {
+	var s sizer
+	s.addInt32() // length
+	s.addInt16() // number of fields
+	for _, f := range fields {
+		s.addString(f.Name)
+		s.addInt32() // table OID
+		s.addInt16() // table attribute number
+		s.addInt32() // data type OID
+		s.addInt16() // data type size
+		s.addInt32() // type modifier
+		s.addInt16() // format code
+	}
+
+	c.c.WriteByte('T')
+	c.c.WriteInt32(s.size())
+	c.c.WriteInt16(int16(len(fields)))
+	for _, f := range fields {
+		c.c.WriteString(f.Name)
+		c.c.WriteInt32(f.TableOID)
+		c.c.WriteInt16(f.TableAttributeID)
+		c.c.WriteInt32(int32(f.DataTypeOID))
+		c.c.WriteInt16(f.DataTypeSize)
+		c.c.WriteInt32(f.TypeModifier)
+		c.c.WriteInt16(f.FormatCode)
+	}
+	return c.Err()
 }
 
 // WriteDescribe writes a frontend Describe message for the named statement
