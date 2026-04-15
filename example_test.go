@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"blake.io/polite"
+	"blake.io/polite/febe"
 )
 
 func ExampleConn_Query_copyTo() {
@@ -88,5 +89,35 @@ func ExampleConn_Query_struct() {
 			log.Fatal(err)
 		}
 		_ = user
+	}
+}
+
+func ExampleConn_listenNotify() {
+	ctx := context.Background()
+
+	// Attach a trace that prints notifications as they arrive.
+	ctx = febe.WithTrace(ctx, &febe.Trace{
+		ReceivedNotification: func(ctx context.Context, n *febe.Notification) {
+			fmt.Printf("channel=%s payload=%s\n", n.Channel, n.Payload)
+		},
+	})
+
+	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cn.Close()
+
+	// Subscribe to the channel.
+	if err := cn.Exec(ctx, "LISTEN chat"); err != nil {
+		log.Fatal(err)
+	}
+
+	// Notifications arrive during any call that reads from the
+	// backend. A simple idle loop:
+	for {
+		if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
