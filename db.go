@@ -418,9 +418,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 			if row != nil && row.err != nil {
 				if !yield(row, nil) {
 					if err := c.finalizeCopyFrom(ctx); err != nil {
-						if _, ok := errors.AsType[*febe.Error](err); !ok {
-							febe.TraceObservedError(ctx, err)
-						}
+						febe.TraceEmitError(ctx, err)
 					}
 					return
 				}
@@ -439,9 +437,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 						}
 						err = c.maybeRecoverFrom(ctx, err)
 						if err != nil {
-							if _, ok := errors.AsType[*febe.Error](err); !ok {
-								febe.TraceObservedError(ctx, err)
-							}
+							febe.TraceEmitError(ctx, err)
 							return
 						}
 						continue

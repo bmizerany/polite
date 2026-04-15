@@ -628,7 +628,7 @@ func TestQueryBreakCleanupErrorIsTraced(t *testing.T) {
 
 	var observed error
 	traceCtx := febe.WithTrace(ctx, &febe.Trace{
-		ObservedError: func(ctx context.Context, err error) {
+		ReceivedError: func(ctx context.Context, err error) {
 			observed = err
 		},
 	})
@@ -644,11 +644,10 @@ func TestQueryBreakCleanupErrorIsTraced(t *testing.T) {
 	<-done
 
 	if observed == nil {
-		t.Fatal("expected ObservedError during cleanup")
+		t.Fatal("expected ReceivedError during cleanup")
 	}
-	var fe *febe.Error
-	if errors.As(observed, &fe) {
-		t.Fatalf("ObservedError = %T; want non-message cleanup error", observed)
+	if _, ok := errors.AsType[*febe.Error](observed); ok {
+		t.Fatalf("ReceivedError = %T; want non-message cleanup error", observed)
 	}
 
 	if err := cn.Exec(ctx, "SELECT 1"); err == nil {

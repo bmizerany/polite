@@ -142,17 +142,6 @@ func isTimeout(err error) bool {
 	return ok && t.Timeout()
 }
 
-func shouldTraceObservedError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, ErrEmptyQuery) || errors.Is(err, ErrTerminated) {
-		return false
-	}
-	var fe *Error
-	return !errors.As(err, &fe)
-}
-
 func (c *Conn) setErr(err error) error {
 	if err == nil {
 		return nil
@@ -183,9 +172,7 @@ func (c *Conn) setErr(err error) error {
 }
 
 func (c *Conn) handleErr(ctx context.Context, err error) error {
-	if shouldTraceObservedError(err) {
-		TraceObservedError(ctx, err)
-	}
+	TraceEmitError(ctx, err)
 	return c.setErr(err)
 }
 

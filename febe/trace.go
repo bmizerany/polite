@@ -25,18 +25,25 @@ type Trace struct {
 	// ReceivedNotice is called for each Notice response.
 	ReceivedNotice func(context.Context, *Notice)
 
-	// ReceivedError is called for each Error response.
-	ReceivedError func(context.Context, *Error)
+	// ReceivedError is called for each error encountered while
+	// processing protocol traffic. This includes both decoded Error
+	// responses from the backend and non-message errors such as I/O
+	// failures. Use [errors.AsType] to distinguish:
+	//
+	//	ReceivedError: func(ctx context.Context, err error) {
+	//		if fe, ok := errors.AsType[*Error](err); ok {
+	//			log.Printf("backend error: %s", fe.Code)
+	//		} else {
+	//			log.Printf("transport error: %v", err)
+	//		}
+	//	}
+	ReceivedError func(context.Context, error)
 
 	// ReceivedNotification is called for each Notification response.
 	ReceivedNotification func(context.Context, *Notification)
 
 	// ReceivedParameterStatus is called for each ParameterStatus response.
 	ReceivedParameterStatus func(context.Context, Parameter)
-
-	// ObservedError is called for non-message errors observed while
-	// processing protocol traffic.
-	ObservedError func(context.Context, error)
 }
 
 type traceContextKey struct{}
@@ -61,12 +68,12 @@ func traceFromContext(ctx context.Context) *Trace {
 	return cmp.Or(trace, emptyTrace)
 }
 
-// TraceObservedError reports err to the trace attached to ctx, if any.
-func TraceObservedError(ctx context.Context, err error) {
+// TraceEmitError reports err to the trace attached to ctx, if any.
+func TraceEmitError(ctx context.Context, err error) {
 	if err == nil {
 		return
 	}
-	if trace := traceFromContext(ctx); trace.ObservedError != nil {
-		trace.ObservedError(ctx, err)
+	if trace := traceFromContext(ctx); trace.ReceivedError != nil {
+		trace.ReceivedError(ctx, err)
 	}
 }
