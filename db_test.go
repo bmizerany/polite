@@ -635,6 +635,44 @@ func TestQueryBreakDrainError(t *testing.T) {
 	}
 }
 
+func TestQuerySequentialBreaks(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	ctx := t.Context()
+
+	// Break out of three successive queries without consuming all rows.
+	for _, q := range []string{
+		"SELECT * FROM generate_series(1, 10)",
+		"SELECT * FROM generate_series(20, 30)",
+		"SELECT * FROM generate_series(100, 200)",
+	} {
+		for _, err := range cn.Query(ctx, q) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+
+	// Fully consume a fourth query outside all prior ranges to prove
+	// we're reading fresh results, not leftover rows from earlier queries.
+	var got []int64
+	for row, err := range cn.Query(ctx, "SELECT * FROM generate_series(1000, 1003)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := row.Column(0).DecodeInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, v)
+	}
+	diff.Test(t, t.Errorf, got, []int64{1000, 1001, 1002, 1003})
+}
+
 func TestQueryBreakCleanupPoisonsConn(t *testing.T) {
 	t.Parallel()
 
@@ -1110,6 +1148,40 @@ func TestErrors(t *testing.T) {
 	})
 }
 
+func TestQueryCacheHitAfterError(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	ctx := t.Context()
+
+	// Run a parameterized query and verify the result.
+	for row, err := range cn.Query(ctx, "SELECT $1::text", "hello") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := row.Column(0).Text(); got != "hello" {
+			t.Fatalf("first query got %q, want %q", got, "hello")
+		}
+	}
+
+	// Run a different query that errors and recovers.
+	cn.Exec(ctx, "SELECT raise_error()")
+
+	// Re-run the same parameterized query with a different value.
+	// The cached statement from the first run must still work after
+	// error recovery on an unrelated query.
+	for row, err := range cn.Query(ctx, "SELECT $1::text", "world") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := row.Column(0).Text(); got != "world" {
+			t.Fatalf("second query got %q, want %q", got, "world")
+		}
+	}
+}
+
 func TestNotice(t *testing.T) {
 	t.Parallel()
 
@@ -1452,6 +1524,57 @@ func TestPoolPutPoisoned(t *testing.T) {
 		t.Fatalf("Status() = %v; want idle", cn.Status())
 	}
 	if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPoolPutDiscardsCopyFrom(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPool(t)
+	p.MaxItems = 1
+
+	ctx := t.Context()
+
+	cn, err := p.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = cn.Exec(ctx, "CREATE TEMP TABLE discard_copy (id INT, name TEXT)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Enter COPY FROM mode and return the connection to the pool
+	// without finishing the COPY. The pool should discard it.
+	for row, err := range cn.Query(ctx, "COPY discard_copy FROM STDIN WITH (FORMAT binary)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !errors.Is(row.Err(), ErrCopyFrom) {
+			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		}
+		p.Put(cn)
+		break
+	}
+
+	// The pool should discard the mid-COPY connection and open a
+	// fresh one. If the pool leaks the item slot, this Get will
+	// hang because MaxItems=1 and no load will be triggered.
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+
+	cn, err = p.Get(ctx)
+	if err != nil {
+		t.Fatalf("Get after mid-COPY Put: %v", err)
+	}
+	defer p.Put(cn)
+
+	if !cn.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle", cn.Status())
+	}
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
