@@ -161,6 +161,37 @@ func TestCopyFromConstraintViolation(t *testing.T) {
 	}
 }
 
+func TestCopyFromBreakAfterConstraintViolation(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	err := cn.Exec(ctx, "CREATE TEMP TABLE strict2 (id INT NOT NULL)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Send a NULL into a NOT NULL column and break. The constraint
+	// violation is discovered during finalization; the connection
+	// must still be usable afterward.
+	for row, err := range cn.Query(ctx, "COPY strict2 FROM STDIN WITH (FORMAT binary)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !errors.Is(row.Err(), ErrCopyFrom) {
+			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		}
+		cn.Exec(ctx, "", nil)
+		break
+	}
+
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		t.Fatalf("Exec after COPY FROM break with violation: %v", err)
+	}
+}
+
 func TestCopyTo(t *testing.T) {
 	t.Parallel()
 
