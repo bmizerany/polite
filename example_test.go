@@ -66,7 +66,7 @@ func ExampleConn_Query_columnsByName() {
 	}
 }
 
-func ExampleConn_Query_struct() {
+func ExampleConn_Query_columnsToStruct() {
 	ctx := context.Background()
 
 	cn, err := polite.Dial(ctx, "", nil)
