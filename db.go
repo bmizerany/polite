@@ -464,14 +464,10 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 				for {
 					_, err := c.nextRow(ctx, processed, stmt.out.Fields)
 					if err != nil {
-						if errors.Is(err, ErrDone) {
-							return
+						if !errors.Is(err, ErrDone) {
+							c.maybeRecoverFrom(ctx, err)
 						}
-						err = c.maybeRecoverFrom(ctx, err)
-						if err != nil {
-							return
-						}
-						continue
+						return
 					}
 					processed++
 				}
