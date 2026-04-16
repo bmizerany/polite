@@ -297,6 +297,34 @@ func TestCopyFrom(t *testing.T) {
 	checkReady(t, cn)
 }
 
+func TestCopyFromBreakBeforeSend(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	err := cn.Exec(ctx, "CREATE TEMP TABLE foo (id INT, name TEXT)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for row, err := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !errors.Is(row.Err(), ErrCopyFrom) {
+			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		}
+		break // exit without sending any rows
+	}
+
+	// Connection must be reusable after breaking out of COPY FROM.
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		t.Fatalf("Exec after COPY FROM break: %v", err)
+	}
+}
+
 func TestCopyFromEmpty(t *testing.T) {
 	t.Parallel()
 
