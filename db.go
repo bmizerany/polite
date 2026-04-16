@@ -122,8 +122,8 @@ func (c *Conn) Exec(ctx context.Context, sql string, args ...any) error {
 	if c.inCopyFrom && sql == "" {
 		return c.copyFromRow(args...)
 	}
-	for _, err := range c.Query(ctx, sql, args...) {
-		if err != nil {
+	for row := range c.Query(ctx, sql, args...) {
+		if err := row.Err(); err != nil {
 			return err
 		}
 	}
@@ -419,24 +419,29 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 }
 
 // Query executes sql and returns the sequence of rows returned by the query.
-// Each iteration yields a [Row] and an error. Query errors and row
-// materialization errors are reported in the range body. When COPY FROM enters
-// copy mode, Query yields a [Row] whose [Row.Err] reports [ErrCopyFrom].
-func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Row, error] {
-	return iter.Seq2[*Row, error](func(yield func(*Row, error) bool) {
+// Each yielded [Row] carries either column data or a sticky error accessible
+// via [Row.Err]. Accessing columns on an error row panics with that error,
+// so callers that simply use column data get an immediate, loud failure on
+// any query error. Callers that need to inspect the error should check
+// [Row.Err] before accessing columns.
+//
+// When COPY FROM enters copy mode, Query yields a [Row] whose [Row.Err]
+// reports [ErrCopyFrom].
+func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
+	return iter.Seq[*Row](func(yield func(*Row) bool) {
 		if c.now != nil {
 			if err := c.updateGoTime(ctx); err != nil {
-				yield(nil, err)
+				yield(&Row{err: err})
 				return
 			}
 		}
 		stmt, err := c.prepare(ctx, "", sql, args...)
 		if err != nil {
-			yield(nil, err)
+			yield(&Row{err: err})
 			return
 		}
 		if err := c.execAndSync(""); err != nil {
-			yield(nil, err)
+			yield(&Row{err: err})
 			return
 		}
 		for {
@@ -446,20 +451,20 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 					return
 				}
 				err = c.maybeRecoverFrom(ctx, err)
-				yield(nil, err)
+				yield(&Row{err: err})
 				return
 			}
 			if row != nil && row.err != nil {
-				if !yield(row, nil) {
+				if !yield(row) {
 					c.finalizeCopyFrom(ctx)
 					return
 				}
 				if err := c.finalizeCopyFrom(ctx); err != nil {
-					yield(nil, err)
+					yield(&Row{err: err})
 				}
 				return
 			}
-			if !yield(row, nil) {
+			if !yield(row) {
 				for {
 					_, err := c.nextRow(ctx, stmt.out.Fields)
 					if err != nil {

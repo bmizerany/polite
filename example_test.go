@@ -17,10 +17,7 @@ func ExampleConn_Query_copyTo() {
 	}
 	defer cn.Close()
 
-	for row, err := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
-		if err != nil {
-			log.Fatal(err)
-		}
+	for row := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
 		id, err := row.Column(0).DecodeInt()
 		if err != nil {
 			log.Fatal(err)
@@ -77,11 +74,7 @@ func ExampleConn_Query_struct() {
 			SELECT 2::int4, 'bob'::text
 		) AS t
 	`
-	for row, err := range cn.Query(ctx, q) {
-		if err != nil {
-			log.Fatal(err)
-		}
-
+	for row := range cn.Query(ctx, q) {
 		var user User
 		err := json.Unmarshal(row.Column(0).Bytes(), &user)
 		if err != nil {

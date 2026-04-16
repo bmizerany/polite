@@ -146,8 +146,8 @@ func getOIDs() ([]oid, error) {
 	`
 
 	var oids []oid
-	for row, err := range cn.Query(ctx, q) {
-		if err != nil {
+	for row := range cn.Query(ctx, q) {
+		if err := row.Err(); err != nil {
 			return nil, err
 		}
 

@@ -34,10 +34,7 @@ func ExampleConn_Query() {
 		FROM addresses
 		ORDER BY id
 	`
-	for row, err := range cn.Query(ctx, q) {
-		if err != nil {
-			return
-		}
+	for row := range cn.Query(ctx, q) {
 		var address struct {
 			ID     int64
 			Street string

@@ -246,10 +246,7 @@ func TestTimestampMicrosecondRoundingInSQL(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			sql := `WITH x AS (SELECT $1::timestamp AS ts) SELECT ts = ` + tt.want + ` FROM x`
-			for row, err := range cn.Query(ctx, sql, tt.in) {
-				if err != nil {
-					t.Fatal(err)
-				}
+			for row := range cn.Query(ctx, sql, tt.in) {
 				got := row.Column(0).Bytes()
 				if len(got) != 1 || got[0] != 1 {
 					t.Fatalf("got %v, want true", got)
@@ -371,11 +368,9 @@ func TestDecodeTimeHandlesNegativeRemainder(t *testing.T) {
 
 	var got time.Time
 	rows := 0
-	for row, err := range cn.Query(t.Context(), `SELECT TIMESTAMPTZ '1999-12-31 23:59:59.999999+00'`) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), `SELECT TIMESTAMPTZ '1999-12-31 23:59:59.999999+00'`) {
 		rows++
+		var err error
 		got, err = row.Column(0).DecodeTime()
 		if err != nil {
 			t.Fatal(err)
@@ -412,10 +407,7 @@ func TestDecodeTimeRejectsUnsupportedValues(t *testing.T) {
 			cn := newSession(t)
 			ctx := t.Context()
 			rows := 0
-			for row, err := range cn.Query(ctx, tt.sql) {
-				if err != nil {
-					t.Fatal(err)
-				}
+			for row := range cn.Query(ctx, tt.sql) {
 				rows++
 				if _, err := row.Column(0).DecodeTime(); err == nil {
 					t.Fatalf("DecodeTime() error = nil for %s", tt.sql)
@@ -460,10 +452,7 @@ func TestDecodeTimeRejectsInvalidLength(t *testing.T) {
 func currentTimeZone(t *testing.T, cn *Conn) *time.Location {
 	t.Helper()
 
-	for row, err := range cn.Query(t.Context(), `SHOW TimeZone`) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), `SHOW TimeZone`) {
 		loc, err := loadLocation(row.Column(0).Text())
 		if err != nil {
 			t.Fatal(err)
@@ -480,10 +469,7 @@ func decodeQueryTimes(t *testing.T, cn *Conn, sql string, args ...any) []time.Ti
 
 	var got []time.Time
 	rows := 0
-	for row, err := range cn.Query(t.Context(), sql, args...) {
-		if err != nil {
-			t.Fatal(err)
-		}
+	for row := range cn.Query(t.Context(), sql, args...) {
 		rows++
 		for col := range row.Columns() {
 			ts, err := col.DecodeTime()
@@ -553,8 +539,7 @@ func TestDialNow(t *testing.T) {
 					`SELECT transaction_timestamp()`,
 					`SELECT clock_timestamp()`,
 				} {
-					for row, err := range cn.Query(t.Context(), sql) {
-						check(err, nil)
+					for row := range cn.Query(t.Context(), sql) {
 						ts, err := row.Column(0).DecodeTime()
 						check(err, nil)
 						want := time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC)
@@ -568,8 +553,7 @@ func TestDialNow(t *testing.T) {
 		{
 			name: "nil",
 			want: func(t *testing.T, cn *Conn) {
-				for row, err := range cn.Query(t.Context(), `SELECT current_setting('polite.go_time', true)`) {
-					check(err, nil)
+				for row := range cn.Query(t.Context(), `SELECT current_setting('polite.go_time', true)`) {
 					if got := row.Column(0).Bytes(); got != nil {
 						t.Fatalf("polite.go_time = %q; want unset", got)
 					}
