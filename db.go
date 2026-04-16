@@ -60,9 +60,10 @@ type Conn struct {
 	// current row
 	row *Row
 
-	// COPY FROM state
-	inCopyFrom        bool
-	copyHeaderWritten bool
+	// COPY state
+	inCopyFrom            bool
+	copyHeaderWritten     bool
+	copyOutHeaderPending  bool
 }
 
 // Close sends a Terminate message, flushes it, and then closes the underlying
@@ -438,9 +439,8 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 			yield(nil, err)
 			return
 		}
-		var processed int
 		for {
-			row, err := c.nextRow(ctx, processed, stmt.out.Fields)
+			row, err := c.nextRow(ctx, stmt.out.Fields)
 			if err != nil {
 				if errors.Is(err, ErrDone) {
 					return
@@ -459,17 +459,15 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq2[*Ro
 				}
 				return
 			}
-			processed++
 			if !yield(row, nil) {
 				for {
-					_, err := c.nextRow(ctx, processed, stmt.out.Fields)
+					_, err := c.nextRow(ctx, stmt.out.Fields)
 					if err != nil {
 						if !errors.Is(err, ErrDone) {
 							c.maybeRecoverFrom(ctx, err)
 						}
 						return
 					}
-					processed++
 				}
 			}
 		}
@@ -676,7 +674,7 @@ func (c Column) DecodeTime() (time.Time, error) {
 	return ts, nil
 }
 
-func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDescription) (*Row, error) {
+func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Row, error) {
 	for {
 		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
@@ -700,6 +698,7 @@ func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDe
 			if m.Format != febe.CopyFormatBinary {
 				return nil, ErrUnsupportedCopyFormat
 			}
+			c.copyOutHeaderPending = true
 		case 'G':
 			m, err := c.fc.ReadCopyIn()
 			if err != nil {
@@ -715,7 +714,8 @@ func (c *Conn) nextRow(ctx context.Context, processed int, fields []febe.FieldDe
 			c.copyHeaderWritten = false
 			return &Row{err: ErrCopyFrom}, nil
 		case 'D', 'd':
-			discardBinaryHeader := processed == 0 && h.Type() == 'd'
+			discardBinaryHeader := c.copyOutHeaderPending
+			c.copyOutHeaderPending = false
 			m, err := c.fc.ReadDataRow(discardBinaryHeader)
 			if err != nil {
 				return nil, err
