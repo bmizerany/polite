@@ -23,7 +23,7 @@ func ExampleDial() {
 	}
 }
 
-func ExampleConn_Query() {
+func ExampleConn_Query_columnsByName() {
 	ctx := context.Background()
 
 	cn, err := polite.Dial(ctx, polite.DefaultDSN, nil)
