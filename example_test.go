@@ -66,6 +66,14 @@ func ExampleConn_Query_columnsByName() {
 	}
 }
 
+// This is the columns-by-name example in a different shape. The work
+// is the same: pull values out of a row and put them into a struct.
+// Here we let the server assemble the row as JSON and let
+// encoding/json do the field dispatch, so the client code does not
+// spell out a switch over column names. It is a convenience, not a
+// feature. The cost is a JSON round-trip; the benefit is less code
+// when the schema is wide or changes often. Use columnsByName when
+// you want to avoid the encode/decode.
 func ExampleConn_Query_columnsToStruct() {
 	ctx := context.Background()
 
