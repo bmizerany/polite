@@ -147,10 +147,6 @@ func getOIDs() ([]oid, error) {
 
 	var oids []oid
 	for row := range cn.Query(ctx, q) {
-		if err := row.Err(); err != nil {
-			return nil, err
-		}
-
 		var o oid
 		for col := range row.Columns() {
 			switch col.Name() {
@@ -161,7 +157,11 @@ func getOIDs() ([]oid, error) {
 				}
 				o.ID = uint32(v)
 			case "typname":
-				o.Typname = col.Text()
+				v, err := col.Text()
+				if err != nil {
+					return nil, fmt.Errorf("parse typname column: %w", err)
+				}
+				o.Typname = v
 			default:
 				return nil, fmt.Errorf("unexpected pg_type column %q", col.Name())
 			}

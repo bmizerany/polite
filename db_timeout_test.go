@@ -17,7 +17,7 @@ func TestQueryDeadlineAllowsReuse(t *testing.T) {
 
 	var gotErr error
 	for row := range cn.Query(ctx, "SELECT pg_sleep(1)") {
-		if err := row.Err(); err != nil {
+		if _, err := row.Column(0).Bytes(); err != nil {
 			gotErr = err
 			break
 		}

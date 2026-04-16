@@ -61,9 +61,9 @@ type Conn struct {
 	row *Row
 
 	// COPY state
-	inCopyFrom            bool
-	copyHeaderWritten     bool
-	copyOutHeaderPending  bool
+	inCopyFrom           bool
+	copyHeaderWritten    bool
+	copyOutHeaderPending bool
 }
 
 // Close sends a Terminate message, flushes it, and then closes the underlying
@@ -123,7 +123,7 @@ func (c *Conn) Exec(ctx context.Context, sql string, args ...any) error {
 		return c.copyFromRow(args...)
 	}
 	for row := range c.Query(ctx, sql, args...) {
-		if err := row.Err(); err != nil {
+		if _, err := row.Column(0).Bytes(); err != nil {
 			return err
 		}
 	}
@@ -419,14 +419,15 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 }
 
 // Query executes sql and returns the sequence of rows returned by the query.
-// Each yielded [Row] carries either column data or a sticky error accessible
-// via [Row.Err]. Accessing columns on an error row panics with that error,
-// so callers that simply use column data get an immediate, loud failure on
-// any query error. Callers that need to inspect the error should check
-// [Row.Err] before accessing columns.
+// Each yielded [Row] carries either column data or an error. Errors are
+// surfaced through [Column] methods: calling [Column.Bytes], [Column.Text],
+// [Column.DecodeInt], [Column.DecodeFloat], or [Column.DecodeTime] on a
+// column from an error row returns the underlying error. Use
+// [Row.Column](0).[Column.Bytes]() as the canonical zero-allocation error
+// check.
 //
-// When COPY FROM enters copy mode, Query yields a [Row] whose [Row.Err]
-// reports [ErrCopyFrom].
+// When COPY FROM enters copy mode, Query yields a [Row] whose columns
+// report [ErrCopyFrom].
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
 	return iter.Seq[*Row](func(yield func(*Row) bool) {
 		if c.now != nil {
@@ -490,32 +491,24 @@ func (c *Conn) execAndSync(portal string) error {
 // It assumes the caller wrote the query and knows the number of result columns
 // ahead of time. Use [Row.Column] to read a specific column by index. For more
 // general row processing, use [Row.Columns] to range over all columns, for
-// example to map them into a struct or another destination. Some rows carry a
-// sticky error, reported by [Row.Err], instead of column data. The returned
-// columns refer to storage owned by the current row and remain valid only
-// while this row is current.
+// example to map them into a struct or another destination. Some rows carry an
+// error instead of column data; the error is surfaced through [Column] methods.
+// The returned columns refer to storage owned by the current row and remain
+// valid only while this row is current.
 type Row struct {
 	data    []byte
 	columns []Column
 	err     error
 }
 
-// Err reports a sticky row error.
-//
-// Some rows, such as the row returned when Query enters COPY FROM mode, carry
-// an error instead of data. Accessing their columns panics with that error.
-func (r *Row) Err() error {
-	if r == nil {
-		return nil
-	}
-	return r.err
-}
-
-// Columns returns the columns in the row. It panics if the row has an error
-// (see [Row.Err]).
+// Columns returns the columns in the row. If the row carries an error,
+// Columns yields a single error-bearing [Column].
 func (r *Row) Columns() iter.Seq[Column] {
 	return func(yield func(Column) bool) {
-		r.check()
+		if r.err != nil {
+			yield(Column{err: r.err})
+			return
+		}
 		for i := range r.columns {
 			if !yield(r.Column(i)) {
 				return
@@ -526,18 +519,15 @@ func (r *Row) Columns() iter.Seq[Column] {
 
 // Column returns the column at index i.
 //
-// It panics if i is out of range or if the row has an error (see [Row.Err]).
+// If the row carries an error, Column returns an error-bearing [Column]
+// regardless of i. Otherwise it panics if i is out of range.
 // The returned Column refers to storage owned by the current row and remains
 // valid only while this row is current.
 func (r *Row) Column(i int) Column {
-	r.check()
-	return r.columns[i]
-}
-
-func (r *Row) check() {
-	if r != nil && r.err != nil {
-		panic(r.err)
+	if r.err != nil {
+		return Column{err: r.err}
 	}
+	return r.columns[i]
 }
 
 // Column describes one column returned by [Conn.Query].
@@ -551,6 +541,7 @@ type Column struct {
 	data    []byte
 
 	timeZone *time.Location
+	err      error
 }
 
 // Ordinal returns the column's zero-based position in the row.
@@ -569,15 +560,28 @@ func (c Column) Type() oids.ID { return c.typeID }
 //
 // The returned slice refers to storage owned by the current row and is valid
 // only until the next row is determined in the sequence.
-func (c Column) Bytes() []byte { return c.data }
+func (c Column) Bytes() ([]byte, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return c.data, nil
+}
 
 // Text returns the column bytes as a string copy.
-func (c Column) Text() string { return string(c.data) }
+func (c Column) Text() (string, error) {
+	if c.err != nil {
+		return "", c.err
+	}
+	return string(c.data), nil
+}
 
 // DecodeInt decodes the column bytes as a PostgreSQL binary signed integer.
 // Supported widths are 1, 2, 4, and 8 bytes.
 func (c Column) DecodeInt() (int64, error) {
-	v := c.Bytes()
+	if c.err != nil {
+		return 0, c.err
+	}
+	v := c.data
 	// TODO(bmizerany): test coverage for all cases
 	switch len(v) {
 	case 1:
@@ -596,7 +600,10 @@ func (c Column) DecodeInt() (int64, error) {
 // DecodeFloat decodes the column bytes as a PostgreSQL binary float.
 // Supported widths are 4 and 8 bytes.
 func (c Column) DecodeFloat() (float64, error) {
-	v := c.Bytes()
+	if c.err != nil {
+		return 0, c.err
+	}
+	v := c.data
 	switch len(v) {
 	case 4:
 		return float64(math.Float32frombits(binary.BigEndian.Uint32(v))), nil
@@ -646,13 +653,16 @@ func pgMicrosecondsToTime(microseconds int64) time.Time {
 // returns it in UTC for timestamptz or in the column's session timezone for
 // timestamp.
 func (c Column) DecodeTime() (time.Time, error) {
+	if c.err != nil {
+		return time.Time{}, c.err
+	}
 	switch c.Type() {
 	case oids.Timestamp, oids.Timestamptz:
 	default:
 		return time.Time{}, fmt.Errorf("DecodeTime: unsupported type: %s", c.Type())
 	}
 
-	v := c.Bytes()
+	v := c.data
 	if len(v) != 8 {
 		return time.Time{}, fmt.Errorf("DecodeTime: invalid length: %d", len(v))
 	}

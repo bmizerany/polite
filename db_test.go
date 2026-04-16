@@ -138,10 +138,14 @@ func TestQuery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			v2, err := row.Column(2).Text()
+			if err != nil {
+				t.Fatal(err)
+			}
 			got = append(got, []any{
 				v0,
 				v1,
-				row.Column(2).Text(),
+				v2,
 			})
 		}
 		want := [][]any{{int64(1), int64(2), "three"}}
@@ -157,7 +161,9 @@ func TestQueryAllocations(t *testing.T) {
 			if _, err := row.Column(0).DecodeInt(); err != nil {
 				t.Fatal(err)
 			}
-			row.Column(1).Text()
+			if _, err := row.Column(1).Text(); err != nil {
+				t.Fatal(err)
+			}
 		}
 	})
 
@@ -176,7 +182,9 @@ func BenchmarkQueryAllocations(b *testing.B) {
 			if _, err := row.Column(0).DecodeInt(); err != nil {
 				b.Fatal(err)
 			}
-			row.Column(1).Bytes()
+			if _, err := row.Column(1).Bytes(); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 
@@ -288,7 +296,11 @@ func TestQueryExtended(t *testing.T) {
 	`
 	var got []string
 	for row := range cn.Query(t.Context(), q, "hello", "world") {
-		got = append(got, row.Column(0).Text())
+		v, err := row.Column(0).Text()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, v)
 	}
 
 	want := []string{"hello", "world"}
@@ -302,7 +314,11 @@ func TestQueryExtendedBytes(t *testing.T) {
 
 	var got []string
 	for row := range cn.Query(t.Context(), "SELECT $1::bytea", []byte{0x12, 0x34, 0x35}) {
-		got = append(got, string(row.Column(0).Bytes()))
+		b, err := row.Column(0).Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, string(b))
 	}
 
 	diff.Test(t, t.Errorf, got, []string{"\x12\x345"})
@@ -314,7 +330,11 @@ func TestQueryExtendedNullBytes(t *testing.T) {
 	cn := newSession(t)
 
 	for row := range cn.Query(t.Context(), "SELECT $1::bytea", nil) {
-		if got := row.Column(0).Bytes(); got != nil {
+		got, err := row.Column(0).Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != nil {
 			t.Fatalf("unexpected non-nil got: %v", got)
 		}
 		return
@@ -331,7 +351,8 @@ func TestQueryExtendedUnsupportedType(t *testing.T) {
 
 	var got []error
 	for row := range cn.Query(t.Context(), "SELECT $1", true) {
-		got = append(got, row.Err())
+		_, err := row.Column(0).Bytes()
+		got = append(got, err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected 1 error; got %d", len(got))
@@ -348,7 +369,11 @@ func TestQueryExtendedUnsignedOverflow(t *testing.T) {
 
 	var got string
 	for row := range cn.Query(t.Context(), "SELECT $1", uint64(math.MaxUint64)) {
-		got = row.Column(0).Text()
+		var err error
+		got, err = row.Column(0).Text()
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	if got != "18446744073709551615" {
 		t.Fatalf("got %q want %q", got, "18446744073709551615")
@@ -363,7 +388,8 @@ func TestQueryExtendedComplex(t *testing.T) {
 
 	var got []error
 	for row := range cn.Query(t.Context(), "SELECT $1", complex128(1+2i)) {
-		got = append(got, row.Err())
+		_, err := row.Column(0).Bytes()
+		got = append(got, err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected 1 error; got %d", len(got))
@@ -384,7 +410,8 @@ func collectRows(rows iter.Seq[*Row]) [][]string {
 func collectValues(row *Row) []string {
 	var got []string
 	for col := range row.Columns() {
-		got = append(got, string(col.Bytes()))
+		b, _ := col.Bytes()
+		got = append(got, string(b))
 	}
 	return got
 }
@@ -399,26 +426,30 @@ func TestRowColumn(t *testing.T) {
 		for row := range cn.Query(t.Context(), `SELECT 11::int4, 'two'::text`) {
 
 			col := row.Column(1)
-			if got := col.Text(); got != "two" {
-				t.Fatalf("column 1 = %q, want %q", got, "two")
-			}
-
-			col = row.Column(0)
-			got, err := col.DecodeInt()
+			s, err := col.Text()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got != 11 {
-				t.Fatalf("column 0 = %v, want 11", got)
+			if s != "two" {
+				t.Fatalf("column 1 = %q, want %q", s, "two")
 			}
 
 			col = row.Column(0)
-			got, err = col.DecodeInt()
+			n, err := col.DecodeInt()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got != 11 {
-				t.Fatalf("column 0 repeated = %v, want 11", got)
+			if n != 11 {
+				t.Fatalf("column 0 = %v, want 11", n)
+			}
+
+			col = row.Column(0)
+			n, err = col.DecodeInt()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n != 11 {
+				t.Fatalf("column 0 repeated = %v, want 11", n)
 			}
 			return
 		}
@@ -504,7 +535,9 @@ func TestZeroColumn(t *testing.T) {
 	t.Parallel()
 
 	var col Column
-	if got := col.Bytes(); got != nil {
+	if got, err := col.Bytes(); err != nil {
+		t.Fatalf("Bytes() error = %v; want nil", err)
+	} else if got != nil {
 		t.Fatalf("Bytes() = %v; want nil", got)
 	}
 	if got := col.Ordinal(); got != 0 {
@@ -663,7 +696,8 @@ func TestQueryEmptyQueryResponse(t *testing.T) {
 
 	var got []error
 	for row := range cn.Query(ctx, "") {
-		got = append(got, row.Err())
+		_, err := row.Column(0).Bytes()
+		got = append(got, err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected 1 error; got %d", len(got))
@@ -954,13 +988,16 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 	var gotFloat []byte
 	for row := range cn.Query(t.Context(), q, "hello", []byte("world"), in, uint(42), float64(3.5)) {
 		var err error
-		gotText = row.Column(0).Text()
-		gotBytes = row.Column(1).Bytes()
+		gotText, err = row.Column(0).Text()
+		check(err, nil)
+		gotBytes, err = row.Column(1).Bytes()
+		check(err, nil)
 		gotTime, err = row.Column(2).DecodeTime()
 		check(err, nil)
 		gotInt, err = row.Column(3).DecodeInt()
 		check(err, nil)
-		gotFloat = row.Column(4).Bytes()
+		gotFloat, err = row.Column(4).Bytes()
+		check(err, nil)
 	}
 
 	diff.Test(t, t.Errorf, gotText, "hello")
@@ -1095,7 +1132,11 @@ func TestQueryCacheHitAfterError(t *testing.T) {
 
 	// Run a parameterized query and verify the result.
 	for row := range cn.Query(ctx, "SELECT $1::text", "hello") {
-		if got := row.Column(0).Text(); got != "hello" {
+		got, err := row.Column(0).Text()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "hello" {
 			t.Fatalf("first query got %q, want %q", got, "hello")
 		}
 	}
@@ -1107,7 +1148,11 @@ func TestQueryCacheHitAfterError(t *testing.T) {
 	// The cached statement from the first run must still work after
 	// error recovery on an unrelated query.
 	for row := range cn.Query(ctx, "SELECT $1::text", "world") {
-		if got := row.Column(0).Text(); got != "world" {
+		got, err := row.Column(0).Text()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != "world" {
 			t.Fatalf("second query got %q, want %q", got, "world")
 		}
 	}
@@ -1473,8 +1518,9 @@ func TestPoolPutDiscardsCopyFrom(t *testing.T) {
 	// Enter COPY FROM mode and return the connection to the pool
 	// without finishing the COPY. The pool should discard it.
 	for row := range cn.Query(ctx, "COPY discard_copy FROM STDIN WITH (FORMAT binary)") {
-		if !errors.Is(row.Err(), ErrCopyFrom) {
-			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		_, err = row.Column(0).Bytes()
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("column error = %v, want ErrCopyFrom", err)
 		}
 		p.Put(cn)
 		break

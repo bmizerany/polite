@@ -247,7 +247,10 @@ func TestTimestampMicrosecondRoundingInSQL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sql := `WITH x AS (SELECT $1::timestamp AS ts) SELECT ts = ` + tt.want + ` FROM x`
 			for row := range cn.Query(ctx, sql, tt.in) {
-				got := row.Column(0).Bytes()
+				got, err := row.Column(0).Bytes()
+				if err != nil {
+					t.Fatal(err)
+				}
 				if len(got) != 1 || got[0] != 1 {
 					t.Fatalf("got %v, want true", got)
 				}
@@ -453,7 +456,11 @@ func currentTimeZone(t *testing.T, cn *Conn) *time.Location {
 	t.Helper()
 
 	for row := range cn.Query(t.Context(), `SHOW TimeZone`) {
-		loc, err := loadLocation(row.Column(0).Text())
+		tz, err := row.Column(0).Text()
+		if err != nil {
+			t.Fatal(err)
+		}
+		loc, err := loadLocation(tz)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -554,7 +561,11 @@ func TestDialNow(t *testing.T) {
 			name: "nil",
 			want: func(t *testing.T, cn *Conn) {
 				for row := range cn.Query(t.Context(), `SELECT current_setting('polite.go_time', true)`) {
-					if got := row.Column(0).Bytes(); got != nil {
+					got, err := row.Column(0).Bytes()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got != nil {
 						t.Fatalf("polite.go_time = %q; want unset", got)
 					}
 				}

@@ -28,7 +28,9 @@ func TestCopyFreestyle(t *testing.T) {
 		if g != 1 {
 			t.Fatalf("id = %v, want 1", g)
 		}
-		if g := row.Column(1).Text(); g != "foo" {
+		if g, err := row.Column(1).Text(); err != nil {
+			t.Fatal(err)
+		} else if g != "foo" {
 			t.Fatalf("name = %q, want 'foo'", g)
 		}
 	}
@@ -47,7 +49,8 @@ func TestCopyNonBinary(t *testing.T) {
 	`
 	var got []error
 	for row := range cn.Query(ctx, q) {
-		got = append(got, row.Err())
+		_, err := row.Column(0).Bytes()
+		got = append(got, err)
 	}
 	if len(got) != 1 {
 		t.Fatalf("got %v, want 1 error", len(got))
@@ -72,7 +75,8 @@ func TestCopyFromNonBinary(t *testing.T) {
 
 	var gotErr error
 	for row := range cn.Query(ctx, "COPY foo FROM STDIN") {
-		if err := row.Err(); err != nil {
+		_, err := row.Column(0).Bytes()
+		if err != nil {
 			gotErr = err
 			continue
 		}
@@ -102,7 +106,7 @@ func TestDiscardUntilReadyFatal(t *testing.T) {
 	// forever; with the guard it returns the fatal error.
 	var gotErr error
 	for row := range cn.Query(ctx, "COPY (SELECT pg_terminate_backend(pg_backend_pid())) TO STDOUT WITH (FORMAT text)") {
-		gotErr = row.Err()
+		_, gotErr = row.Column(0).Bytes()
 	}
 
 	if gotErr == nil {
@@ -133,7 +137,8 @@ func TestCopyFromConstraintViolation(t *testing.T) {
 	// Enter COPY FROM and send a NULL for a NOT NULL column.
 	var gotErr error
 	for row := range cn.Query(ctx, "COPY strict FROM STDIN WITH (FORMAT binary)") {
-		if err := row.Err(); err != nil && !errors.Is(err, ErrCopyFrom) {
+		_, err := row.Column(0).Bytes()
+		if err != nil && !errors.Is(err, ErrCopyFrom) {
 			gotErr = err
 			break
 		}
@@ -168,8 +173,9 @@ func TestCopyFromBreakAfterConstraintViolation(t *testing.T) {
 	// violation is discovered during finalization; the connection
 	// must still be usable afterward.
 	for row := range cn.Query(ctx, "COPY strict2 FROM STDIN WITH (FORMAT binary)") {
-		if !errors.Is(row.Err(), ErrCopyFrom) {
-			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		_, err = row.Column(0).Bytes()
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("column error = %v, want ErrCopyFrom", err)
 		}
 		cn.Exec(ctx, "", nil)
 		break
@@ -275,8 +281,9 @@ func TestCopyFrom(t *testing.T) {
 	}
 
 	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if !errors.Is(row.Err(), ErrCopyFrom) {
-			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		_, err = row.Column(0).Bytes()
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("column error = %v, want ErrCopyFrom", err)
 		}
 		if err := cn.Exec(ctx, "", int32(4), "qux"); err != nil {
 			t.Fatal(err)
@@ -298,7 +305,10 @@ func TestCopyFrom(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		g.Name = row.Column(1).Text()
+		g.Name, err = row.Column(1).Text()
+		if err != nil {
+			t.Fatal(err)
+		}
 		got = append(got, g)
 	}
 	want := []G{
@@ -323,8 +333,9 @@ func TestCopyFromBreakBeforeSend(t *testing.T) {
 	}
 
 	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if !errors.Is(row.Err(), ErrCopyFrom) {
-			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		_, err = row.Column(0).Bytes()
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("column error = %v, want ErrCopyFrom", err)
 		}
 		break // exit without sending any rows
 	}
@@ -347,8 +358,9 @@ func TestCopyFromEmpty(t *testing.T) {
 	}
 
 	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
-		if !errors.Is(row.Err(), ErrCopyFrom) {
-			t.Fatalf("row.Err() = %v, want ErrCopyFrom", row.Err())
+		_, err = row.Column(0).Bytes()
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("column error = %v, want ErrCopyFrom", err)
 		}
 		// Send no rows, just let the iterator end.
 	}
