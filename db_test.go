@@ -603,6 +603,38 @@ func TestQueryBreakInAll(t *testing.T) {
 	diff.Test(t, t.Errorf, got, want)
 }
 
+func TestQueryBreakDrainError(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	// generate_series produces rows 1..5. The division g/(3-g)
+	// raises a division-by-zero error when g reaches 3. Breaking
+	// after the first row forces the drain loop to encounter the
+	// error while discarding the remaining rows.
+	const q = `SELECT CASE WHEN g = 3 THEN g/(3-g) ELSE g END FROM generate_series(1, 5) AS g`
+	for row, err := range cn.Query(t.Context(), q) {
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := row.Column(0).DecodeInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v != 1 {
+			t.Fatalf("first row = %d, want 1", v)
+		}
+		break
+	}
+
+	// The drain encountered the error and recovered to ReadyForQuery.
+	// The connection must be reusable.
+	if err := cn.Exec(t.Context(), "SELECT 1"); err != nil {
+		t.Fatalf("Exec after break-drain error: %v", err)
+	}
+}
+
 func TestQueryBreakCleanupPoisonsConn(t *testing.T) {
 	t.Parallel()
 
