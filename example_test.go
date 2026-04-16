@@ -9,6 +9,63 @@ import (
 	"blake.io/polite"
 )
 
+func ExampleDial() {
+	ctx := context.Background()
+
+	cn, err := polite.Dial(ctx, polite.DefaultDSN, nil)
+	if err != nil {
+		return
+	}
+	defer cn.Close()
+
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		return
+	}
+}
+
+func ExampleConn_Query() {
+	ctx := context.Background()
+
+	cn, err := polite.Dial(ctx, polite.DefaultDSN, nil)
+	if err != nil {
+		return
+	}
+	defer cn.Close()
+
+	const q = `
+		SELECT id, street, city
+		FROM addresses
+		ORDER BY id
+	`
+	for row := range cn.Query(ctx, q) {
+		var address struct {
+			ID     int64
+			Street string
+			City   string
+		}
+		for col := range row.Columns() {
+			switch col.Name() {
+			case "id":
+				address.ID, err = col.DecodeInt()
+				if err != nil {
+					return
+				}
+			case "street":
+				address.Street, err = col.Text()
+				if err != nil {
+					return
+				}
+			case "city":
+				address.City, err = col.Text()
+				if err != nil {
+					return
+				}
+			}
+		}
+		fmt.Printf("%#v\n", address)
+	}
+}
+
 func ExampleConn_Query_copyTo() {
 	ctx := context.Background()
 	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
@@ -22,7 +79,10 @@ func ExampleConn_Query_copyTo() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		name := row.Column(1).Text()
+		name, err := row.Column(1).Text()
+		if err != nil {
+			log.Fatal(err)
+		}
 		fmt.Println(id, name)
 	}
 }
@@ -75,9 +135,12 @@ func ExampleConn_Query_struct() {
 		) AS t
 	`
 	for row := range cn.Query(ctx, q) {
-		var user User
-		err := json.Unmarshal(row.Column(0).Bytes(), &user)
+		b, err := row.Column(0).Bytes()
 		if err != nil {
+			log.Fatal(err)
+		}
+		var user User
+		if err := json.Unmarshal(b, &user); err != nil {
 			log.Fatal(err)
 		}
 		_ = user
@@ -99,5 +162,22 @@ func ExampleConn_listenNotify() {
 
 	for n := range polite.Events(ctx, cn) {
 		fmt.Printf("channel=%s payload=%s\n", n.Channel, n.Payload)
+	}
+}
+
+func ExamplePool_Get() {
+	ctx := context.Background()
+
+	p := new(polite.Pool) // use default settings
+	defer p.Close()
+
+	cn, err := p.Get(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer p.Put(cn)
+
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		log.Fatal(err)
 	}
 }
