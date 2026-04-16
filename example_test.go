@@ -66,6 +66,77 @@ func ExampleConn_Query_columnsByName() {
 	}
 }
 
+func ExampleConn_Query_struct() {
+	ctx := context.Background()
+
+	cn, err := polite.Dial(ctx, "", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cn.Close()
+
+	type User struct {
+		ID   int32  `json:"id"`
+		Name string `json:"name"`
+	}
+
+	const q = `
+		SELECT row_to_json(t)
+		FROM (
+			SELECT 1::int4 AS id, 'alice'::text AS name
+			UNION ALL
+			SELECT 2::int4, 'bob'::text
+		) AS t
+	`
+	for row := range cn.Query(ctx, q) {
+		b, err := row.Column(0).Bytes()
+		if err != nil {
+			log.Fatal(err)
+		}
+		var user User
+		if err := json.Unmarshal(b, &user); err != nil {
+			log.Fatal(err)
+		}
+		_ = user
+	}
+}
+
+func ExampleConn_Query_columnsByIndex() {
+	ctx := context.Background()
+
+	cn, err := polite.Dial(ctx, polite.DefaultDSN, nil)
+	if err != nil {
+		return
+	}
+	defer cn.Close()
+
+	const q = `
+		SELECT id, street, city
+		FROM addresses
+		ORDER BY id
+	`
+	for row := range cn.Query(ctx, q) {
+		var address struct {
+			ID     int64
+			Street string
+			City   string
+		}
+		address.ID, err = row.Column(0).DecodeInt()
+		if err != nil {
+			return
+		}
+		address.Street, err = row.Column(1).Text()
+		if err != nil {
+			return
+		}
+		address.City, err = row.Column(2).Text()
+		if err != nil {
+			return
+		}
+		fmt.Printf("%#v\n", address)
+	}
+}
+
 func ExampleConn_Query_copyTo() {
 	ctx := context.Background()
 	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
@@ -109,41 +180,6 @@ func ExampleConn_Query_copyFrom() {
 				log.Fatal(err)
 			}
 		}
-	}
-}
-
-func ExampleConn_Query_struct() {
-	ctx := context.Background()
-
-	cn, err := polite.Dial(ctx, "", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer cn.Close()
-
-	type User struct {
-		ID   int32  `json:"id"`
-		Name string `json:"name"`
-	}
-
-	const q = `
-		SELECT row_to_json(t)
-		FROM (
-			SELECT 1::int4 AS id, 'alice'::text AS name
-			UNION ALL
-			SELECT 2::int4, 'bob'::text
-		) AS t
-	`
-	for row := range cn.Query(ctx, q) {
-		b, err := row.Column(0).Bytes()
-		if err != nil {
-			log.Fatal(err)
-		}
-		var user User
-		if err := json.Unmarshal(b, &user); err != nil {
-			log.Fatal(err)
-		}
-		_ = user
 	}
 }
 
