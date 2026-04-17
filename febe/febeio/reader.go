@@ -31,7 +31,11 @@ const (
 func (b *byteReader) extend() (int, error) {
 	remaining := len(b.data) - b.offset
 	if remaining == 0 {
-		b.data = b.data[:0]
+		if cap(b.data) > newBufferSize {
+			b.data = make([]byte, 0, newBufferSize)
+		} else {
+			b.data = b.data[:0]
+		}
 		b.offset = 0
 	}
 	if cap(b.data)-len(b.data) >= minReadSize {

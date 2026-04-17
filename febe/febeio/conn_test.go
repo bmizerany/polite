@@ -548,3 +548,29 @@ func TestDiscard(t *testing.T) {
 		t.Errorf("rem = %v, want 0", rem)
 	}
 }
+
+func TestBufferShrinksAfterLargeMessage(t *testing.T) {
+	const big = 1 << 20
+	src := bytes.NewReader(append(bytes.Repeat([]byte("X"), big), "Y"...))
+	cn := NewConn(src, io.Discard)
+
+	if _, err := cn.ReadByteN(big); err != nil {
+		t.Fatalf("ReadByteN(%d): %v", big, err)
+	}
+	if got := cap(cn.r.data); got <= newBufferSize {
+		t.Fatalf("expected buffer to have grown past %d; cap=%d", newBufferSize, got)
+	}
+
+	// Consuming the next byte triggers extend() with remaining==0,
+	// which must drop the oversized backing array.
+	b, err := cn.ReadByte()
+	if err != nil {
+		t.Fatalf("ReadByte: %v", err)
+	}
+	if b != 'Y' {
+		t.Fatalf("got %q, want %q", b, byte('Y'))
+	}
+	if got := cap(cn.r.data); got != newBufferSize {
+		t.Fatalf("expected buffer to have shrunk to %d; cap=%d", newBufferSize, got)
+	}
+}
