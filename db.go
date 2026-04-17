@@ -85,8 +85,11 @@ func (c *Conn) idle() bool {
 }
 
 // Notifications blocks and yields each [febe.Notification] received
-// on cn. It returns on the first protocol or transport error, or
-// when the caller breaks out of the range loop.
+// on cn. It returns only when the caller breaks out of the range
+// loop or when the connection becomes terminal (protocol or
+// transport error). No error is returned directly; both cases look
+// the same from the caller's side. To distinguish them, attach a
+// [febe.Trace] with a ReceivedError callback via [febe.WithTrace].
 //
 // Typical usage with LISTEN:
 //
