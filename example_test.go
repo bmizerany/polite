@@ -23,6 +23,11 @@ func ExampleDial() {
 	}
 }
 
+// Ranging over Columns and switching on Name reads each value by
+// the name it has in the row. Pick this when the column positions
+// in the query might shift, or when the query is SELECT * against
+// a table whose column list can grow. Reordering the SELECT, or
+// adding a column to the table, does not miswire fields here.
 func ExampleConn_Query_columnsByName() {
 	ctx := context.Background()
 
@@ -72,8 +77,8 @@ func ExampleConn_Query_columnsByName() {
 // encoding/json do the field dispatch, so the client code does not
 // spell out a switch over column names. It is a convenience, not a
 // feature. The cost is a JSON round-trip; the benefit is less code
-// when the schema is wide or changes often. Use columnsByName when
-// you want to avoid the encode/decode.
+// when the schema is wide or changes often. Use the ColumnsByName
+// example when you want to avoid the encode/decode.
 func ExampleConn_Query_columnsToStruct() {
 	ctx := context.Background()
 
@@ -109,6 +114,13 @@ func ExampleConn_Query_columnsToStruct() {
 	}
 }
 
+// Row.Column(i) addresses a column by position. It fits a tight
+// query with a small, fixed column list, and it is also the way to
+// read columns out of order or more than once without reshaping the
+// SELECT. The column order in the query is load-bearing: swap two
+// columns in the SELECT and the decode silently reads the wrong
+// field. SELECT * is a bad fit here for the same reason; see the
+// ColumnsByName or ColumnsToStruct examples.
 func ExampleConn_Query_columnsByIndex() {
 	ctx := context.Background()
 
@@ -145,6 +157,11 @@ func ExampleConn_Query_columnsByIndex() {
 	}
 }
 
+// COPY ... TO STDOUT streams rows out of the server without going
+// back through the executor for each row, which is the fastest way
+// to read a lot of data. The binary format skips text conversion on
+// both sides. Columns have no names in the COPY stream, so access
+// is by index.
 func ExampleConn_Query_copyTo() {
 	ctx := context.Background()
 	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
@@ -166,6 +183,11 @@ func ExampleConn_Query_copyTo() {
 	}
 }
 
+// COPY ... FROM STDIN is the inverse: bulk-load rows into a table
+// without a round-trip per row. Query starts the COPY and the loop
+// body sends each tuple with Exec and an empty SQL string, which
+// the driver recognizes as a COPY data message. The outer range
+// runs once; the row value is unused.
 func ExampleConn_Query_copyFrom() {
 	ctx := context.Background()
 	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
