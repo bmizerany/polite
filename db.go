@@ -84,17 +84,17 @@ func (c *Conn) idle() bool {
 	return c.fc.Err() == nil && !c.inCopyFrom && c.Status().Idle()
 }
 
-// Events blocks and yields each [febe.Notification] received on cn.
-// It returns on the first protocol or transport error, or when the
-// caller breaks out of the range loop.
+// Notifications blocks and yields each [febe.Notification] received
+// on cn. It returns on the first protocol or transport error, or
+// when the caller breaks out of the range loop.
 //
 // Typical usage with LISTEN:
 //
 //	cn.Exec(ctx, "LISTEN chat")
-//	for n := range polite.Events(ctx, cn) {
+//	for n := range polite.Notifications(ctx, cn) {
 //		fmt.Printf("%s: %s\n", n.Channel, n.Payload)
 //	}
-func Events(ctx context.Context, cn *Conn) iter.Seq[*febe.Notification] {
+func Notifications(ctx context.Context, cn *Conn) iter.Seq[*febe.Notification] {
 	return func(yield func(*febe.Notification) bool) {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()

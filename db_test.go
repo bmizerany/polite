@@ -1568,7 +1568,7 @@ func TestEvents(t *testing.T) {
 		notifier.Exec(ctx, "NOTIFY test_events, 'hello'")
 	}()
 
-	for n := range Events(ctx, listener) {
+	for n := range Notifications(ctx, listener) {
 		if got := string(n.Channel); got != "test_events" {
 			t.Fatalf("Channel = %q; want %q", got, "test_events")
 		}
@@ -1578,7 +1578,7 @@ func TestEvents(t *testing.T) {
 		break
 	}
 
-	// Connection should still be usable after breaking out of Events.
+	// Connection should still be usable after breaking out of Notifications.
 	if err := listener.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}

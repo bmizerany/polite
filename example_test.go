@@ -213,7 +213,7 @@ func ExampleConn_Query_copyFrom() {
 	}
 }
 
-func ExampleEvents() {
+func ExampleNotifications() {
 	ctx := context.Background()
 
 	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
@@ -226,7 +226,7 @@ func ExampleEvents() {
 		log.Fatal(err)
 	}
 
-	for n := range polite.Events(ctx, cn) {
+	for n := range polite.Notifications(ctx, cn) {
 		fmt.Printf("channel=%s payload=%s\n", n.Channel, n.Payload)
 	}
 }
