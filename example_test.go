@@ -213,7 +213,7 @@ func ExampleConn_Query_copyFrom() {
 	}
 }
 
-func ExampleNotifications() {
+func ExampleNotifications_listenNotify() {
 	ctx := context.Background()
 
 	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
