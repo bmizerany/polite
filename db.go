@@ -535,6 +535,14 @@ func (r *Row) Column(i int) Column {
 
 // Column describes one column returned by [Conn.Query].
 //
+// Values arrive in PostgreSQL's binary wire format. Column provides
+// scalar decoders — [Column.DecodeInt], [Column.DecodeFloat], and
+// [Column.DecodeTime] — that read that format directly. For types
+// without a built-in decoder, call [Column.Bytes] to get a view of
+// the raw wire bytes and decode them yourself. The view borrows the
+// current row's storage, so conversions that do not need to copy
+// allocate nothing.
+//
 // To obtain a Column, call [Conn.Query] and then [Row.Column].
 type Column struct {
 	ordinal int

@@ -33,21 +33,11 @@
 // straightforward to fill Go structs by matching column names in a single
 // pass, without reflection or per-row lookup tables.
 //
-// # Binary Format
-//
-// polite uses PostgreSQL's extended query path and requests result columns in
-// binary format. Arguments are encoded in PostgreSQL wire form when possible.
-// That keeps the hot path short and predictable: integers, floats, timestamps,
-// byte slices, and strings can move between Go and PostgreSQL without text
-// scanning. Unsigned values that do not fit in signed 64 bits are sent as text
-// NUMERIC when needed.
-//
-// Binary results lead naturally to bulk transfer.
-//
 // # COPY
 //
-// Query supports COPY TO and COPY FROM in PostgreSQL's binary format.
-// See [Conn.Query] for copy examples.
+// Query supports COPY TO and COPY FROM in PostgreSQL's binary
+// format. See [Column] for details on reading that format and
+// [Conn.Query] for examples.
 //
 // # Pooling
 //
