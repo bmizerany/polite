@@ -232,6 +232,20 @@ func TestOpenReadDeadline(t *testing.T) {
 	}
 }
 
+func TestDialStatusIdle(t *testing.T) {
+	t.Parallel()
+
+	cn, err := Dial(t.Context(), testDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cn.Close() })
+
+	if got := cn.fc.Status(); got != febe.ReadyStatusIdle {
+		t.Fatalf("Status after Dial = %v; want %v", got, febe.ReadyStatusIdle)
+	}
+}
+
 func TestOpenDialError(t *testing.T) {
 	// prove that Dial uses Config.Dial if present
 	errBoom := errors.New("boom")

@@ -1281,28 +1281,28 @@ func TestStatus(t *testing.T) {
 	cn := newSession(t)
 	defer checkReady(t, cn)
 
-	if got := cn.Status(); got != febe.ReadyStatusIdle {
+	if got := cn.fc.Status(); got != febe.ReadyStatusIdle {
 		t.Fatalf("initial Status() = %q; want %q", got, febe.ReadyStatusIdle)
 	}
 
 	if err := cn.Exec(t.Context(), "BEGIN"); err != nil {
 		t.Fatal(err)
 	}
-	if got := cn.Status(); got != febe.ReadyStatusBusy {
+	if got := cn.fc.Status(); got != febe.ReadyStatusBusy {
 		t.Fatalf("after BEGIN Status() = %q; want %q", got, febe.ReadyStatusBusy)
 	}
 
 	if err := cn.Exec(t.Context(), "SELECT 1/0"); err == nil {
 		t.Fatal("expected error from SELECT 1/0")
 	}
-	if got := cn.Status(); got != febe.ReadyStatusFailed {
+	if got := cn.fc.Status(); got != febe.ReadyStatusFailed {
 		t.Fatalf("after failed statement Status() = %q; want %q", got, febe.ReadyStatusFailed)
 	}
 
 	if err := cn.Exec(t.Context(), "ROLLBACK"); err != nil {
 		t.Fatal(err)
 	}
-	if got := cn.Status(); got != febe.ReadyStatusIdle {
+	if got := cn.fc.Status(); got != febe.ReadyStatusIdle {
 		t.Fatalf("after ROLLBACK Status() = %q; want %q", got, febe.ReadyStatusIdle)
 	}
 }
@@ -1385,7 +1385,7 @@ func checkReady(t *testing.T, c *Conn) {
 	if t.Failed() {
 		return
 	}
-	if got := c.Status(); got != febe.ReadyStatusIdle {
+	if got := c.fc.Status(); got != febe.ReadyStatusIdle {
 		t.Fatalf("Status() = %q; want %q", got, febe.ReadyStatusIdle)
 	}
 	if err := c.Exec(t.Context(), "SELECT 1"); err != nil {
@@ -1419,8 +1419,8 @@ func TestPoolPutDiscardsTransaction(t *testing.T) {
 	}
 	defer p.Put(cn)
 
-	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle", cn.Status())
+	if !cn.fc.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle", cn.fc.Status())
 	}
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
@@ -1443,8 +1443,8 @@ func TestPoolPutDiscardsFailedTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	cn.Exec(ctx, "SELECT * FROM nonexistent_table_xyz")
-	if cn.Status() != febe.ReadyStatusFailed {
-		t.Fatalf("Status() = %v; want failed", cn.Status())
+	if cn.fc.Status() != febe.ReadyStatusFailed {
+		t.Fatalf("Status() = %v; want failed", cn.fc.Status())
 	}
 	p.Put(cn) // not idle — discarded and retired
 
@@ -1454,8 +1454,8 @@ func TestPoolPutDiscardsFailedTransaction(t *testing.T) {
 	}
 	defer p.Put(cn)
 
-	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle", cn.Status())
+	if !cn.fc.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle", cn.fc.Status())
 	}
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
@@ -1474,7 +1474,7 @@ func TestPoolPutIdle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cn.Status().Idle() {
+	if !cn.fc.Status().Idle() {
 		t.Fatal("expected idle after Get")
 	}
 	p.Put(cn)
@@ -1485,8 +1485,8 @@ func TestPoolPutIdle(t *testing.T) {
 	}
 	defer p.Put(cn)
 
-	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle", cn.Status())
+	if !cn.fc.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle", cn.fc.Status())
 	}
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
@@ -1522,8 +1522,8 @@ func TestPoolPutPoisoned(t *testing.T) {
 	}
 	defer p.Put(cn)
 
-	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle", cn.Status())
+	if !cn.fc.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle", cn.fc.Status())
 	}
 	if err := cn.Exec(context.Background(), "SELECT 1"); err != nil {
 		t.Fatal(err)
@@ -1571,8 +1571,8 @@ func TestPoolPutDiscardsCopyFrom(t *testing.T) {
 	}
 	defer p.Put(cn)
 
-	if !cn.Status().Idle() {
-		t.Fatalf("Status() = %v; want idle", cn.Status())
+	if !cn.fc.Status().Idle() {
+		t.Fatalf("Status() = %v; want idle", cn.fc.Status())
 	}
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
