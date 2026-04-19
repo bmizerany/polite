@@ -17,6 +17,8 @@ import (
 	"blake.io/polite/internal/scram"
 )
 
+// Config configures a [Dial]. All fields are optional; a nil *Config is
+// equivalent to a zero-value Config.
 type Config struct {
 	// Dial is used to open the connection to postgres. If nil, a net.Dialer is used.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)

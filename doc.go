@@ -22,11 +22,14 @@
 //
 // # Rows and Columns
 //
-// A [Row] is a view of the current result row. Each [Column] reports its name,
-// width, PostgreSQL type OID, and raw bytes. [Column.DecodeInt],
-// [Column.DecodeFloat], and [Column.DecodeTime] decode common PostgreSQL
-// binary values directly. Raw column bytes refer to storage owned by the
-// current row and remain valid only until the next row is determined.
+// A [Row] is a view of the current result row. polite requests every column
+// in PostgreSQL's binary format, so [Column] values arrive as raw wire bytes
+// rather than decimal strings. Each Column reports its name, width,
+// PostgreSQL type OID, and those bytes. [Column.DecodeInt],
+// [Column.DecodeFloat], and [Column.DecodeTime] read the binary format
+// directly; for types without a built-in decoder, call [Column.Bytes] and
+// decode the wire bytes yourself. Raw column bytes refer to storage owned by
+// the current row and remain valid only until the next row is determined.
 //
 // Rows reuse storage across iterations. In steady-state query paths, that lets
 // polite avoid per-row allocation. The same column metadata also makes it

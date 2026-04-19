@@ -9,6 +9,8 @@ import (
 	"blake.io/polite"
 )
 
+// Dial opens a connection using the default DSN, runs a single command, and
+// closes. The shape every other example builds on.
 func ExampleDial() {
 	ctx := context.Background()
 
@@ -213,6 +215,9 @@ func ExampleConn_Query_copyFrom() {
 	}
 }
 
+// LISTEN on a channel and range over Notifications. The range ends only
+// when the caller breaks or the connection becomes terminal; attach a
+// febe.Trace if you need to tell the two apart.
 func ExampleNotifications_listenNotify() {
 	ctx := context.Background()
 

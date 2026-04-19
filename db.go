@@ -31,7 +31,8 @@ type statement struct {
 	out  febe.RowDescriptionResponse
 }
 
-// Conn is a PostgreSQL connection.
+// Conn is a PostgreSQL connection. Obtain one from [Dial] or [Pool.Get]; the
+// zero value is not usable.
 //
 // Conn is not safe for concurrent use by multiple goroutines.
 // Use [Pool] for concurrent access from multiple goroutines.
@@ -70,7 +71,8 @@ type Conn struct {
 }
 
 // Close sends a Terminate message, flushes it, and then closes the underlying
-// connection.
+// connection. After Close, further operations on the Conn fail with a
+// transport error.
 //
 // Close returns the error from closing the underlying connection, if any. It
 // still attempts to send Terminate and flush it before closing.
@@ -87,12 +89,15 @@ func (c *Conn) idle() bool {
 	return c.fc.Err() == nil && !c.inCopyFrom && c.fc.Status().Idle()
 }
 
-// Notifications blocks and yields each [febe.Notification] received
-// on cn. It returns only when the caller breaks out of the range
-// loop or when the connection becomes terminal (protocol or
-// transport error). No error is returned directly; both cases look
-// the same from the caller's side. To distinguish them, attach a
-// [febe.Trace] with a ReceivedError callback via [febe.WithTrace].
+// Notifications blocks and yields each [febe.Notification] received on cn.
+// Only channels the connection has subscribed to with LISTEN produce
+// notifications; issue LISTEN via [Conn.Exec] before ranging.
+//
+// Notifications returns only when the caller breaks out of the range loop or
+// when the connection becomes terminal (protocol or transport error). No
+// error is returned directly; both cases look the same from the caller's
+// side. To distinguish them, attach a [febe.Trace] with a ReceivedError
+// callback via [febe.WithTrace].
 //
 // Typical usage with LISTEN:
 //
@@ -425,6 +430,10 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // column from an error row returns the underlying error. Use
 // [Row.Column](0).[Column.Bytes]() as the canonical zero-allocation error
 // check.
+//
+// A Query range is active until the loop ends or the caller breaks. While a
+// range is active, further calls to [Conn.Query] or [Conn.Exec] on the same
+// Conn return [ErrQueryActive]; end the range before calling either again.
 //
 // When COPY FROM enters copy mode, Query yields a [Row] whose columns
 // report [ErrCopyFrom].
