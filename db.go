@@ -22,6 +22,7 @@ var (
 	ErrTLSRefused            = errors.New("polite: TLS refused by backend")
 	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 	ErrCopyFrom              = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
+	ErrQueryActive           = errors.New("polite: a Query range is active; complete or break it before calling Exec")
 )
 
 type statement struct {
@@ -64,6 +65,11 @@ type Conn struct {
 	inCopyFrom           bool
 	copyHeaderWritten    bool
 	copyOutHeaderPending bool
+
+	// busy is true while a Query iterator is active. It prevents
+	// re-entrant Query/Exec calls on the same Conn, which would
+	// collide with the in-flight row stream.
+	busy bool
 }
 
 // Close sends a Terminate message, flushes it, and then closes the underlying
@@ -433,12 +439,18 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // report [ErrCopyFrom].
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
 	return iter.Seq[*Row](func(yield func(*Row) bool) {
+		if c.busy {
+			yield(&Row{err: ErrQueryActive})
+			return
+		}
 		if c.now != nil {
 			if err := c.updateGoTime(ctx); err != nil {
 				yield(&Row{err: err})
 				return
 			}
 		}
+		c.busy = true
+		defer func() { c.busy = false }()
 		stmt, err := c.prepare(ctx, "", sql, args...)
 		if err != nil {
 			yield(&Row{err: err})

@@ -121,6 +121,39 @@ func newSession(t testing.TB) *Conn {
 	return cn
 }
 
+// TestExecInsideQueryRangeErrors verifies that calling Conn.Exec
+// inside an active Conn.Query range (outside COPY) returns
+// ErrQueryActive and leaves the connection usable.
+func TestExecInsideQueryRangeErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	cn := newSession(t)
+
+	const q = `SELECT 1 UNION ALL SELECT 2`
+	var innerExecErr error
+	rowsSeen := 0
+	for row := range cn.Query(ctx, q) {
+		rowsSeen++
+		if _, err := row.Column(0).DecodeInt(); err != nil {
+			t.Fatalf("decode row %d: %v", rowsSeen, err)
+		}
+		if innerExecErr == nil {
+			innerExecErr = cn.Exec(ctx, "SELECT 1")
+		}
+	}
+
+	if !errors.Is(innerExecErr, ErrQueryActive) {
+		t.Fatalf("Exec inside Query: got %v; want ErrQueryActive", innerExecErr)
+	}
+	if rowsSeen != 2 {
+		t.Errorf("rowsSeen = %d; want 2 (outer iterator should complete cleanly)", rowsSeen)
+	}
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		t.Errorf("Exec after Query loop: %v; want nil (connection should be usable)", err)
+	}
+}
+
 func TestQuery(t *testing.T) {
 	t.Parallel()
 
