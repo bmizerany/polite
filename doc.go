@@ -63,10 +63,9 @@
 // a ReadyForQuery will follow — from a FATAL or PANIC that has closed the
 // connection.
 //
-// Sentinels exported by polite itself — [ErrQueryActive], [ErrCopyFrom],
-// [ErrUnsupportedCopyFormat], [ErrTLSRefused], [ErrPoolFull], and
-// [ErrPoolClosed] — are produced by polite, not decoded from a backend
-// message.
+// polite's own `Err*` sentinels, such as [ErrQueryActive], are produced
+// by polite or [Pool] when they detect a local condition — not decoded
+// from a backend message.
 //
 // # Pooling
 //
