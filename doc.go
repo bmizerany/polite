@@ -2,7 +2,8 @@
 // surface is narrow by design: PostgreSQL and its wire protocol are built
 // for the heavy lifting, and polite is the Go handle that exposes them. It
 // does this by providing scalar row decoders for common PostgreSQL types
-// and raw wire bytes for the rest.
+// and raw wire bytes for the rest. Custom decoders are plain Go functions
+// over those bytes.
 //
 // The package centers on [Conn]. Dial a connection, call [Conn.Query] to range
 // over rows, call [Conn.Exec] for commands whose rows you do not need, and use
