@@ -110,7 +110,7 @@ func ExampleConn_Query_columnsToStruct() {
 		if err := json.Unmarshal(b, &user); err != nil {
 			log.Fatal(err)
 		}
-		_ = user
+		fmt.Printf("%#v\n", user)
 	}
 }
 
