@@ -165,6 +165,144 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 	})
 }
 
+func TestPoolGetPrecanceledContext(t *testing.T) {
+	t.Parallel()
+
+	var dials atomic.Int64
+	p := &Pool{
+		Logger: testutil.Slogger(t),
+		Dial: func(context.Context) (*Conn, error) {
+			dials.Add(1)
+			panic("dial should not be called for a pre-canceled context")
+		},
+	}
+	t.Cleanup(func() { p.Close() })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	cn, err := p.Get(ctx)
+	if cn != nil {
+		cn.Close()
+		t.Fatalf("Get() cn = %p; want nil", cn)
+	}
+	if err == nil {
+		t.Fatal("Get() err = nil; want non-nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Get() err = %v; want wrap of %v", err, context.Canceled)
+	}
+	if err != ctx.Err() {
+		t.Fatalf("Get() err = %v; want ctx.Err() = %v", err, ctx.Err())
+	}
+	if n := dials.Load(); n != 0 {
+		t.Fatalf("dials = %d; want 0 (short-circuit should skip dialing)", n)
+	}
+}
+
+func TestPoolGetCanceledWhileWaiting(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		// Scene: a pool with room for exactly one connection, already
+		// occupied. A second Get must block on the waitlist until the
+		// first conn is returned.
+		p := newTestPool(t)
+		p.MaxItems = 1
+
+		cn, err := p.Get(t.Context())
+		if err != nil {
+			t.Fatalf("initial Get() = %v; want nil", err)
+		}
+
+		// Second Get blocks in the waitlist. Cancel its context and
+		// observe the wrapped ctx error bubbling out of Take.
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		var (
+			waiterCn  *Conn
+			waiterErr error
+		)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			waiterCn, waiterErr = p.Get(ctx)
+		}()
+
+		// Let the second Get reach a durable block inside Take.
+		synctest.Wait()
+
+		cancel()
+
+		// Wait for the goroutine to observe the cancellation.
+		synctest.Wait()
+		<-done
+
+		if waiterCn != nil {
+			t.Fatalf("waiter Get() cn = %p; want nil", waiterCn)
+		}
+		if !errors.Is(waiterErr, context.Canceled) {
+			t.Fatalf("waiter Get() err = %v; want wrap of %v", waiterErr, context.Canceled)
+		}
+
+		// The outstanding conn is still usable: returning it and
+		// re-taking it should yield the same conn.
+		p.Put(cn)
+		cn2, err := p.Get(t.Context())
+		if err != nil {
+			t.Fatalf("re-Get() = %v; want nil", err)
+		}
+		if cn2 != cn {
+			t.Fatalf("re-Get() cn = %p; want %p", cn2, cn)
+		}
+	})
+}
+
+func TestPoolPutAfterCanceledQuery(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPool(t)
+	p.MaxItems = 1
+
+	cn, err := p.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Run a long query under a short deadline and range to surface the
+	// cancellation through Row.
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+
+	var gotErr error
+	for row := range cn.Query(ctx, "SELECT pg_sleep(1)") {
+		if _, err := row.Column(0).Bytes(); err != nil {
+			gotErr = err
+			break
+		}
+	}
+	if gotErr == nil {
+		t.Fatal("expected deadline error from canceled query")
+	}
+	if !errors.Is(gotErr, context.DeadlineExceeded) {
+		t.Fatalf("Query() err = %v; want wrap of %v", gotErr, context.DeadlineExceeded)
+	}
+
+	// Put must accept the conn as idle and hand it back on the next Get.
+	p.Put(cn)
+
+	cn2, err := p.Get(t.Context())
+	if err != nil {
+		t.Fatalf("Get() after Put() = %v; want nil", err)
+	}
+	if cn2 != cn {
+		t.Fatalf("Get() cn = %p; want same conn %p after cancellation recovery", cn2, cn)
+	}
+	if err := cn2.Exec(t.Context(), "SELECT 1"); err != nil {
+		t.Fatalf("Exec(SELECT 1) on reused conn = %v; want nil", err)
+	}
+	p.Put(cn2)
+}
+
 func TestPoolGetAllocations(t *testing.T) {
 	t.Skip("TODO: unskip and fix after synctest problems are fixed")
 
