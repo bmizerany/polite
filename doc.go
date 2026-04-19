@@ -1,8 +1,8 @@
 // Package polite is a small, robust PostgreSQL client for Go. The API
-// surface is narrow by design: PostgreSQL and its wire protocol already do
-// the work, and polite's job is to expose them directly. It does this by
-// providing scalar row decoders for common PostgreSQL types and raw wire
-// bytes for the rest.
+// surface is narrow by design: PostgreSQL and its wire protocol are built
+// for the heavy lifting, and polite is the Go handle that exposes them. It
+// does this by providing scalar row decoders for common PostgreSQL types
+// and raw wire bytes for the rest.
 //
 // The package centers on [Conn]. Dial a connection, call [Conn.Query] to range
 // over rows, call [Conn.Exec] for commands whose rows you do not need, and use
