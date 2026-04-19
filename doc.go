@@ -45,6 +45,29 @@
 // format. See [Column] for details on reading that format and
 // [Conn.Query] for examples.
 //
+// # Errors
+//
+// *[febe.Error] is the decoded form of a PostgreSQL ErrorResponse.
+// [Conn.Query] and [Conn.Exec] surface one whenever the backend replies
+// with an error. An *Error carries the SQLSTATE Code, Message, Severity,
+// Detail, and Hint, along with Schema, Table, Column, DataType, and
+// Constraint when the backend attaches them.
+//
+// To match a specific code, use [errors.Is] with [febe.ErrorCode]:
+//
+//	if errors.Is(err, febe.ErrorCode("23505")) {
+//	    // unique violation
+//	}
+//
+// Use [febe.Error.IsFatal] to tell a recoverable backend error — one where
+// a ReadyForQuery will follow — from a FATAL or PANIC that has closed the
+// connection.
+//
+// Sentinels exported by polite itself — [ErrQueryActive], [ErrCopyFrom],
+// [ErrUnsupportedCopyFormat], [ErrTLSRefused], [ErrPoolFull], and
+// [ErrPoolClosed] — are produced by polite, not decoded from a backend
+// message.
+//
 // # Pooling
 //
 // A [Conn] is intentionally single-user. Use [Pool] when callers need shared
