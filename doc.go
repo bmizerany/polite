@@ -76,10 +76,10 @@
 //
 // # Testing and Time
 //
-// Setting [Config.Now] makes unqualified calls to now(), clock_timestamp(),
-// statement_timestamp(), and transaction_timestamp() use the returned clock on
-// that connection. If it is nil, polite leaves PostgreSQL's default time
-// behavior unchanged. This is useful in tests, including tests run under
-// testing/synctest, because SQL that calls those functions can observe the
-// same clock as the Go test.
+// When a [Config]'s Now function is set, unqualified calls to now(),
+// clock_timestamp(), statement_timestamp(), and transaction_timestamp() use
+// the returned clock on that connection. If Now is nil, polite leaves
+// PostgreSQL's default time behavior unchanged. This is useful in tests,
+// including tests run under testing/synctest, because SQL that calls those
+// functions can observe the same clock as the Go test.
 package polite
