@@ -76,7 +76,7 @@
 //
 // # Testing and Time
 //
-// When a [Config]'s Now function is set, unqualified calls to now(),
+// When a [Config]'s Now function is set, unqualified SQL calls to now(),
 // clock_timestamp(), statement_timestamp(), and transaction_timestamp() use
 // the returned clock on that connection. If Now is nil, polite leaves
 // PostgreSQL's default time behavior unchanged. This is useful in tests,
