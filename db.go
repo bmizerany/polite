@@ -73,18 +73,15 @@ type Conn struct {
 	busy bool
 }
 
-// Close sends a Terminate message, flushes it, and then closes the underlying
-// connection.
+// Close sends Terminate, flushes, and closes the underlying connection. It
+// closes the connection even if Terminate cannot be sent.
 //
-// After Close, all Conn methods return [ErrClosed]. The same applies when the
-// backend cleanly terminates the connection on its own, so callers can use
-// [errors.Is](err, [ErrClosed]) as a single check for "the connection is
-// gone, cleanly." Transport failures, FATAL backend errors, and other
-// violent terminations surface their underlying error and do not wrap
-// ErrClosed, leaving them distinguishable.
+// After Close, all Conn methods return [ErrClosed]. A Terminate received
+// from the backend produces the same result, so [errors.Is](err, ErrClosed)
+// reports any clean shutdown. Transport failures and FATAL backend errors
+// surface their own error and do not wrap [ErrClosed].
 //
-// Close returns the error from closing the underlying connection, if any. It
-// still attempts to send Terminate and flush it before closing.
+// Close returns the error from closing the underlying connection.
 func (c *Conn) Close() error {
 	c.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
 	defer c.cn.Close()
