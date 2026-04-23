@@ -559,17 +559,12 @@ func (r *Row) Column(i int) Column {
 	return r.columns[i]
 }
 
-// Column describes one column returned by [Conn.Query].
+// Column is one column of the current [Row].
 //
-// Values arrive in PostgreSQL's binary wire format. Column provides
-// scalar decoders — [Column.DecodeInt], [Column.DecodeFloat], and
-// [Column.DecodeTime] — that read that format directly. For types
-// without a built-in decoder, call [Column.Bytes] to get a view of
-// the raw wire bytes and decode them yourself. The view borrows the
-// current row's storage, so conversions that do not need to copy
-// allocate nothing.
-//
-// To obtain a Column, call [Conn.Query] and then [Row.Column].
+// Values arrive in PostgreSQL's binary wire format. [Column.DecodeInt],
+// [Column.DecodeFloat], and [Column.DecodeTime] decode that format directly.
+// For types without a built-in decoder, [Column.Bytes] returns a view of the
+// raw wire bytes, borrowed from the row's storage.
 type Column struct {
 	ordinal int
 	name    string
@@ -584,19 +579,17 @@ type Column struct {
 // Ordinal returns the column's zero-based position in the row.
 func (c Column) Ordinal() int { return c.ordinal }
 
-// Name returns the column name from the row description.
+// Name returns the column name.
 func (c Column) Name() string { return c.name }
 
 // Size returns the column width in bytes, or -1 for variable-width types.
 func (c Column) Size() int { return c.size }
 
-// Type returns the column type OID from the row description.
+// Type returns the column's PostgreSQL type OID.
 func (c Column) Type() oids.ID { return c.typeID }
 
-// Bytes returns the raw wire bytes for the column value.
-//
-// The returned slice refers to storage owned by the current row and is valid
-// only until the next row is determined in the sequence.
+// Bytes returns the raw wire bytes. The slice borrows the row's storage and
+// is valid only while that row is current.
 func (c Column) Bytes() ([]byte, error) {
 	if c.err != nil {
 		return nil, c.err
@@ -612,8 +605,8 @@ func (c Column) Text() (string, error) {
 	return string(c.data), nil
 }
 
-// DecodeInt decodes the column bytes as a PostgreSQL binary signed integer.
-// Supported widths are 1, 2, 4, and 8 bytes.
+// DecodeInt decodes the column as a signed integer. Supported widths are 1,
+// 2, 4, and 8 bytes.
 func (c Column) DecodeInt() (int64, error) {
 	if c.err != nil {
 		return 0, c.err
@@ -634,8 +627,8 @@ func (c Column) DecodeInt() (int64, error) {
 	}
 }
 
-// DecodeFloat decodes the column bytes as a PostgreSQL binary float.
-// Supported widths are 4 and 8 bytes.
+// DecodeFloat decodes the column as a float. Supported widths are 4 and 8
+// bytes.
 func (c Column) DecodeFloat() (float64, error) {
 	if c.err != nil {
 		return 0, c.err
@@ -686,9 +679,8 @@ func pgMicrosecondsToTime(microseconds int64) time.Time {
 	return time.Unix(pgEpochUnix+sec, usec*1_000).UTC()
 }
 
-// DecodeTime decodes the column bytes as a PostgreSQL timestamp value and
-// returns it in UTC for timestamptz or in the column's session timezone for
-// timestamp.
+// DecodeTime decodes the column as a timestamp. A timestamptz is returned in
+// UTC; a timestamp is returned in the session's time zone.
 func (c Column) DecodeTime() (time.Time, error) {
 	if c.err != nil {
 		return time.Time{}, c.err
