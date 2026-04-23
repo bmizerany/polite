@@ -99,8 +99,8 @@ func (c *Conn) Idle() bool {
 	return c.fc.Err() == nil && !c.busy && !c.inCopyFrom && c.fc.Status().Idle()
 }
 
-// Notifications blocks and yields each [febe.Notification] received on cn.
-// Only channels the connection has subscribed to with LISTEN produce
+// Notifications returns an iterator over the [febe.Notification]s received
+// on cn. Only channels the connection has subscribed to with LISTEN produce
 // notifications; issue LISTEN via [Conn.Exec] before ranging.
 //
 // Notifications returns only when the caller breaks out of the range loop or
@@ -433,7 +433,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	}
 }
 
-// Query executes sql and returns the sequence of rows returned by the query.
+// Query executes sql and returns an iterator over its result rows.
 // Each yielded [Row] carries either column data or an error. Errors are
 // surfaced through [Column] methods: calling [Column.Bytes], [Column.Text],
 // [Column.DecodeInt], [Column.DecodeFloat], or [Column.DecodeTime] on a
@@ -530,8 +530,8 @@ type Row struct {
 	err     error
 }
 
-// Columns ranges over the columns of the row. If the row carries an error,
-// Columns yields a single [Column] carrying that error.
+// Columns returns an iterator over the columns of the row. If the row
+// carries an error, Columns yields a single [Column] carrying that error.
 func (r *Row) Columns() iter.Seq[Column] {
 	return func(yield func(Column) bool) {
 		if r.err != nil {
