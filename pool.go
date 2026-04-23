@@ -116,7 +116,10 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	}
 }
 
-// Close closes the pool. After Close, all Pool methods return [ErrClosed].
+// Close closes the pool and its idle connections. In-use connections are
+// left to the caller. After Close, Get returns [ErrClosed]; waiters
+// already blocked in Get wake with the same error. Put closes any
+// connection handed back.
 func (p *Pool) Close() error {
 	p.init()
 	if p.cancelCtx.Err() != nil {
