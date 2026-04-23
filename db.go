@@ -18,12 +18,12 @@ import (
 
 // Errors
 var (
-	ErrTLSRefused            = errors.New("polite: TLS refused by backend")
-	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
-	ErrCopyFrom              = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
-	ErrQueryActive           = errors.New("polite: a Query range is active; complete or break it before calling Exec")
-	ErrPoolClosed            = errors.New("polite: pool: closed")
-	ErrTooManyWaiters        = errors.New("polite: pool: too many waiters")
+	ErrTLSRefused     = errors.New("polite: TLS refused by backend")
+	ErrCopyFormat     = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
+	ErrCopyFrom       = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
+	ErrBusy           = errors.New("polite: a Query range is active; complete or break it before calling Exec")
+	ErrPoolClosed     = errors.New("polite: pool: closed")
+	ErrTooManyWaiters = errors.New("polite: pool: too many waiters")
 )
 
 var errDone = errors.New("polite: done")
@@ -440,14 +440,14 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 //
 // A Query range is active until the loop ends or the caller breaks. While a
 // range is active, further calls to [Conn.Query] or [Conn.Exec] on the same
-// Conn return [ErrQueryActive]; end the range before calling either again.
+// Conn return [ErrBusy]; end the range before calling either again.
 //
 // When COPY FROM enters copy mode, Query yields a [Row] whose columns
 // report [ErrCopyFrom].
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
 	return iter.Seq[*Row](func(yield func(*Row) bool) {
 		if c.busy {
-			yield(&Row{err: ErrQueryActive})
+			yield(&Row{err: ErrBusy})
 			return
 		}
 		if c.now != nil {
@@ -741,7 +741,7 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 				return nil, err
 			}
 			if m.Format != febe.CopyFormatBinary {
-				return nil, ErrUnsupportedCopyFormat
+				return nil, ErrCopyFormat
 			}
 			c.copyOutHeaderPending = true
 		case 'G':
@@ -753,7 +753,7 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 				if err := c.abortCopyFrom(); err != nil {
 					return nil, err
 				}
-				return nil, ErrUnsupportedCopyFormat
+				return nil, ErrCopyFormat
 			}
 			c.inCopyFrom = true
 			c.copyHeaderWritten = false
@@ -844,7 +844,7 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 // support (e.g. non-binary format). It does not drain the response;
 // the caller's recovery path (maybeRecoverFrom) handles that.
 func (c *Conn) abortCopyFrom() error {
-	c.fc.WriteCopyFail(ErrUnsupportedCopyFormat.Error())
+	c.fc.WriteCopyFail(ErrCopyFormat.Error())
 	c.fc.WriteSync()
 	return c.fc.Flush()
 }
@@ -889,7 +889,7 @@ func unexpectedMessage(h febe.MessageHeader) error {
 }
 
 var recoverableQueryErrors = errors.Join(
-	ErrUnsupportedCopyFormat,
+	ErrCopyFormat,
 	febe.ErrEmptyQuery,
 )
 

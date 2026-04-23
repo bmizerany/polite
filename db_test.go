@@ -123,7 +123,7 @@ func newSession(t testing.TB) *Conn {
 
 // TestExecInsideQueryRangeErrors verifies that calling Conn.Exec
 // inside an active Conn.Query range (outside COPY) returns
-// ErrQueryActive and leaves the connection usable.
+// ErrBusy and leaves the connection usable.
 func TestExecInsideQueryRangeErrors(t *testing.T) {
 	t.Parallel()
 
@@ -143,8 +143,8 @@ func TestExecInsideQueryRangeErrors(t *testing.T) {
 		}
 	}
 
-	if !errors.Is(innerExecErr, ErrQueryActive) {
-		t.Fatalf("Exec inside Query: got %v; want ErrQueryActive", innerExecErr)
+	if !errors.Is(innerExecErr, ErrBusy) {
+		t.Fatalf("Exec inside Query: got %v; want ErrBusy", innerExecErr)
 	}
 	if rowsSeen != 2 {
 		t.Errorf("rowsSeen = %d; want 2 (outer iterator should complete cleanly)", rowsSeen)

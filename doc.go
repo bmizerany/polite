@@ -63,7 +63,7 @@
 // a ReadyForQuery will follow — from a FATAL or PANIC that has closed the
 // connection.
 //
-// polite's own `Err*` sentinels, such as [ErrQueryActive], are produced
+// polite's own `Err*` sentinels, such as [ErrBusy], are produced
 // by polite or [Pool] when they detect a local condition — not decoded
 // from a backend message.
 //

@@ -55,8 +55,8 @@ func TestCopyNonBinary(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("got %v, want 1 error", len(got))
 	}
-	if g := got[0]; !errors.Is(g, ErrUnsupportedCopyFormat) {
-		t.Errorf("got %q, want %q", g, ErrUnsupportedCopyFormat)
+	if g := got[0]; !errors.Is(g, ErrCopyFormat) {
+		t.Errorf("got %q, want %q", g, ErrCopyFormat)
 	}
 }
 
@@ -82,8 +82,8 @@ func TestCopyFromNonBinary(t *testing.T) {
 		}
 		t.Fatal("expected an error from Query, got nil")
 	}
-	if !errors.Is(gotErr, ErrUnsupportedCopyFormat) {
-		t.Fatalf("got %v, want ErrUnsupportedCopyFormat", gotErr)
+	if !errors.Is(gotErr, ErrCopyFormat) {
+		t.Fatalf("got %v, want ErrCopyFormat", gotErr)
 	}
 }
 
