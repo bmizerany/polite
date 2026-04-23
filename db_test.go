@@ -362,9 +362,7 @@ func TestConnIdle(t *testing.T) {
 	}
 	checkIdle(true)
 
-	// Mid COPY FROM: inCopyFrom is set — not idle. Needs an existing
-	// target table; Postgres's extended protocol rejects multi-statement
-	// Parse, so CREATE and COPY can't share one Exec.
+	// Mid COPY FROM: inCopyFrom is set — not idle.
 	exec("CREATE TEMP TABLE foo (id INT)")
 	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
 		if _, err := row.Column(0).Bytes(); !errors.Is(err, ErrCopyFrom) {
