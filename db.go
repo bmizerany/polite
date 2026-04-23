@@ -23,6 +23,8 @@ var (
 	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 	ErrCopyFrom              = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
 	ErrQueryActive           = errors.New("polite: a Query range is active; complete or break it before calling Exec")
+	ErrPoolClosed            = errors.New("polite: pool: closed")
+	ErrTooManyWaiters        = errors.New("polite: pool: too many waiters")
 )
 
 type statement struct {

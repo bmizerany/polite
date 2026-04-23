@@ -20,14 +20,6 @@ const (
 	DefaultDSN = "dbname=postgres host=localhost port=5432 sslmode=verify-full"
 )
 
-// Errors
-var (
-	ErrPoolFull = errors.New("polite: pool: too many waiting")
-
-	// ErrPoolClosed is returned when the pool closed.
-	ErrPoolClosed = errors.New("polite: pool: closed")
-)
-
 // Pool is a pool of connections. It is safe for concurrent use by multiple
 // goroutines.
 //
@@ -115,7 +107,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	cn, err := p.waitlist.Take(ctx)
 	switch {
 	case errors.Is(err, wait.ErrMaxWaiters):
-		return nil, ErrPoolFull
+		return nil, ErrTooManyWaiters
 	case errors.Is(err, wait.ErrClosed):
 		// Pool was closed while waiting
 		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)

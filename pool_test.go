@@ -155,11 +155,11 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 		}()
 		synctest.Wait()
 
-		// check any additional waiters are rejected with ErrPoolFull
+		// check any additional waiters are rejected with ErrTooManyWaiters
 		for range 3 {
 			_, err = p.Get(t.Context())
-			if !errors.Is(err, ErrPoolFull) {
-				t.Errorf("Waiter 2 Get() = %v; want %v", err, ErrPoolFull)
+			if !errors.Is(err, ErrTooManyWaiters) {
+				t.Errorf("Waiter 2 Get() = %v; want %v", err, ErrTooManyWaiters)
 			}
 		}
 	})
