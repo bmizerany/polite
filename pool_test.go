@@ -51,8 +51,8 @@ func TestPoolClose(t *testing.T) {
 		cn.Close()
 		t.Fatal("Get() err = nil; want error")
 	}
-	if !errors.Is(err, ErrPoolClosed) {
-		t.Fatalf("Get() err = %v; want %v", err, ErrPoolClosed)
+	if !errors.Is(err, ErrClosed) {
+		t.Fatalf("Get() err = %v; want %v", err, ErrClosed)
 	}
 }
 
@@ -101,8 +101,8 @@ func TestPoolGetNextErrorAfterClose(t *testing.T) {
 		cn.Close()
 		t.Fatal("expected error, got nil")
 	}
-	if !errors.Is(err, ErrPoolClosed) {
-		t.Fatalf("expected ErrPoolClosed, got %v", err)
+	if !errors.Is(err, ErrClosed) {
+		t.Fatalf("expected ErrClosed, got %v", err)
 	}
 }
 
@@ -149,8 +149,8 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 		// occupy the only waiting slot and wait until durably blocked.
 		go func() {
 			_, err := p.Get(t.Context())
-			if !errors.Is(err, ErrPoolClosed) {
-				t.Errorf("Waiter 1 Get() = %v; want %v", err, ErrPoolClosed)
+			if !errors.Is(err, ErrClosed) {
+				t.Errorf("Waiter 1 Get() = %v; want %v", err, ErrClosed)
 			}
 		}()
 		synctest.Wait()

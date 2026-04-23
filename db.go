@@ -22,7 +22,7 @@ var (
 	ErrCopyFormat     = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 	ErrCopyFrom       = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
 	ErrBusy           = errors.New("polite: a Query range is active; complete or break it before calling Exec")
-	ErrPoolClosed     = errors.New("polite: pool: closed")
+	ErrClosed         = errors.New("polite: closed")
 	ErrTooManyWaiters = errors.New("polite: pool: too many waiters")
 )
 
@@ -74,8 +74,14 @@ type Conn struct {
 }
 
 // Close sends a Terminate message, flushes it, and then closes the underlying
-// connection. After Close, further operations on the Conn fail with a
-// transport error.
+// connection.
+//
+// After a clean close — either Close called here or a Terminate received from
+// the backend — further operations on the Conn return [ErrClosed]. If the
+// connection was terminated some other way (transport failure, a FATAL from
+// the backend, the peer dropping the socket), operations return that
+// underlying error instead. Callers can distinguish the two with
+// [errors.Is](err, [ErrClosed]).
 //
 // Close returns the error from closing the underlying connection, if any. It
 // still attempts to send Terminate and flush it before closing.
@@ -446,6 +452,13 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // report [ErrCopyFrom].
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
 	return iter.Seq[*Row](func(yield func(*Row) bool) {
+		orig := yield
+		yield = func(r *Row) bool {
+			if r.err != nil && errors.Is(r.err, febe.ErrTerminated) {
+				r.err = ErrClosed
+			}
+			return orig(r)
+		}
 		if c.busy {
 			yield(&Row{err: ErrBusy})
 			return

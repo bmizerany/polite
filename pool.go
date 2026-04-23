@@ -101,7 +101,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 
 	p.init()
 	if p.cancelCtx.Err() != nil {
-		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
+		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrClosed)
 	}
 
 	cn, err := p.waitlist.Take(ctx)
@@ -110,7 +110,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		return nil, ErrTooManyWaiters
 	case errors.Is(err, wait.ErrClosed):
 		// Pool was closed while waiting
-		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrPoolClosed)
+		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrClosed)
 	default:
 		return cn, err
 	}
@@ -121,7 +121,7 @@ func (p *Pool) Close() error {
 	if p.cancelCtx.Err() != nil {
 		return p.cancelCtx.Err()
 	}
-	p.cancel(ErrPoolClosed)
+	p.cancel(ErrClosed)
 
 	// Close the waitlist to wake up all waiters
 	p.waitlist.Close()

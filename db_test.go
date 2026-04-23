@@ -255,8 +255,8 @@ func TestConnClose(t *testing.T) {
 	cn.Close()
 
 	// Ensure we can't use the connection after closing.
-	if err := cn.Exec(t.Context(), "SELECT 1"); !errors.Is(err, febe.ErrTerminated) {
-		t.Fatalf("query(SELECT 1) = %v; want %v", err, febe.ErrTerminated)
+	if err := cn.Exec(t.Context(), "SELECT 1"); !errors.Is(err, ErrClosed) {
+		t.Fatalf("query(SELECT 1) = %v; want %v", err, ErrClosed)
 	}
 }
 
