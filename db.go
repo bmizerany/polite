@@ -84,9 +84,13 @@ func (c *Conn) Close() error {
 	return c.cn.Close()
 }
 
-// idle reports whether the connection is in a clean, reusable state.
-func (c *Conn) idle() bool {
-	return c.fc.Err() == nil && !c.inCopyFrom && c.fc.Status().Idle()
+// Idle reports whether the connection is ready for the next query: the
+// transport is healthy, no COPY is in progress, and the backend is at
+// ReadyForQuery outside any transaction block. It returns false in every
+// other state (mid-query, in a transaction, failed transaction, or
+// terminal transport error).
+func (c *Conn) Idle() bool {
+	return c.fc.Err() == nil && !c.busy && !c.inCopyFrom && c.fc.Status().Idle()
 }
 
 // Notifications blocks and yields each [febe.Notification] received on cn.

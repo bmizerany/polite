@@ -300,6 +300,89 @@ func TestConnCloseUnderlyingConnDespiteFlushError(t *testing.T) {
 	}
 }
 
+// TestConnIdle walks a single connection through the full spectrum of
+// observable states and pins Idle()'s contract at each step: true only when
+// the connection is ready for the next query, false in every other state.
+// The terminal backend kill is last so the whole story runs on one conn.
+func TestConnIdle(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	ctx := t.Context()
+
+	checkIdle := func(want bool) {
+		t.Helper()
+		if got := cn.Idle(); got != want {
+			t.Fatalf("Idle() = %v; want %v", got, want)
+		}
+	}
+
+	exec := func(q string) {
+		t.Helper()
+		if err := cn.Exec(ctx, q); err != nil {
+			t.Fatalf("Exec(%q) = %v; want nil", q, err)
+		}
+	}
+
+	// A freshly dialed session is idle.
+	checkIdle(true)
+
+	// A completed Exec returns the conn to idle.
+	exec("SELECT 1")
+	checkIdle(true)
+
+	// While a Query range owns the conn it is not idle, but the range
+	// completing returns it to idle.
+	rows := 0
+	for row := range cn.Query(ctx, "SELECT generate_series(1, 3)") {
+		if _, err := row.Column(0).DecodeInt(); err != nil {
+			t.Fatal(err)
+		}
+		checkIdle(false)
+		rows++
+	}
+	if rows != 3 {
+		t.Fatalf("rows = %d; want 3", rows)
+	}
+	checkIdle(true)
+
+	// Inside a transaction: not idle.
+	exec("BEGIN")
+	checkIdle(false)
+
+	// Failed statement inside the tx: still not idle (failed-tx state).
+	if err := cn.Exec(ctx, "SELECT 1/0"); err == nil {
+		t.Fatal("SELECT 1/0 = nil; want error")
+	}
+	checkIdle(false)
+
+	// ROLLBACK clears the tx and returns to idle.
+	if err := cn.Exec(ctx, "ROLLBACK"); err != nil {
+		t.Fatal(err)
+	}
+	checkIdle(true)
+
+	// Mid COPY FROM: inCopyFrom is set — not idle. Needs an existing
+	// target table; Postgres's extended protocol rejects multi-statement
+	// Parse, so CREATE and COPY can't share one Exec.
+	exec("CREATE TEMP TABLE foo (id INT)")
+	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		if _, err := row.Column(0).Bytes(); !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("COPY FROM: got %v; want ErrCopyFrom", err)
+		}
+		checkIdle(false)
+		break
+	}
+
+	// Finally, terminate our own backend. Done last so the whole test
+	// stays on one conn; any subsequent op returns a sticky terminal error
+	// and the conn is no longer idle.
+	if err := cn.Exec(ctx, "SELECT pg_terminate_backend(pg_backend_pid())"); err == nil {
+		t.Fatal("terminate = nil; want error")
+	}
+	checkIdle(false)
+}
+
 func TestRowClose(t *testing.T) {
 	t.Parallel()
 

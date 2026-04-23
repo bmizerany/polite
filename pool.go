@@ -82,7 +82,7 @@ func (p *Pool) init() {
 // accept that Put will discard it.
 func (p *Pool) Put(cn *Conn) {
 	p.init()
-	if p.cancelCtx.Err() != nil || !cn.idle() {
+	if p.cancelCtx.Err() != nil || !cn.Idle() {
 		cn.Close()
 		p.waitlist.Retire()
 		return
