@@ -18,37 +18,26 @@ import (
 
 // Errors
 var (
-	// ErrTLSRefused is returned by [Dial] when the backend refuses
-	// the TLS request (sslmode=verify-full or verify-ca) sent during
-	// startup.
+	// ErrTLSRefused means the backend refused a TLS upgrade.
 	ErrTLSRefused = errors.New("polite: TLS refused by backend")
 
-	// ErrCopyFormat is returned by [Conn.Query] when a COPY TO or
-	// COPY FROM uses a non-binary format. Only WITH (FORMAT binary)
-	// is supported.
+	// ErrCopyFormat means a COPY used a non-binary format.
 	ErrCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 
-	// ErrCopyFrom is reported on a [Row] by [Conn.Query] when the
-	// backend enters COPY FROM mode. The caller should send rows
-	// with Exec(ctx, "", args...) and end the Query range.
+	// ErrCopyFrom signals that the backend has entered COPY FROM
+	// mode and is ready to accept rows.
 	ErrCopyFrom = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
 
-	// ErrBusy is returned by [Conn.Query] and [Conn.Exec] when
-	// another Query range is still active on the same [Conn]. End
-	// the active range before issuing the next call.
+	// ErrBusy means a Query range is still active on the Conn.
 	ErrBusy = errors.New("polite: a Query range is active; complete or break it before calling Exec")
 
-	// ErrClosed is returned by [Conn.Query], [Conn.Exec], and
-	// [Pool.Get] after the connection or pool has been cleanly
-	// closed — either by a local call to [Conn.Close] or [Pool.Close]
-	// or by a Terminate message received from the backend. Transport
-	// failures and FATAL backend errors surface their underlying
-	// error instead.
+	// ErrClosed means the connection or pool was closed cleanly,
+	// either by the caller or by a Terminate from the backend.
+	// Transport failures and FATAL backend errors surface their
+	// underlying error instead.
 	ErrClosed = errors.New("polite: closed")
 
-	// ErrTooManyWaiters is returned by [Pool.Get] when the number of
-	// goroutines waiting for a connection would exceed the pool's
-	// MaxWaiters.
+	// ErrTooManyWaiters means the pool's MaxWaiters limit was hit.
 	ErrTooManyWaiters = errors.New("polite: pool: too many waiters")
 )
 
