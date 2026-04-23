@@ -531,7 +531,8 @@ type Row struct {
 }
 
 // Columns returns an iterator over the columns of the row. If the row
-// carries an error, Columns yields a single [Column] carrying that error.
+// carries an error, Columns yields a single [Column] whose decoders all
+// return that error.
 func (r *Row) Columns() iter.Seq[Column] {
 	return func(yield func(Column) bool) {
 		if r.err != nil {
