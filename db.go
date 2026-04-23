@@ -18,7 +18,6 @@ import (
 
 // Errors
 var (
-	ErrDone                  = errors.New("polite: done")
 	ErrTLSRefused            = errors.New("polite: TLS refused by backend")
 	ErrUnsupportedCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 	ErrCopyFrom              = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
@@ -26,6 +25,8 @@ var (
 	ErrPoolClosed            = errors.New("polite: pool: closed")
 	ErrTooManyWaiters        = errors.New("polite: pool: too many waiters")
 )
+
+var errDone = errors.New("polite: done")
 
 type statement struct {
 	name string
@@ -469,7 +470,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 		for {
 			row, err := c.nextRow(ctx, stmt.out.Fields)
 			if err != nil {
-				if errors.Is(err, ErrDone) {
+				if errors.Is(err, errDone) {
 					return
 				}
 				err = c.maybeRecoverFrom(ctx, err)
@@ -490,7 +491,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 				for {
 					_, err := c.nextRow(ctx, stmt.out.Fields)
 					if err != nil {
-						if !errors.Is(err, ErrDone) {
+						if !errors.Is(err, errDone) {
 							c.maybeRecoverFrom(ctx, err)
 						}
 						return
@@ -787,7 +788,7 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 				return nil, err
 			}
 			// TODO(bmizerany): save the transaction status
-			return nil, ErrDone
+			return nil, errDone
 		default:
 			return nil, unexpectedMessage(h)
 		}
