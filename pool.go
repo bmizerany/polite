@@ -116,6 +116,7 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	}
 }
 
+// Close closes the pool. After Close, all Pool methods return [ErrClosed].
 func (p *Pool) Close() error {
 	p.init()
 	if p.cancelCtx.Err() != nil {
