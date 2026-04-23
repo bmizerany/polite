@@ -520,21 +520,18 @@ func (c *Conn) execAndSync(portal string) error {
 
 // Row is a view of the current result row.
 //
-// It assumes the caller wrote the query and knows the number of result columns
-// ahead of time. Use [Row.Column] to read a specific column by index. For more
-// general row processing, use [Row.Columns] to range over all columns, for
-// example to map them into a struct or another destination. Some rows carry an
-// error instead of column data; the error is surfaced through [Column] methods.
-// The returned columns refer to storage owned by the current row and remain
-// valid only while this row is current.
+// Use [Row.Column] to read a single column, or [Row.Columns] to range over
+// all of them. A row may carry an error instead of data; the error surfaces
+// through the [Column] decoders. Columns borrow the row's storage and are
+// valid only while that row is current.
 type Row struct {
 	data    []byte
 	columns []Column
 	err     error
 }
 
-// Columns returns the columns in the row. If the row carries an error,
-// Columns yields a single error-bearing [Column].
+// Columns ranges over the columns of the row. If the row carries an error,
+// Columns yields a single [Column] carrying that error.
 func (r *Row) Columns() iter.Seq[Column] {
 	return func(yield func(Column) bool) {
 		if r.err != nil {
@@ -549,12 +546,12 @@ func (r *Row) Columns() iter.Seq[Column] {
 	}
 }
 
-// Column returns the column at index i.
+// Column returns the column at index i. If the row carries an error, the
+// returned [Column] carries the same error regardless of i. Otherwise
+// Column panics if i is out of range.
 //
-// If the row carries an error, Column returns an error-bearing [Column]
-// regardless of i. Otherwise it panics if i is out of range.
-// The returned Column refers to storage owned by the current row and remains
-// valid only while this row is current.
+// The returned Column borrows the row's storage and is valid only while
+// that row is current.
 func (r *Row) Column(i int) Column {
 	if r.err != nil {
 		return Column{err: r.err}
