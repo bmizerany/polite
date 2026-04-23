@@ -18,18 +18,10 @@ import (
 
 // Errors
 var (
-	// ErrTLSRefused means the backend refused a TLS upgrade.
 	ErrTLSRefused = errors.New("polite: TLS refused by backend")
-
-	// ErrCopyFormat means a COPY used a non-binary format.
 	ErrCopyFormat = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
-
-	// ErrCopyFrom signals that the backend has entered COPY FROM
-	// mode and is ready to accept rows.
-	ErrCopyFrom = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
-
-	// ErrBusy means a Query range is still active on the Conn.
-	ErrBusy = errors.New("polite: a Query range is active; complete or break it before calling Exec")
+	ErrCopyFrom   = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
+	ErrBusy       = errors.New("polite: a Query range is active; complete or break it before calling Exec")
 
 	// ErrClosed means the connection or pool was closed cleanly,
 	// either by the caller or by a Terminate from the backend.
@@ -37,7 +29,6 @@ var (
 	// underlying error instead.
 	ErrClosed = errors.New("polite: closed")
 
-	// ErrTooManyWaiters means the pool's MaxWaiters limit was hit.
 	ErrTooManyWaiters = errors.New("polite: pool: too many waiters")
 )
 
