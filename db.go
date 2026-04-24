@@ -333,7 +333,7 @@ func (c *Conn) initGoTime(ctx context.Context) error {
 func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (*statement, error) {
 	stmt, err := c.getStmt(ctx, sql)
 	if err != nil {
-		return nil, c.maybeRecoverFrom(ctx, err)
+		return nil, err
 	}
 
 	bindArgs := make([][]byte, len(args))
@@ -453,33 +453,38 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 // When COPY FROM enters copy mode, Query yields a [Row] whose columns
 // report [ErrCopyFrom].
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
-	return iter.Seq[*Row](func(yield func(*Row) bool) {
-		orig := yield
-		yield = func(r *Row) bool {
+	return func(yield func(*Row) bool) {
+		emit := func(r *Row) bool {
 			if c.closed && r.err != nil && errors.Is(r.err, febe.ErrTerminated) {
 				r.err = ErrClosed
 			}
-			return orig(r)
+			return yield(r)
 		}
+		fail := func(err error) {
+			emit(&Row{err: err})
+		}
+
 		if c.busy {
-			yield(&Row{err: ErrBusy})
+			fail(ErrBusy)
 			return
 		}
 		if c.now != nil {
 			if err := c.updateGoTime(ctx); err != nil {
-				yield(&Row{err: err})
+				fail(err)
 				return
 			}
 		}
+
 		c.busy = true
 		defer func() { c.busy = false }()
+
 		stmt, err := c.prepare(ctx, "", sql, args...)
 		if err != nil {
-			yield(&Row{err: err})
+			fail(c.maybeRecoverFrom(ctx, err))
 			return
 		}
 		if err := c.execAndSync(""); err != nil {
-			yield(&Row{err: err})
+			fail(c.maybeRecoverFrom(ctx, err))
 			return
 		}
 		for {
@@ -488,33 +493,38 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 				if errors.Is(err, errDone) {
 					return
 				}
-				err = c.maybeRecoverFrom(ctx, err)
-				yield(&Row{err: err})
+				fail(c.maybeRecoverFrom(ctx, err))
 				return
 			}
 			if row != nil && row.err != nil {
-				if !yield(row) {
+				if !emit(row) {
 					c.finalizeCopyFrom(ctx)
 					return
 				}
 				if err := c.finalizeCopyFrom(ctx); err != nil {
-					yield(&Row{err: err})
+					fail(err)
 				}
 				return
 			}
-			if !yield(row) {
-				for {
-					_, err := c.nextRow(ctx, stmt.out.Fields)
-					if err != nil {
-						if !errors.Is(err, errDone) {
-							c.maybeRecoverFrom(ctx, err)
-						}
-						return
-					}
-				}
+			if !emit(row) {
+				c.drainRows(ctx, stmt.out.Fields)
+				return
 			}
 		}
-	})
+	}
+}
+
+// drainRows consumes remaining rows after the caller stops iterating,
+// leaving the connection ready for the next Query.
+func (c *Conn) drainRows(ctx context.Context, fields []febe.FieldDescription) {
+	for {
+		if _, err := c.nextRow(ctx, fields); err != nil {
+			if !errors.Is(err, errDone) {
+				c.maybeRecoverFrom(ctx, err)
+			}
+			return
+		}
+	}
 }
 
 func (c *Conn) execAndSync(portal string) error {
