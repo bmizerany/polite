@@ -30,7 +30,7 @@ func ExampleDial() {
 // in the query might shift, or when the query is SELECT * against
 // a table whose column list can grow. Reordering the SELECT, or
 // adding a column to the table, does not miswire fields here.
-func ExampleConn_Query_columnsByName() {
+func ExampleRow_Columns() {
 	ctx := context.Background()
 
 	cn, err := polite.Dial(ctx, polite.DefaultDSN, nil)
@@ -79,9 +79,9 @@ func ExampleConn_Query_columnsByName() {
 // encoding/json do the field dispatch, so the client code does not
 // spell out a switch over column names. It is a convenience, not a
 // feature. The cost is a JSON round-trip; the benefit is less code
-// when the schema is wide or changes often. Use the ColumnsByName
+// when the schema is wide or changes often. Use the Row.Columns
 // example when you want to avoid the encode/decode.
-func ExampleConn_Query_columnsToStruct() {
+func ExampleRow_Column_toStruct() {
 	ctx := context.Background()
 
 	cn, err := polite.Dial(ctx, "", nil)
@@ -122,8 +122,8 @@ func ExampleConn_Query_columnsToStruct() {
 // SELECT. The column order in the query is load-bearing: swap two
 // columns in the SELECT and the decode silently reads the wrong
 // field. SELECT * is a bad fit here for the same reason; see the
-// ColumnsByName or ColumnsToStruct examples.
-func ExampleConn_Query_columnsByIndex() {
+// Row.Columns example or the struct variant of this example.
+func ExampleRow_Column() {
 	ctx := context.Background()
 
 	cn, err := polite.Dial(ctx, polite.DefaultDSN, nil)
