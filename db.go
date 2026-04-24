@@ -71,18 +71,23 @@ type Conn struct {
 	// re-entrant Query/Exec calls on the same Conn, which would
 	// collide with the in-flight row stream.
 	busy bool
+
+	// closed is true after the caller invoked Close. It distinguishes a
+	// client-initiated Terminate from a backend-initiated one so that
+	// ErrClosed is only reported for the former.
+	closed bool
 }
 
 // Close sends Terminate, flushes, and closes the underlying connection. It
 // closes the connection even if Terminate cannot be sent.
 //
 // After Close, all Conn methods return [ErrClosed]. A Terminate received
-// from the backend produces the same result, so [errors.Is](err, ErrClosed)
-// reports any clean shutdown. Transport failures and FATAL backend errors
-// surface their own error and do not wrap [ErrClosed].
+// from the backend surfaces as [febe.ErrTerminated]; transport failures and
+// FATAL backend errors surface their own error.
 //
 // Close returns the error from closing the underlying connection.
 func (c *Conn) Close() error {
+	c.closed = true
 	c.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
 	defer c.cn.Close()
 	c.fc.WriteTerminate()
@@ -451,7 +456,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 	return iter.Seq[*Row](func(yield func(*Row) bool) {
 		orig := yield
 		yield = func(r *Row) bool {
-			if r.err != nil && errors.Is(r.err, febe.ErrTerminated) {
+			if c.closed && r.err != nil && errors.Is(r.err, febe.ErrTerminated) {
 				r.err = ErrClosed
 			}
 			return orig(r)
