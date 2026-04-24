@@ -67,11 +67,11 @@ func (p *Pool) init() {
 // Put returns cn to the pool. If the pool is closed or cn is not idle,
 // Put closes cn instead.
 //
-// A connection is idle when it has no error, no in-progress COPY, and
-// its transaction status is [febe.ReadyStatusIdle]. Callers that leave
-// a connection in any other state (open transaction, failed
-// transaction, mid-COPY) must clean it up before calling Put, or
-// accept that Put will discard it.
+// A connection is idle when its transport is healthy, no COPY is in
+// progress, and the backend is at ReadyForQuery outside any
+// transaction block. Callers that leave a connection in any other
+// state must clean it up before calling Put, or accept that Put will
+// close and discard it.
 func (p *Pool) Put(cn *Conn) {
 	p.init()
 	if p.cancelCtx.Err() != nil || !cn.Idle() {
