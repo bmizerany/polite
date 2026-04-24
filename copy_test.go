@@ -99,11 +99,11 @@ func TestDiscardUntilReadyFatal(t *testing.T) {
 
 	// The subquery terminates its own backend mid-COPY. The
 	// non-binary format causes polite to reject the CopyOutResponse
-	// and call discardUntilReady. While draining, the backend
-	// processes the pending SIGTERM and sends a FATAL error.
+	// and call drainToReady. While draining, the backend processes
+	// the pending SIGTERM and sends a FATAL error.
 	//
-	// Without the IsFatal guard in discardUntilReady, this loops
-	// forever; with the guard it returns the fatal error.
+	// Without the IsFatal guard in drainToReady, this loops forever;
+	// with the guard it returns the fatal error.
 	var gotErr error
 	for row := range cn.Query(ctx, "COPY (SELECT pg_terminate_backend(pg_backend_pid())) TO STDOUT WITH (FORMAT text)") {
 		_, gotErr = row.Column(0).Bytes()

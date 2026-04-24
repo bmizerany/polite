@@ -1,7 +1,6 @@
 package polite
 
 import (
-	"cmp"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -72,10 +71,35 @@ type Conn struct {
 	// collide with the in-flight row stream.
 	busy bool
 
+	// syncPending is true after a Sync has been flushed to the backend
+	// but the matching ReadyForQuery has not yet been consumed. It is the
+	// single source of truth for whether the connection needs to be
+	// drained before the next query.
+	syncPending bool
+
 	// closed is true after the caller invoked Close. It distinguishes a
 	// client-initiated Terminate from a backend-initiated one so that
 	// ErrClosed is only reported for the former.
 	closed bool
+}
+
+// flushSync writes a Sync and flushes. On success, the backend owes the
+// connection exactly one ReadyForQuery; [Conn.readReadyForQuery] consumes it.
+func (c *Conn) flushSync() error {
+	c.fc.WriteSync()
+	if err := c.fc.Flush(); err != nil {
+		return err
+	}
+	c.syncPending = true
+	return nil
+}
+
+// readReadyForQuery consumes the pending ReadyForQuery. Callers must have
+// already read the 'Z' header; this reads the body.
+func (c *Conn) readReadyForQuery() error {
+	_, err := c.fc.ReadReadyForQuery()
+	c.syncPending = false
+	return err
 }
 
 // Close sends Terminate, flushes, and closes the underlying connection. It
@@ -389,8 +413,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 
 	c.fc.WriteParse(stmt.name, sql)
 	c.fc.WriteDescribe('S', stmt.name)
-	c.fc.WriteSync()
-	if err := c.fc.Flush(); err != nil {
+	if err := c.flushSync(); err != nil {
 		return nil, err
 	}
 
@@ -426,8 +449,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 			// for now.
 			continue
 		case 'Z':
-			_, err := c.fc.ReadReadyForQuery()
-			if err != nil {
+			if err := c.readReadyForQuery(); err != nil {
 				return nil, err
 			}
 			c.cache[sql] = stmt
@@ -460,31 +482,26 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 			}
 			return yield(r)
 		}
-		fail := func(err error) {
-			emit(&Row{err: err})
-		}
-
 		if c.busy {
-			fail(ErrBusy)
+			emit(&Row{err: ErrBusy})
 			return
 		}
 		if c.now != nil {
 			if err := c.updateGoTime(ctx); err != nil {
-				fail(err)
+				emit(&Row{err: err})
 				return
 			}
 		}
-
 		c.busy = true
 		defer func() { c.busy = false }()
 
 		stmt, err := c.prepare(ctx, "", sql, args...)
 		if err != nil {
-			fail(c.maybeRecoverFrom(ctx, err))
+			emit(&Row{err: c.recover(ctx, err)})
 			return
 		}
 		if err := c.execAndSync(""); err != nil {
-			fail(c.maybeRecoverFrom(ctx, err))
+			emit(&Row{err: c.recover(ctx, err)})
 			return
 		}
 		for {
@@ -493,44 +510,30 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 				if errors.Is(err, errDone) {
 					return
 				}
-				fail(c.maybeRecoverFrom(ctx, err))
+				emit(&Row{err: c.recover(ctx, err)})
 				return
 			}
-			if row != nil && row.err != nil {
+			if row.err != nil { // COPY FROM signal row
 				if !emit(row) {
 					c.finalizeCopyFrom(ctx)
 					return
 				}
 				if err := c.finalizeCopyFrom(ctx); err != nil {
-					fail(err)
+					emit(&Row{err: err})
 				}
 				return
 			}
 			if !emit(row) {
-				c.drainRows(ctx, stmt.out.Fields)
+				c.recover(ctx, nil)
 				return
 			}
-		}
-	}
-}
-
-// drainRows consumes remaining rows after the caller stops iterating,
-// leaving the connection ready for the next Query.
-func (c *Conn) drainRows(ctx context.Context, fields []febe.FieldDescription) {
-	for {
-		if _, err := c.nextRow(ctx, fields); err != nil {
-			if !errors.Is(err, errDone) {
-				c.maybeRecoverFrom(ctx, err)
-			}
-			return
 		}
 	}
 }
 
 func (c *Conn) execAndSync(portal string) error {
 	c.fc.WriteExecute(portal, 0)
-	c.fc.WriteSync()
-	return c.fc.Flush()
+	return c.flushSync()
 }
 
 // Row is a view of the current result row.
@@ -798,8 +801,7 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 				return nil, err
 			}
 		case 'Z':
-			_, err := c.fc.ReadReadyForQuery()
-			if err != nil {
+			if err := c.readReadyForQuery(); err != nil {
 				return nil, err
 			}
 			// TODO(bmizerany): save the transaction status
@@ -856,20 +858,18 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 }
 
 // abortCopyFrom sends CopyFail + Sync to cancel a COPY IN that we don't
-// support (e.g. non-binary format). It does not drain the response;
-// the caller's recovery path (maybeRecoverFrom) handles that.
+// support (e.g. non-binary format). It leaves [Conn.syncPending] set; the
+// caller drains via [Conn.recover].
 func (c *Conn) abortCopyFrom() error {
 	c.fc.WriteCopyFail(ErrCopyFormat.Error())
-	c.fc.WriteSync()
-	return c.fc.Flush()
+	return c.flushSync()
 }
 
 func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
 	c.inCopyFrom = false
 	c.fc.WriteCopyDataRow(nil, !c.copyHeaderWritten)
 	c.fc.WriteCopyDone()
-	c.fc.WriteSync()
-	if err := c.fc.Flush(); err != nil {
+	if err := c.flushSync(); err != nil {
 		return err
 	}
 	for {
@@ -879,7 +879,7 @@ func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
 			// arrive instead of CommandComplete. Drain to
 			// ReadyForQuery so the connection is usable, then
 			// report the original error.
-			if drainErr := c.discardUntilReady(ctx); drainErr != nil {
+			if drainErr := c.drainToReady(ctx); drainErr != nil {
 				return drainErr
 			}
 			return err
@@ -891,8 +891,7 @@ func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
 				return err
 			}
 		case 'Z':
-			_, err := c.fc.ReadReadyForQuery()
-			return err
+			return c.readReadyForQuery()
 		default:
 			return unexpectedMessage(h)
 		}
@@ -903,36 +902,36 @@ func unexpectedMessage(h febe.MessageHeader) error {
 	return fmt.Errorf("polite: unexpected message type: %q", h.Type())
 }
 
-var recoverableQueryErrors = errors.Join(
-	ErrCopyFormat,
-	febe.ErrEmptyQuery,
-)
-
-// maybeRecoverFrom drains a query to ReadyForQuery when the error is one of
-// the query errors polite can recover from. It does not decide whether the
-// connection itself is terminal.
-func (c *Conn) maybeRecoverFrom(ctx context.Context, initErr error) error {
-	if errors.Is(initErr, context.Canceled) || errors.Is(initErr, context.DeadlineExceeded) {
-		return cmp.Or(c.discardUntilReady(context.Background()), initErr)
+// recover returns the connection to ReadyForQuery after an error. It drains
+// the backend response iff [Conn.syncPending] is set — the single signal for
+// whether an unread ReadyForQuery is in flight. Fatal backend errors and
+// transport failures skip the drain since no ReadyForQuery will follow.
+// Context errors drain with a fresh context so the drain itself is not
+// canceled.
+//
+// initErr is returned on success. If the drain itself errors, that error
+// takes precedence.
+func (c *Conn) recover(ctx context.Context, initErr error) error {
+	if !c.syncPending || c.fc.Err() != nil {
+		return initErr
 	}
-
-	// FATAL and PANIC mean the backend closed the connection;
-	// no ReadyForQuery will follow, so skip recovery.
 	if fe, ok := errors.AsType[*febe.Error](initErr); ok && fe.IsFatal() {
 		return initErr
 	}
-
-	// TODO(bmizerany): add "IsRecovering" to trace
-	_, isFE := errors.AsType[*febe.Error](initErr)
-	if isFE || errors.Is(recoverableQueryErrors, initErr) {
-		if err := c.discardUntilReady(ctx); err != nil {
-			return err
-		}
+	drainCtx := ctx
+	if errors.Is(initErr, context.Canceled) || errors.Is(initErr, context.DeadlineExceeded) {
+		drainCtx = context.Background()
+	}
+	if err := c.drainToReady(drainCtx); err != nil {
+		return err
 	}
 	return initErr
 }
 
-func (c *Conn) discardUntilReady(ctx context.Context) error {
+// drainToReady reads and discards backend messages until ReadyForQuery,
+// tolerating non-fatal ErrorResponses along the way. It assumes an unread
+// ReadyForQuery is in flight; call [Conn.recover] for the gated variant.
+func (c *Conn) drainToReady(ctx context.Context) error {
 	for {
 		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
@@ -947,8 +946,7 @@ func (c *Conn) discardUntilReady(ctx context.Context) error {
 			return err
 		}
 		if h.Type() == 'Z' {
-			_, err := c.fc.ReadReadyForQuery()
-			return err
+			return c.readReadyForQuery()
 		}
 	}
 }
