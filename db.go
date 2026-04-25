@@ -10,7 +10,6 @@ import (
 	"math"
 	"net"
 	"strconv"
-	"sync"
 	"time"
 
 	"blake.io/polite/dsn"
@@ -536,8 +535,21 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 		c.busy = true
 		defer func() { c.busy = false }()
 
-		stopWatcher := c.startCancelWatcher(ctx)
-		defer stopWatcher()
+		// Best-effort: a failed cancel just means the query keeps
+		// running until natural completion. If AfterFunc has already
+		// started cancelQuery by the time we stop it, wait for it to
+		// finish so we do not return from Query while a side-connection
+		// CancelRequest is still in flight against this backend.
+		cancelDone := make(chan struct{})
+		stopCancel := context.AfterFunc(ctx, func() {
+			defer close(cancelDone)
+			c.cancelQuery()
+		})
+		defer func() {
+			if !stopCancel() {
+				<-cancelDone
+			}
+		}()
 
 		stmt, err := c.prepare(ctx, "", sql, args...)
 		if err != nil {
@@ -1018,35 +1030,6 @@ type cancelledError struct {
 func (e cancelledError) Error() string { return e.fe.Error() }
 func (e cancelledError) Unwrap() []error {
 	return []error{e.ctxErr, e.fe}
-}
-
-// startCancelWatcher spawns a goroutine that issues a CancelRequest on a
-// fresh side connection if ctx is done before the in-flight query completes.
-// The returned function must be called to stop the watcher (typically via
-// defer); it blocks until the watcher exits.
-func (c *Conn) startCancelWatcher(ctx context.Context) func() {
-	if ctx.Done() == nil {
-		return func() {}
-	}
-	done := make(chan struct{})
-	exited := make(chan struct{})
-	var once sync.Once
-	go func() {
-		defer close(exited)
-		select {
-		case <-ctx.Done():
-			once.Do(func() {
-				// Best-effort: a failed cancel just means the
-				// query keeps running until natural completion.
-				c.cancelQuery()
-			})
-		case <-done:
-		}
-	}()
-	return func() {
-		close(done)
-		<-exited
-	}
 }
 
 // cancelQuery opens a fresh connection to the same backend and writes a
