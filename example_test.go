@@ -172,12 +172,16 @@ func ExampleConn_Query_copyTo() {
 	}
 	defer cn.Close()
 
+	var (
+		id   int64
+		name string
+	)
 	for row := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
-		id, err := row.Column(0).DecodeInt()
+		id, err = row.Column(0).DecodeInt()
 		if err != nil {
 			log.Fatal(err)
 		}
-		name, err := row.Column(1).Text()
+		name, err = row.Column(1).Text()
 		if err != nil {
 			log.Fatal(err)
 		}
