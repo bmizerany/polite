@@ -78,15 +78,6 @@
 // [Pool.Dial] for the retry contract and [Pool.Logger] for redirecting or
 // silencing the retry warnings.
 //
-// # Time Zones
-//
-// polite tracks the session's TimeZone, updating it whenever PostgreSQL
-// reports a new value through its parameter status stream — at startup or
-// after a SET TIME ZONE. [Column.DecodeTime] uses that zone when decoding
-// timestamp (without time zone) values; timestamptz is always returned in
-// UTC. Named zones load through [time.LoadLocation]; numeric offsets load
-// as fixed zones.
-//
 // # Testing and Time
 //
 // When a [Config]'s Now function is set, unqualified SQL calls to now(),

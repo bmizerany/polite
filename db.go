@@ -750,11 +750,16 @@ func pgMicrosecondsToTime(microseconds int64) time.Time {
 	return time.Unix(pgEpochUnix+sec, usec*1_000).UTC()
 }
 
-// DecodeTime decodes the column as a microsecond-precision timestamp. A
-// timestamptz is returned in UTC; a timestamp is returned in the session's
-// time zone, or UTC when the session has none. PostgreSQL's positive and
-// negative infinity sentinels are reported as an error rather than mapped
-// to a Go time value.
+// DecodeTime decodes the column as a microsecond-precision timestamp.
+//
+// A timestamptz is returned in UTC. A timestamp (without time zone) is
+// returned with [time.UTC] as a placeholder location: PostgreSQL's
+// timestamp type carries no zone, so attaching one would require
+// inventing information the value does not have. Use timestamptz when
+// you need an instant.
+//
+// PostgreSQL's positive and negative infinity sentinels are reported
+// as an error rather than mapped to a Go time value.
 func (c Column) DecodeTime() (time.Time, error) {
 	if c.err != nil {
 		return time.Time{}, c.err
@@ -776,20 +781,7 @@ func (c Column) DecodeTime() (time.Time, error) {
 		return time.Time{}, fmt.Errorf("DecodeTime: infinity is not supported")
 	}
 
-	ts := pgMicrosecondsToTime(microseconds)
-	if c.Type() == oids.Timestamp && c.timeZone != nil {
-		return time.Date(
-			ts.Year(),
-			ts.Month(),
-			ts.Day(),
-			ts.Hour(),
-			ts.Minute(),
-			ts.Second(),
-			ts.Nanosecond(),
-			c.timeZone,
-		), nil
-	}
-	return ts, nil
+	return pgMicrosecondsToTime(microseconds), nil
 }
 
 func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Row, error) {
