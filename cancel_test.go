@@ -9,40 +9,25 @@ import (
 	"blake.io/polite/febe"
 )
 
-// TestQueryCancelDeadline asserts that a context with a short timeout
-// actually cancels an in-flight query (pg_sleep), the returned error wraps
-// context.DeadlineExceeded, and the connection remains usable.
-func TestQueryCancelDeadline(t *testing.T) {
-	t.Parallel()
-
+// dialForCancelTest opens a fresh Conn and registers cleanup. Tests
+// share one PG via startPG but each owns its own connection so a
+// cancellation on one cannot affect another.
+func dialForCancelTest(t *testing.T) *Conn {
+	t.Helper()
 	dsn := startPG(t)
 	cn, err := Dial(t.Context(), dsn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cn.Close()
+	t.Cleanup(func() { cn.Close() })
+	return cn
+}
 
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-	defer cancel()
-
-	start := time.Now()
-	err = cn.Exec(ctx, "SELECT pg_sleep(10)")
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("err = %v; want errors.Is(err, context.DeadlineExceeded)", err)
-	}
-	if elapsed > 5*time.Second {
-		t.Fatalf("query took %v; expected to be cancelled quickly", elapsed)
-	}
-	// Underlying febe.Error with code 57014 should still be reachable.
-	if fe, ok := errors.AsType[*febe.Error](err); !ok || fe.Code != "57014" {
-		t.Fatalf("expected wrapped *febe.Error with code 57014; got %v", err)
-	}
-
-	// Connection must be reusable.
+// assertReusable asserts cn can run a trivial query and ends idle.
+// A cancelled connection that did not properly drain to ReadyForQuery
+// will fail one or both checks.
+func assertReusable(t *testing.T, cn *Conn) {
+	t.Helper()
 	var got int64
 	for row := range cn.Query(t.Context(), "SELECT 42") {
 		v, err := row.Column(0).DecodeInt()
@@ -59,81 +44,80 @@ func TestQueryCancelDeadline(t *testing.T) {
 	}
 }
 
-// TestQueryCancelMidFlight asserts that cancelling the context mid-flight
-// terminates a running query, returns context.Canceled, and the connection
-// remains usable.
-func TestQueryCancelMidFlight(t *testing.T) {
-	t.Parallel()
-
-	dsn := startPG(t)
-	cn, err := Dial(t.Context(), dsn, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cn.Close()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	time.AfterFunc(150*time.Millisecond, cancel)
-
-	start := time.Now()
-	err = cn.Exec(ctx, "SELECT pg_sleep(10)")
-	elapsed := time.Since(start)
+// assertQueryCanceled checks the standard contract for a cancelled
+// in-flight query: the returned error wraps the given ctx error and
+// also wraps a *febe.Error with SQLSTATE 57014 (query_canceled).
+func assertQueryCanceled(t *testing.T, err error, want error) {
+	t.Helper()
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("err = %v; want errors.Is(err, context.Canceled)", err)
+	if !errors.Is(err, want) {
+		t.Fatalf("err = %v; want errors.Is(err, %v)", err, want)
 	}
-	if elapsed > 5*time.Second {
-		t.Fatalf("query took %v; expected to be cancelled quickly", elapsed)
-	}
-
-	var got int64
-	for row := range cn.Query(t.Context(), "SELECT 7") {
-		v, err := row.Column(0).DecodeInt()
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = v
-	}
-	if got != 7 {
-		t.Fatalf("SELECT 7 returned %d; want 7", got)
-	}
-	if !cn.Idle() {
-		t.Fatal("connection not idle after recovery")
+	var fe *febe.Error
+	if !errors.As(err, &fe) || fe.Code != "57014" {
+		t.Fatalf("expected wrapped *febe.Error with code 57014; got %v", err)
 	}
 }
 
-// TestQueryCtxAlreadyCancelled asserts that a ctx already cancelled before
-// Query is called returns the ctx error immediately, without sending
-// anything to the backend, and the connection remains usable.
+// TestQueryCancelDeadline asserts that a context deadline interrupts
+// an in-flight pg_sleep, the returned error wraps DeadlineExceeded
+// and the backend's 57014 query_canceled, and the connection remains
+// usable. The deadline is short enough that exceeding it by orders of
+// magnitude (i.e. waiting on the full 10-second sleep) is unambiguous.
+func TestQueryCancelDeadline(t *testing.T) {
+	t.Parallel()
+	cn := dialForCancelTest(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+
+	err := cn.Exec(ctx, "SELECT pg_sleep(10)")
+	assertQueryCanceled(t, err, context.DeadlineExceeded)
+	assertReusable(t, cn)
+}
+
+// TestQueryCancelMidFlight asserts that explicitly cancelling ctx
+// while pg_sleep is running returns context.Canceled wrapping the
+// backend's 57014. The 200ms delay is comfortably longer than the
+// time it takes the query to enter pg_sleep on the backend, and is
+// orders of magnitude shorter than the 10s sleep duration, so the
+// elapsed-time bound below is unambiguous if cancellation breaks.
+//
+// TODO(bmizerany): replace the timer with a febe.Trace driven cancel
+// once the watcher reliably delivers CancelRequest when fired within
+// the first millisecond of Execute.
+func TestQueryCancelMidFlight(t *testing.T) {
+	t.Parallel()
+	cn := dialForCancelTest(t)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	time.AfterFunc(200*time.Millisecond, cancel)
+
+	start := time.Now()
+	err := cn.Exec(ctx, "SELECT pg_sleep(10)")
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("query took %v; cancellation did not interrupt pg_sleep", d)
+	}
+	assertQueryCanceled(t, err, context.Canceled)
+	assertReusable(t, cn)
+}
+
+// TestQueryCtxAlreadyCancelled asserts that a ctx already cancelled
+// before Exec returns the ctx error and the connection remains
+// usable. There is no backend round trip to cancel.
 func TestQueryCtxAlreadyCancelled(t *testing.T) {
 	t.Parallel()
-
-	dsn := startPG(t)
-	cn, err := Dial(t.Context(), dsn, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cn.Close()
+	cn := dialForCancelTest(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	err = cn.Exec(ctx, "SELECT 1")
+	err := cn.Exec(ctx, "SELECT 1")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v; want context.Canceled", err)
 	}
-
-	var got int64
-	for row := range cn.Query(t.Context(), "SELECT 1") {
-		v, err := row.Column(0).DecodeInt()
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = v
-	}
-	if got != 1 {
-		t.Fatalf("SELECT 1 returned %d; want 1", got)
-	}
+	assertReusable(t, cn)
 }
