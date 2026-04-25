@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"blake.io/polite/febe"
+	"blake.io/polite/internal/backoff"
 )
 
 // dialForCancelTest opens a fresh Conn and registers cleanup. Tests
@@ -79,28 +80,84 @@ func TestQueryCancelDeadline(t *testing.T) {
 }
 
 // TestQueryCancelMidFlight asserts that explicitly cancelling ctx
-// while pg_sleep is running returns context.Canceled wrapping the
-// backend's 57014. The 200ms delay is comfortably longer than the
-// time it takes the query to enter pg_sleep on the backend, and is
-// orders of magnitude shorter than the 10s sleep duration, so the
-// elapsed-time bound below is unambiguous if cancellation breaks.
-//
-// TODO(bmizerany): replace the timer with a febe.Trace driven cancel
-// once the watcher reliably delivers CancelRequest when fired within
-// the first millisecond of Execute.
+// while a query is running on the backend returns context.Canceled
+// wrapping the backend's 57014. Rather than fire cancel from a timer
+// (racy in principle, and undermined by PostgreSQL's small-result
+// buffering), this test uses a second "monitor" connection to poll
+// pg_stat_activity and only fires cancel once PostgreSQL itself
+// reports the test backend has flipped to state='active' executing
+// the pg_sleep. That is the precise condition under which
+// CancelRequest is honored, so the test is deterministic with
+// respect to backend state, not wall time.
 func TestQueryCancelMidFlight(t *testing.T) {
 	t.Parallel()
-	cn := dialForCancelTest(t)
+	dsn := startPG(t)
+	dial := func() *Conn {
+		c, err := Dial(t.Context(), dsn, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { c.Close() })
+		return c
+	}
+	cn := dial()
+	mon := dial()
+
+	// Capture the test backend's PID so the monitor knows which
+	// backend to watch.
+	var pid int64
+	for row := range cn.Query(t.Context(), "SELECT pg_backend_pid()") {
+		v, err := row.Column(0).DecodeInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+		pid = v
+	}
+	if pid == 0 {
+		t.Fatal("failed to capture backend pid")
+	}
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	time.AfterFunc(200*time.Millisecond, cancel)
 
-	start := time.Now()
-	err := cn.Exec(ctx, "SELECT pg_sleep(10)")
-	if d := time.Since(start); d > 3*time.Second {
-		t.Fatalf("query took %v; cancellation did not interrupt pg_sleep", d)
+	done := make(chan error, 1)
+	go func() {
+		done <- cn.Exec(ctx, "SELECT pg_sleep(10)")
+	}()
+
+	// Poll until the test backend is actively executing the
+	// pg_sleep. backoff.Loop yields immediately on the first
+	// iteration, so the first poll catches the (common) case where
+	// the backend has already activated by the time we get here;
+	// subsequent iterations back off polynomially, capped at 50ms,
+	// so a slow start does not burn CPU. The pollCtx deadline is
+	// generous but bounded so a regression cannot hang CI.
+	pollCtx, pollCancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer pollCancel()
+	for _, err := range backoff.Loop(pollCtx, 50*time.Millisecond) {
+		if err != nil {
+			t.Fatal("backend never reached state=active within poll deadline")
+		}
+		var n int64
+		for row := range mon.Query(pollCtx,
+			"SELECT count(*) FROM pg_stat_activity "+
+				"WHERE pid = $1 AND state = 'active' AND query LIKE '%pg_sleep%'",
+			int32(pid),
+		) {
+			v, err := row.Column(0).DecodeInt()
+			if err != nil {
+				t.Fatal(err)
+			}
+			n = v
+		}
+		if n > 0 {
+			break
+		}
 	}
+
+	cancel()
+
+	err := <-done
 	assertQueryCanceled(t, err, context.Canceled)
 	assertReusable(t, cn)
 }
