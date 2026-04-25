@@ -1677,14 +1677,12 @@ func TestEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Send a notification from the other connection. Close cn when Exec
-	// returns so the test's cleanup Close runs against an already-closed
-	// connection and exits without touching it (Conn is not safe for
-	// concurrent use).
-	go func() {
-		defer cn.Close()
-		cn.Exec(ctx, "NOTIFY test_events, 'hello'")
-	}()
+	// Send a notification from the other connection. NOTIFY is non-blocking
+	// server-side; the message queues on the listener's connection until the
+	// range loop below reads it.
+	if err := cn.Exec(ctx, "NOTIFY test_events, 'hello'"); err != nil {
+		t.Fatal(err)
+	}
 
 	for n := range Notifications(ctx, listener) {
 		if got := string(n.Channel); got != "test_events" {
