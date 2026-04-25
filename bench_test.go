@@ -8,6 +8,28 @@ import (
 	"time"
 )
 
+func BenchmarkQueryDecodeInt(b *testing.B) {
+	ctx := b.Context()
+	cn, err := Dial(ctx, testDSN, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer cn.Close()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		for range 10 {
+			for row := range cn.Query(ctx, "SELECT generate_series(1, 10)") {
+				if _, err := row.Column(0).DecodeInt(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		}
+	}
+}
+
 // BenchmarkPoolContention tests the pool under high contention
 // to measure variance in latency, which is a key metric for fairness.
 func BenchmarkPoolContention(b *testing.B) {
