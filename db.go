@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"blake.io/polite/febe"
+	"blake.io/polite/lru"
 	"blake.io/polite/oids"
 )
 
@@ -39,8 +40,9 @@ type statement struct {
 // Conn is not safe for concurrent use by multiple goroutines.
 // Use [Pool] for concurrent access from multiple goroutines.
 //
-// Conn prepares SQL on first use and caches prepared statements per connection
-// by exact SQL text. Calls with the same SQL reuse the cached statement.
+// Conn prepares SQL on first use and caches up to a fixed number of prepared
+// statements per connection by exact SQL text, evicting older entries when
+// the cache is full. Calls with the same SQL reuse the cached statement.
 //
 // This statement cache is used by [Conn.Query] and [Conn.Exec].
 //
@@ -56,7 +58,7 @@ type Conn struct {
 	timeZone *time.Location
 
 	nstmt int
-	cache map[string]*statement
+	cache *lru.Cache[string, *statement]
 
 	// current row
 	row *Row
@@ -399,17 +401,33 @@ func (c *Conn) newStmtName() string {
 	return stmt
 }
 
+// stmtCacheMax bounds the per-connection prepared-statement cache. Server-
+// side prepared statements created for evicted entries persist until the
+// connection closes.
+const stmtCacheMax = 256
+
 func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 	if c.cache == nil {
-		c.cache = make(map[string]*statement)
+		c.cache = lru.New[string, *statement](stmtCacheMax)
 	}
-
-	stmt := c.cache[sql]
-	if stmt != nil {
-		return stmt, nil
+	var loadErr error
+	stmt := c.cache.Get(sql, func() *statement {
+		s, err := c.prepareStmt(ctx, sql)
+		if err != nil {
+			loadErr = err
+			return nil
+		}
+		return s
+	})
+	if loadErr != nil {
+		c.cache.Delete(sql)
+		return nil, loadErr
 	}
+	return stmt, nil
+}
 
-	stmt = &statement{name: c.newStmtName()}
+func (c *Conn) prepareStmt(ctx context.Context, sql string) (*statement, error) {
+	stmt := &statement{name: c.newStmtName()}
 
 	c.fc.WriteParse(stmt.name, sql)
 	c.fc.WriteDescribe('S', stmt.name)
@@ -452,10 +470,9 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 			if err := c.readReadyForQuery(); err != nil {
 				return nil, err
 			}
-			c.cache[sql] = stmt
 			return stmt, nil
 		default:
-			return nil, fmt.Errorf("getStmt: unexpected message type: %q for: %s", h.Type(), sql)
+			return nil, fmt.Errorf("prepareStmt: unexpected message type: %q for: %s", h.Type(), sql)
 		}
 	}
 }
