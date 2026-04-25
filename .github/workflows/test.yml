@@ -19,14 +19,11 @@ concurrency:
 
 jobs:
 
-  test:
+  check:
     runs-on: ubuntu-22.04
     steps:
       - name: checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: setup postgres
-        uses: bmizerany/setup-postgres@v4
 
       - name: go mod tidy
         run: go mod tidy -diff
@@ -36,13 +33,33 @@ jobs:
           gofmt -w -s $(git ls-files '*.go')
           git diff --exit-code
 
-      - name: go test
-        run: go test -v -race -count=20 ./...
+      - name: go fix
+        run: go fix -diff ./...
 
       - name: staticcheck
-        if: always()
         run: go run honnef.co/go/tools/cmd/staticcheck ./...
 
-      - name: go fix
-        if: always()
-        run: go fix -diff ./...
+
+  gotest:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: setup postgres
+        uses: bmizerany/setup-postgres@v4
+
+      - name: go test
+        run: go test -v -count=1 ./...
+
+  gorace:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: setup postgres
+        uses: bmizerany/setup-postgres@v4
+
+      - name: go test -race
+        run: go test -v -race -count=20 ./...
