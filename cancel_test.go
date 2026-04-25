@@ -10,20 +10,6 @@ import (
 	"blake.io/polite/internal/backoff"
 )
 
-// dialForCancelTest opens a fresh Conn and registers cleanup. Tests
-// share one PG via startPG but each owns its own connection so a
-// cancellation on one cannot affect another.
-func dialForCancelTest(t *testing.T) *Conn {
-	t.Helper()
-	dsn := startPG(t)
-	cn, err := Dial(t.Context(), dsn, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { cn.Close() })
-	return cn
-}
-
 // assertReusable asserts cn can run a trivial query and ends idle.
 // A cancelled connection that did not properly drain to ReadyForQuery
 // will fail one or both checks.
@@ -69,7 +55,7 @@ func assertQueryCanceled(t *testing.T, err error, want error) {
 // magnitude (i.e. waiting on the full 10-second sleep) is unambiguous.
 func TestQueryCancelDeadline(t *testing.T) {
 	t.Parallel()
-	cn := dialForCancelTest(t)
+	cn := newSession(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
@@ -91,17 +77,8 @@ func TestQueryCancelDeadline(t *testing.T) {
 // respect to backend state, not wall time.
 func TestQueryCancelMidFlight(t *testing.T) {
 	t.Parallel()
-	dsn := startPG(t)
-	dial := func() *Conn {
-		c, err := Dial(t.Context(), dsn, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { c.Close() })
-		return c
-	}
-	cn := dial()
-	mon := dial()
+	cn := newSession(t)
+	mon := newSession(t)
 
 	// Capture the test backend's PID so the monitor knows which
 	// backend to watch.
@@ -162,7 +139,7 @@ func TestQueryCancelMidFlight(t *testing.T) {
 // usable. There is no backend round trip to cancel.
 func TestQueryCtxAlreadyCancelled(t *testing.T) {
 	t.Parallel()
-	cn := dialForCancelTest(t)
+	cn := newSession(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
