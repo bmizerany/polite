@@ -187,7 +187,7 @@ func (c *Conn) copyFromRow(args ...any) error {
 	scratch := make([]byte, 0, len(args)*8)
 	for i, arg := range args {
 		start := len(scratch)
-		encoded, _, err := appendArg(scratch, arg, 0, nil)
+		encoded, _, err := appendArg(scratch, arg, 0)
 		if err != nil {
 			return err
 		}
@@ -225,7 +225,7 @@ func appendBinaryArg(dst []byte, arg any) ([]byte, int16, error) {
 	return dst, formatBinary, nil
 }
 
-func appendArg(dst []byte, arg any, oid oids.ID, loc *time.Location) ([]byte, int16, error) {
+func appendArg(dst []byte, arg any, oid oids.ID) ([]byte, int16, error) {
 	switch v := arg.(type) {
 	case nil:
 		return nil, formatBinary, nil
@@ -371,7 +371,7 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (*s
 		if i < len(stmt.in.OIDs) {
 			oid = stmt.in.OIDs[i]
 		}
-		encoded, format, err := appendArg(scratch, arg, oid, c.timeZone)
+		encoded, format, err := appendArg(scratch, arg, oid)
 		if err != nil {
 			return nil, err
 		}

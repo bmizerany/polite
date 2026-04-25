@@ -1033,7 +1033,7 @@ func TestEncodeArg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Helper()
 
-			got, gotFmt, err := appendArg(tt.dst, tt.arg, tt.oid, nil)
+			got, gotFmt, err := appendArg(tt.dst, tt.arg, tt.oid)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("got error %v", err)
@@ -1064,7 +1064,7 @@ func TestAppendArgUintOverflow(t *testing.T) {
 		t.Skip("uint does not overflow signed 64-bit on this platform")
 	}
 
-	got, gotFmt, err := appendArg(nil, u, 0, nil)
+	got, gotFmt, err := appendArg(nil, u, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

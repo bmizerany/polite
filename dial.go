@@ -103,7 +103,7 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 
 			switch h.Type() {
 			case 'R':
-				if err := c.handleAuth(ctx, o); err != nil {
+				if err := c.handleAuth(o); err != nil {
 					return err
 				}
 			case 'K':
@@ -139,7 +139,7 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	return c, err
 }
 
-func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
+func (c *Conn) handleAuth(o *dsn.Options) error {
 	// TODO(bmizerany): add tracing
 
 	cr, err := c.fc.ReadAuthentication()
