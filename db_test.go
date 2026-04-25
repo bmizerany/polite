@@ -1671,21 +1671,19 @@ func TestEvents(t *testing.T) {
 	}
 	defer listener.Close()
 
-	notifier := newSession(t)
+	cn := newSession(t)
 
 	if err := listener.Exec(ctx, "LISTEN test_events"); err != nil {
 		t.Fatal(err)
 	}
 
-	// Send a notification from the other connection. Wait for the goroutine
-	// to finish before returning so the test's cleanup does not Close the
-	// notifier while Exec is still in flight (Conn is not safe for concurrent
-	// use).
-	done := make(chan struct{})
-	defer func() { <-done }()
+	// Send a notification from the other connection. Close cn when Exec
+	// returns so the test's cleanup Close runs against an already-closed
+	// connection and exits without touching it (Conn is not safe for
+	// concurrent use).
 	go func() {
-		defer close(done)
-		notifier.Exec(ctx, "NOTIFY test_events, 'hello'")
+		defer cn.Close()
+		cn.Exec(ctx, "NOTIFY test_events, 'hello'")
 	}()
 
 	for n := range Notifications(ctx, listener) {
