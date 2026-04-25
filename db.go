@@ -601,7 +601,10 @@ func (c Column) Ordinal() int { return c.ordinal }
 // Name returns the column name.
 func (c Column) Name() string { return c.name }
 
-// Size returns the column width in bytes, or -1 for variable-width types.
+// Size returns the column's type width in bytes, as reported by the backend
+// from pg_type.typlen. Fixed-width types return their byte width (e.g. 4 for
+// int4, 8 for int8). Variable-width types (text, bytea, numeric, all array
+// types, and other varlena types) return -1.
 func (c Column) Size() int { return c.size }
 
 // Type returns the column's PostgreSQL type OID.
