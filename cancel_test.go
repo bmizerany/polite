@@ -51,8 +51,8 @@ func assertQueryCanceled(t *testing.T, err error, want error) {
 // TestQueryCancelDeadline asserts that a context deadline interrupts
 // an in-flight pg_sleep, the returned error wraps DeadlineExceeded
 // and the backend's 57014 query_canceled, and the connection remains
-// usable. The deadline is short enough that exceeding it by orders of
-// magnitude (i.e. waiting on the full 10-second sleep) is unambiguous.
+// usable. The deadline is many orders of magnitude shorter than the
+// pg_sleep duration, so a missed cancel is unambiguous.
 func TestQueryCancelDeadline(t *testing.T) {
 	t.Parallel()
 	cn := newSession(t)
