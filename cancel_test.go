@@ -138,19 +138,15 @@ func TestQueryCancelMidFlight(t *testing.T) {
 		if err != nil {
 			t.Fatal("backend never reached state=active within poll deadline")
 		}
-		var n int64
-		for row := range mon.Query(pollCtx,
-			"SELECT count(*) FROM pg_stat_activity "+
+		rows := 0
+		for range mon.Query(pollCtx,
+			"SELECT 1 FROM pg_stat_activity "+
 				"WHERE pid = $1 AND state = 'active' AND query LIKE '%pg_sleep%'",
 			int32(pid),
 		) {
-			v, err := row.Column(0).DecodeInt()
-			if err != nil {
-				t.Fatal(err)
-			}
-			n = v
+			rows++
 		}
-		if n > 0 {
+		if rows > 0 {
 			break
 		}
 	}
