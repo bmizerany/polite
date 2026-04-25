@@ -106,6 +106,34 @@ func (c *Cache[K, V]) evict() *entry[K, V] {
 	return h
 }
 
+// Delete removes the entry for key, if any. It is a no-op if key is not
+// present.
+func (c *Cache[K, V]) Delete(key K) {
+	e, ok := c.m[key]
+	if !ok {
+		return
+	}
+	handOnE := c.hand == e
+	if e.prev != nil {
+		e.prev.next = e.next
+	} else {
+		c.head = e.next
+	}
+	if e.next != nil {
+		e.next.prev = e.prev
+	} else {
+		c.tail = e.prev
+	}
+	delete(c.m, key)
+	if handOnE {
+		if e.prev != nil {
+			c.hand = e.prev
+		} else {
+			c.hand = c.tail // wrap; nil if cache is now empty
+		}
+	}
+}
+
 // Items returns an iterator that yields each cached entry from the most
 // recently inserted to the least recently inserted. [Cache.Get] must not
 // be called while the iterator is live.
