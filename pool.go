@@ -27,14 +27,23 @@ const (
 // Each waiter receives the most recently returned connection, preserving warm
 // per-connection state such as prepared statements.
 //
-// The zero value is ready for use and uses [DefaultPoolMaxWaiters] as the
-// waiting limit.
+// The zero value is ready for use, with [DefaultPoolMaxConns] as the
+// connection cap and [DefaultPoolMaxWaiters] as the waiting limit.
 type Pool struct {
-	// Dial is a function that is called to open a new connection when
-	// the pool is empty.
+	// Dial opens a new connection when the pool needs one. If Dial is
+	// nil, the package-level [Dial] is used with [DefaultDSN] and nil
+	// config.
 	//
-	// If Dial is nil then the package-level Dial function is used with
-	// [DefaultDSN] and nil config.
+	// Dial is invoked with the pool's lifetime context, not the
+	// caller's [Pool.Get] context, so canceling a Get does not cancel
+	// an in-flight dial.
+	//
+	// Errors returned by Dial trigger an exponential-backoff retry
+	// (sleep capped at 5s) that continues until [Pool.Close]. Permanent
+	// errors such as bad credentials, an unknown database, or TLS
+	// failures are not surfaced to callers and will retry forever;
+	// they are logged through [Pool.Logger]. Callers cancel by closing
+	// the pool.
 	Dial func(ctx context.Context) (*Conn, error)
 
 	// MaxItems is the maximum number of connections that can be open at
@@ -42,11 +51,15 @@ type Pool struct {
 	MaxItems int
 
 	// MaxWaiters is the maximum number of waiters that can be waiting
-	// for a connection. If this number is exceeded, Get will return an
-	// error. If MaxWaiters is zero, then [DefaultPoolMaxWaiters] is used.
+	// for a connection. If this number is exceeded, Get returns
+	// [ErrTooManyWaiters]. If MaxWaiters is zero, then
+	// [DefaultPoolMaxWaiters] is used.
 	MaxWaiters int
 
-	// Logger logs pool activity. If Logger is nil, slog.Default() is used.
+	// Logger receives the pool's "error opening new connection;
+	// retrying" warnings emitted by the [Pool.Dial] retry loop. If
+	// Logger is nil, [slog.Default] is used. To silence these
+	// warnings, pass a logger backed by [slog.DiscardHandler].
 	Logger *slog.Logger
 
 	waitlist  wait.List[*Conn]
@@ -65,7 +78,9 @@ func (p *Pool) init() {
 }
 
 // Put returns cn to the pool. If the pool is closed or cn is not idle,
-// Put closes cn instead.
+// Put closes cn instead. A connection returned in a non-ready state
+// is retired, freeing its slot so the next [Pool.Get] may dial a
+// fresh connection.
 //
 // A connection is idle when its transport is healthy, no COPY is in
 // progress, and the backend is at ReadyForQuery outside any
@@ -84,9 +99,12 @@ func (p *Pool) Put(cn *Conn) {
 
 // Get returns a connection from the pool.
 //
-// If ctx is canceled or times out while waiting, Get returns an error that
-// wraps [context.Canceled] or [context.DeadlineExceeded]. No cancel request is
-// sent to PostgreSQL because no operation has started on a connection.
+// Get returns [ErrTooManyWaiters] when the waiting limit is exceeded
+// and [ErrClosed] when the pool is closed (including waiters woken by
+// a concurrent [Pool.Close]). If ctx is canceled or times out while
+// waiting, Get returns an error that wraps [context.Canceled] or
+// [context.DeadlineExceeded]. No cancel request is sent to PostgreSQL
+// because no operation has started on a connection.
 //
 // Canceling a Get wait does not cancel an in-flight open attempt started for
 // that wait. If the open later succeeds, a later caller to [Pool.Get] may
@@ -120,6 +138,10 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 // left to the caller. After Close, Get returns [ErrClosed]; waiters
 // already blocked in Get wake with the same error. Put closes any
 // connection handed back.
+//
+// As a known limitation, an open attempt already in flight when Close
+// runs may complete after Close returns and leak its connection,
+// since Close does not wait for the [Pool.Dial] retry loop to unwind.
 func (p *Pool) Close() error {
 	p.init()
 	if p.cancelCtx.Err() != nil {

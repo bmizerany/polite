@@ -74,6 +74,10 @@
 // order, and the most recently returned connection is handed out first so
 // prepared statements and other per-connection state stay warm.
 //
+// Failed dials retry with exponential backoff until the pool is closed; see
+// [Pool.Dial] for the retry contract and [Pool.Logger] for redirecting or
+// silencing the retry warnings.
+//
 // # Time Zones
 //
 // polite tracks the session's TimeZone, updating it whenever PostgreSQL
