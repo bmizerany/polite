@@ -85,6 +85,12 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 		fc:       febe.New(cn, cn),
 		now:      cfg.Now,
 		timeZone: time.UTC,
+
+		dial:      cfg.Dial,
+		network:   network,
+		addr:      addr,
+		dsnOpts:   o,
+		tlsConfig: cfg.TLSConfig,
 	}
 	c.fc.SetParameterStatusHook(c.handleParameterStatus)
 
@@ -107,10 +113,11 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 					return err
 				}
 			case 'K':
-				_, err := c.fc.ReadBackendKeyData()
+				bkd, err := c.fc.ReadBackendKeyData()
 				if err != nil {
 					return err
 				}
+				c.fc.SetBackendKeyData(bkd.PID, bkd.SecretKey)
 			case 'Z':
 				_, err := c.fc.ReadReadyForQuery()
 				if err != nil {

@@ -2,6 +2,7 @@ package polite
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -9,12 +10,18 @@ import (
 	"math"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
+	"blake.io/polite/dsn"
 	"blake.io/polite/febe"
 	"blake.io/polite/lru"
 	"blake.io/polite/oids"
 )
+
+// pgQueryCanceledCode is the SQLSTATE returned by PostgreSQL when a query is
+// cancelled via CancelRequest (query_canceled).
+const pgQueryCanceledCode = "57014"
 
 // Errors
 var (
@@ -46,16 +53,28 @@ type statement struct {
 //
 // This statement cache is used by [Conn.Query] and [Conn.Exec].
 //
-// If a context is canceled or times out during an in-flight operation, Conn
-// sends a cancel request to PostgreSQL. The returned error wraps
-// [context.Canceled] or [context.DeadlineExceeded]. Conn returns to
-// ReadyForQuery and can be reused.
+// If the context passed to [Conn.Query] or [Conn.Exec] is canceled or times
+// out while a query is in flight, Conn opens a separate connection to the
+// backend and sends a CancelRequest authenticated with the BackendKeyData
+// captured at startup. The original connection drains the resulting
+// ErrorResponse (SQLSTATE 57014) and ReadyForQuery and remains usable. The
+// error returned from Query/Exec satisfies errors.Is for the context's error
+// ([context.Canceled] or [context.DeadlineExceeded]).
 type Conn struct {
 	cn net.Conn
 	fc *febe.Conn
 
 	now      func() time.Time
 	timeZone *time.Location
+
+	// Redial parameters captured at Dial. They allow opening a fresh
+	// side connection to issue a CancelRequest using the same network,
+	// address, and TLS configuration as the original.
+	dial      func(ctx context.Context, network, addr string) (net.Conn, error)
+	network   string
+	addr      string
+	dsnOpts   *dsn.Options
+	tlsConfig *tls.Config
 
 	nstmt int
 	cache *lru.Cache[string, *statement]
@@ -497,10 +516,15 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 			if c.closed && r.err != nil && errors.Is(r.err, febe.ErrTerminated) {
 				r.err = ErrClosed
 			}
+			r.err = c.wrapCtxErr(ctx, r.err)
 			return yield(r)
 		}
 		if c.busy {
 			emit(&Row{err: ErrBusy})
+			return
+		}
+		if err := ctx.Err(); err != nil {
+			emit(&Row{err: err})
 			return
 		}
 		if c.now != nil {
@@ -511,6 +535,9 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 		}
 		c.busy = true
 		defer func() { c.busy = false }()
+
+		stopWatcher := c.startCancelWatcher(ctx)
+		defer stopWatcher()
 
 		stmt, err := c.prepare(ctx, "", sql, args...)
 		if err != nil {
@@ -947,34 +974,156 @@ func (c *Conn) recover(ctx context.Context, initErr error) error {
 		return initErr
 	}
 	drainCtx := ctx
-	if errors.Is(initErr, context.Canceled) || errors.Is(initErr, context.DeadlineExceeded) {
+	ctxCancelled := errors.Is(initErr, context.Canceled) || errors.Is(initErr, context.DeadlineExceeded)
+	if ctxCancelled {
 		drainCtx = context.Background()
 	}
-	if err := c.drainToReady(drainCtx); err != nil {
+	cancelErr, err := c.drainToReadyCapture(drainCtx)
+	if err != nil {
 		return err
 	}
+	if ctxCancelled && cancelErr != nil {
+		// Replace the bare ctx error with one that also exposes the
+		// backend's *febe.Error{Code:57014} via errors.As/AsType.
+		return cancelledError{ctxErr: initErr, fe: cancelErr}
+	}
 	return initErr
+}
+
+// wrapCtxErr converts a query_canceled error from PostgreSQL into one that
+// satisfies errors.Is(err, ctx.Err()) when ctx is the reason the query was
+// cancelled. Other errors pass through unchanged.
+func (c *Conn) wrapCtxErr(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	cerr := ctx.Err()
+	if cerr == nil {
+		return err
+	}
+	// If the backend reported query_canceled, wrap the febe.Error so the
+	// caller sees ctx.Err() via errors.Is while still being able to extract
+	// the underlying *febe.Error.
+	if fe, ok := errors.AsType[*febe.Error](err); ok && fe.Code == pgQueryCanceledCode {
+		return cancelledError{ctxErr: cerr, fe: err}
+	}
+	// If it's a context error already, just return ctx's canonical value
+	// to keep errors.Is happy.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return cerr
+	}
+	return err
+}
+
+// cancelledError reports a query that was cancelled because ctx was done. It
+// satisfies errors.Is for both the context error and the underlying
+// *febe.Error.
+type cancelledError struct {
+	ctxErr error
+	fe     error
+}
+
+func (e cancelledError) Error() string { return e.fe.Error() }
+func (e cancelledError) Unwrap() []error {
+	return []error{e.ctxErr, e.fe}
+}
+
+// startCancelWatcher spawns a goroutine that issues a CancelRequest on a
+// fresh side connection if ctx is done before the in-flight query completes.
+// The returned function must be called to stop the watcher (typically via
+// defer); it blocks until the watcher exits.
+func (c *Conn) startCancelWatcher(ctx context.Context) func() {
+	if ctx.Done() == nil {
+		return func() {}
+	}
+	done := make(chan struct{})
+	exited := make(chan struct{})
+	var once sync.Once
+	go func() {
+		defer close(exited)
+		select {
+		case <-ctx.Done():
+			once.Do(func() {
+				// Best-effort: a failed cancel just means the
+				// query keeps running until natural completion.
+				c.cancelQuery()
+			})
+		case <-done:
+		}
+	}()
+	return func() {
+		close(done)
+		<-exited
+	}
+}
+
+// cancelQuery opens a fresh connection to the same backend and writes a
+// CancelRequest using the BackendKeyData captured at startup. It is
+// best-effort: errors are intentionally swallowed because a failed cancel
+// only means the query keeps running, which is no worse than not having
+// attempted to cancel at all.
+func (c *Conn) cancelQuery() {
+	pid := c.fc.BackendPID()
+	secret := c.fc.BackendSecret()
+	if pid == 0 || c.dial == nil {
+		return
+	}
+
+	// Use a short bounded timeout for the side connection; we do not want
+	// the cancel attempt to hang.
+	dctx, dcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer dcancel()
+
+	cn, err := c.dial(dctx, c.network, c.addr)
+	if err != nil {
+		return
+	}
+	defer cn.Close()
+	cn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	if c.dsnOpts != nil && c.dsnOpts.SSLMode != "disable" {
+		upgraded, err := maybeUpgradeToTLS(cn, c.dsnOpts, &Config{TLSConfig: c.tlsConfig})
+		if err != nil {
+			return
+		}
+		cn = upgraded
+	}
+	febe.WriteCancelRequest(cn, pid, secret)
 }
 
 // drainToReady reads and discards backend messages until ReadyForQuery,
 // tolerating non-fatal ErrorResponses along the way. It assumes an unread
 // ReadyForQuery is in flight; call [Conn.recover] for the gated variant.
 func (c *Conn) drainToReady(ctx context.Context) error {
+	_, err := c.drainToReadyCapture(ctx)
+	return err
+}
+
+// drainToReadyCapture is like drainToReady but additionally returns the first
+// non-fatal *febe.Error observed during the drain (typically the backend's
+// query_canceled response). The returned error is informational; the drain
+// itself succeeds when ReadyForQuery is consumed.
+func (c *Conn) drainToReadyCapture(ctx context.Context) (error, error) {
+	var captured error
 	for {
 		h, err := c.fc.ReadHeader(ctx)
 		if err != nil {
 			// Non-fatal ErrorResponses are expected during
-			// recovery (e.g. Postgres echoing a CopyFail);
+			// recovery (e.g. Postgres echoing a CopyFail or
+			// reporting query_canceled after a CancelRequest);
 			// keep draining until ReadyForQuery. Fatal errors
 			// mean the backend closed the connection and no
 			// ReadyForQuery will follow.
 			if fe, ok := errors.AsType[*febe.Error](err); ok && !fe.IsFatal() {
+				if captured == nil {
+					captured = err
+				}
 				continue
 			}
-			return err
+			return captured, err
 		}
 		if h.Type() == 'Z' {
-			return c.readReadyForQuery()
+			return captured, c.readReadyForQuery()
 		}
 	}
 }

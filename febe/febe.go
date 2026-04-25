@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -118,8 +119,43 @@ type Conn struct {
 
 	parameterStatusHook func(Parameter)
 
+	// backendPID and backendSecret are the values reported by the backend
+	// in BackendKeyData during startup. They are required to issue a
+	// CancelRequest on a side connection.
+	backendPID    int32
+	backendSecret int32
+
 	terminatePending bool
 	err              error
+}
+
+// BackendPID returns the backend process ID reported by the server's
+// BackendKeyData message during startup. It is zero before startup completes.
+func (c *Conn) BackendPID() int32 { return c.backendPID }
+
+// BackendSecret returns the backend secret key reported by the server's
+// BackendKeyData message during startup. It is zero before startup completes.
+// The secret pairs with [Conn.BackendPID] to authorize a CancelRequest.
+func (c *Conn) BackendSecret() int32 { return c.backendSecret }
+
+// SetBackendKeyData records the pid and secret from a BackendKeyData
+// response so that a later CancelRequest can be authenticated.
+func (c *Conn) SetBackendKeyData(pid, secret int32) {
+	c.backendPID = pid
+	c.backendSecret = secret
+}
+
+// WriteCancelRequest writes a 16-byte CancelRequest message to w using the
+// given backend pid and secret. It does not flush; the caller is expected to
+// close the underlying connection. No backend response is expected.
+func WriteCancelRequest(w io.Writer, pid, secret int32) error {
+	var b [16]byte
+	binary.BigEndian.PutUint32(b[0:4], 16)
+	binary.BigEndian.PutUint32(b[4:8], 80877102)
+	binary.BigEndian.PutUint32(b[8:12], uint32(pid))
+	binary.BigEndian.PutUint32(b[12:16], uint32(secret))
+	_, err := w.Write(b[:])
+	return err
 }
 
 // New returns a Conn that reads from r and writes to w.
