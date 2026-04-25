@@ -1677,8 +1677,14 @@ func TestEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Send a notification from the other connection.
+	// Send a notification from the other connection. Wait for the goroutine
+	// to finish before returning so the test's cleanup does not Close the
+	// notifier while Exec is still in flight (Conn is not safe for concurrent
+	// use).
+	done := make(chan struct{})
+	defer func() { <-done }()
 	go func() {
+		defer close(done)
 		notifier.Exec(ctx, "NOTIFY test_events, 'hello'")
 	}()
 
