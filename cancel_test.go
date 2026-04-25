@@ -60,7 +60,7 @@ func TestQueryCancelDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
-	err := cn.Exec(ctx, "SELECT pg_sleep(10)")
+	err := cn.Exec(ctx, "SELECT pg_sleep(31536000)")
 	assertQueryCanceled(t, err, context.DeadlineExceeded)
 	assertReusable(t, cn)
 }
@@ -99,7 +99,7 @@ func TestQueryCancelMidFlight(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- cn.Exec(ctx, "SELECT pg_sleep(10)")
+		done <- cn.Exec(ctx, "SELECT pg_sleep(31536000)")
 	}()
 
 	// Poll until the test backend is actively executing the
