@@ -636,7 +636,8 @@ func (c Column) Bytes() ([]byte, error) {
 	return c.data, nil
 }
 
-// Text returns the column bytes as a string copy.
+// Text returns the column bytes as a string. Unlike [Column.Bytes], the
+// returned string is a copy and remains valid after the row advances.
 func (c Column) Text() (string, error) {
 	if c.err != nil {
 		return "", c.err
@@ -644,8 +645,10 @@ func (c Column) Text() (string, error) {
 	return string(c.data), nil
 }
 
-// DecodeInt decodes the column as a signed integer. Supported widths are 1,
-// 2, 4, and 8 bytes.
+// DecodeInt decodes the column as a signed integer from PostgreSQL's binary
+// wire format. It accepts the four fixed integer widths — 1, 2, 4, or 8
+// bytes — and returns the value as int64. Any other width is reported as an
+// error rather than guessed at.
 func (c Column) DecodeInt() (int64, error) {
 	if c.err != nil {
 		return 0, c.err
@@ -666,8 +669,10 @@ func (c Column) DecodeInt() (int64, error) {
 	}
 }
 
-// DecodeFloat decodes the column as a float. Supported widths are 4 and 8
-// bytes.
+// DecodeFloat decodes the column as an IEEE-754 floating-point value from
+// PostgreSQL's binary wire format. It accepts the two fixed widths, 4 bytes
+// (float4) and 8 bytes (float8), and returns the value as float64. Any
+// other width is reported as an error.
 func (c Column) DecodeFloat() (float64, error) {
 	if c.err != nil {
 		return 0, c.err
@@ -718,8 +723,11 @@ func pgMicrosecondsToTime(microseconds int64) time.Time {
 	return time.Unix(pgEpochUnix+sec, usec*1_000).UTC()
 }
 
-// DecodeTime decodes the column as a timestamp. A timestamptz is returned in
-// UTC; a timestamp is returned in the session's time zone.
+// DecodeTime decodes the column as a microsecond-precision timestamp. A
+// timestamptz is returned in UTC; a timestamp is returned in the session's
+// time zone, or UTC when the session has none. PostgreSQL's positive and
+// negative infinity sentinels are reported as an error rather than mapped
+// to a Go time value.
 func (c Column) DecodeTime() (time.Time, error) {
 	if c.err != nil {
 		return time.Time{}, c.err
