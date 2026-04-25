@@ -31,8 +31,13 @@ jobs:
       - name: go mod tidy
         run: go mod tidy -diff
 
+      - name: gofmt
+        run: |
+          gofmt -w -s $(git ls-files '*.go')
+          git diff --exit-code
+
       - name: go test
-        run: go test -v -count=1 ./...
+        run: go test -v -race -count=20 ./...
 
       - name: staticcheck
         if: always()

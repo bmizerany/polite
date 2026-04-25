@@ -18,9 +18,9 @@ const postgresBufferSize = 8 << 10
 // more information about the postgres message data types.
 type Conn struct {
 	rw *setErrReadWriter
-	r *byteReader
-	w *bufio.Writer
-	n int // number of bytes read
+	r  *byteReader
+	w  *bufio.Writer
+	n  int // number of bytes read
 
 	err error
 }

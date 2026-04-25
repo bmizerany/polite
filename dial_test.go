@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"blake.io/polite/internal/backoff"
 	"blake.io/polite/febe"
+	"blake.io/polite/internal/backoff"
 )
 
 func TestOpenAuthNone(t *testing.T) {
