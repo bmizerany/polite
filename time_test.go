@@ -300,41 +300,46 @@ func TestDecodeTimeFromPostgres(t *testing.T) {
 	cases := []struct {
 		name string
 		sql  string
+		// want is built per-test in the session TZ to handle
+		// timestamptz literals, which Postgres interprets in the
+		// session zone before storing as a UTC instant. For plain
+		// timestamp values the session zone is irrelevant; the loc
+		// argument is ignored.
 		want func(*time.Location) time.Time
 	}{
 		{
 			name: "timestamp-basic",
 			sql:  `SELECT '2021-01-01 00:00:00'::timestamp`,
-			want: func(loc *time.Location) time.Time {
-				return time.Date(2021, 1, 1, 0, 0, 0, 0, loc)
+			want: func(*time.Location) time.Time {
+				return time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC)
 			},
 		},
 		{
 			name: "timestamp-pg-epoch",
 			sql:  `SELECT TIMESTAMP '2000-01-01 00:00:00'`,
-			want: func(loc *time.Location) time.Time {
-				return time.Date(2000, 1, 1, 0, 0, 0, 0, loc)
+			want: func(*time.Location) time.Time {
+				return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 			},
 		},
 		{
 			name: "timestamp-far-future",
 			sql:  `SELECT TIMESTAMP '2500-01-02 03:04:05.123457'`,
-			want: func(loc *time.Location) time.Time {
-				return time.Date(2500, 1, 2, 3, 4, 5, 123457000, loc)
+			want: func(*time.Location) time.Time {
+				return time.Date(2500, 1, 2, 3, 4, 5, 123457000, time.UTC)
 			},
 		},
 		{
 			name: "timestamp-far-future-beyond-unixmicro-limit",
 			sql:  `SELECT TIMESTAMP '294260-01-01 00:00:00'`,
-			want: func(loc *time.Location) time.Time {
-				return time.Date(294260, 1, 1, 0, 0, 0, 0, loc)
+			want: func(*time.Location) time.Time {
+				return time.Date(294260, 1, 1, 0, 0, 0, 0, time.UTC)
 			},
 		},
 		{
 			name: "timestamp-far-past",
 			sql:  `SELECT TIMESTAMP '1500-01-02 03:04:05.123457'`,
-			want: func(loc *time.Location) time.Time {
-				return time.Date(1500, 1, 2, 3, 4, 5, 123457000, loc)
+			want: func(*time.Location) time.Time {
+				return time.Date(1500, 1, 2, 3, 4, 5, 123457000, time.UTC)
 			},
 		},
 		{

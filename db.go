@@ -540,16 +540,22 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 		// started cancelQuery by the time we stop it, wait for it to
 		// finish so we do not return from Query while a side-connection
 		// CancelRequest is still in flight against this backend.
-		cancelDone := make(chan struct{})
-		stopCancel := context.AfterFunc(ctx, func() {
-			defer close(cancelDone)
-			c.cancelQuery()
-		})
-		defer func() {
-			if !stopCancel() {
-				<-cancelDone
-			}
-		}()
+		//
+		// Skip the watcher entirely when ctx has no Done channel; with
+		// no possible cancel signal there is nothing to watch, and the
+		// AfterFunc registration alone costs several allocs per call.
+		if ctx.Done() != nil {
+			cancelDone := make(chan struct{})
+			stopCancel := context.AfterFunc(ctx, func() {
+				defer close(cancelDone)
+				c.cancelQuery()
+			})
+			defer func() {
+				if !stopCancel() {
+					<-cancelDone
+				}
+			}()
+		}
 
 		stmt, err := c.prepare(ctx, "", sql, args...)
 		if err != nil {

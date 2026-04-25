@@ -188,9 +188,13 @@ func TestQuery(t *testing.T) {
 
 func TestQueryAllocations(t *testing.T) {
 	cn := newSession(t)
+	// Use context.Background() rather than t.Context(): this test
+	// measures steady-state row decoding, not cancel behavior, and the
+	// per-Query cancel watcher only installs when ctx.Done() != nil.
+	ctx := context.Background()
 	allocs := testing.AllocsPerRun(1000, func() {
 		const q = `SELECT 1, 'two'`
-		for row := range cn.Query(t.Context(), q) {
+		for row := range cn.Query(ctx, q) {
 			if _, err := row.Column(0).DecodeInt(); err != nil {
 				t.Fatal(err)
 			}
