@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"blake.io/polite/febe"
 	"kr.dev/diff"
@@ -393,6 +394,40 @@ func TestCopyFromBreakBeforeSend(t *testing.T) {
 	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatalf("Exec after COPY FROM break: %v", err)
 	}
+}
+
+func TestCopyFromTimestamptz(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+
+	err := cn.Exec(ctx, "CREATE TEMP TABLE foo (id INT, ts TIMESTAMPTZ)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := time.Date(2024, 1, 2, 3, 4, 5, 123456000, time.UTC)
+	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		_, err = row.Column(0).Bytes()
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("column error = %v, want ErrCopyFrom", err)
+		}
+		if err := cn.Exec(ctx, "", int32(1), want); err != nil {
+			t.Fatalf("Exec(time.Time arg) = %v", err)
+		}
+	}
+
+	var got time.Time
+	for row := range cn.Query(ctx, "SELECT ts FROM foo WHERE id = 1") {
+		got, err = row.Column(0).DecodeTime()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertTime(t, got, want)
+
+	checkReady(t, cn)
 }
 
 func TestCopyFromEmpty(t *testing.T) {

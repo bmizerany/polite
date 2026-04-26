@@ -310,8 +310,16 @@ func (c *Conn) copyFromRow(args ...any) error {
 	values := make([][]byte, len(args))
 	scratch := make([]byte, 0, len(args)*8)
 	for i, arg := range args {
+		// COPY data rows carry no per-column parameter type, so
+		// pick a sensible default for argument types that demand
+		// one. time.Time gets timestamptz: it preserves an instant
+		// across zones and is what callers passing time.Now() want.
+		oid := oids.ID(0)
+		if _, ok := arg.(time.Time); ok {
+			oid = oids.Timestamptz
+		}
 		start := len(scratch)
-		encoded, _, err := appendArg(scratch, arg, 0)
+		encoded, _, err := appendArg(scratch, arg, oid)
 		if err != nil {
 			return err
 		}
