@@ -60,6 +60,7 @@
 // directly; for types without a built-in decoder, call [Column.Bytes] and
 // decode the wire bytes yourself. Raw column bytes refer to storage owned by
 // the current row and remain valid only until the next row is determined.
+// A SQL NULL is reported by [Column.Bytes] as a nil slice with a nil error.
 //
 // Rows reuse storage across iterations. In steady-state query paths, that lets
 // polite avoid per-row allocation. The same column metadata also makes it
