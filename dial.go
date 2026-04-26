@@ -38,6 +38,18 @@ type Config struct {
 // Dial opens a connection to postgres using the parameters in dsnOrURL,
 // which is a DSN or URL. By default, host=/tmp (Unix socket), port=5432,
 // user=$USER, and sslmode=verify-full.
+//
+// The supported sslmode values are "disable", "require", and "verify-full".
+// An unset sslmode is treated as "verify-full". Any other value, including
+// libpq's "allow", "prefer", and "verify-ca", is rejected.
+//
+// Polite's default differs from libpq, which defaults to "prefer" and falls
+// back to plaintext if the server refuses TLS. Polite never falls back: if
+// TLS is requested and the server refuses, Dial returns [ErrTLSRefused].
+//
+// Polite's "require" is stricter than libpq's. Both require TLS, but libpq
+// performs no hostname verification under "require"; polite verifies the
+// server name against the certificate, the same as "verify-full".
 func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	o, err := dsn.ParseOptions(dsnOrURL)
 	if err != nil {
