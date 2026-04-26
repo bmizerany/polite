@@ -146,68 +146,6 @@ func TestDecodeTimeIgnoresSessionTimeZoneAcrossStatements(t *testing.T) {
 	})
 }
 
-func TestLoadTimeZoneOffset(t *testing.T) {
-	cases := []struct {
-		name    string
-		text    string
-		want    int
-		wantErr string
-	}{
-		{name: "offset-hour", text: "+02", want: 2 * 60 * 60},
-		{name: "offset-hour-negative", text: "-08", want: -8 * 60 * 60},
-		{name: "offset-hour-minute", text: "+02:30", want: 2*60*60 + 30*60},
-		{name: "offset-hour-minute-negative", text: "-07:30", want: -(7*60*60 + 30*60)},
-		{name: "offset-hour-minute-second", text: "+02:30:15", want: 2*60*60 + 30*60 + 15},
-		{name: "offset-hour-minute-second-negative", text: "-07:30:15", want: -(7*60*60 + 30*60 + 15)},
-		{name: "offset-compact-hour-minute", text: "+0230", want: 2*60*60 + 30*60},
-		{name: "offset-compact-hour-minute-negative", text: "-0730", want: -(7*60*60 + 30*60)},
-		{name: "offset-compact-hour", text: "+02", want: 2 * 60 * 60},
-		{name: "offset-zero", text: "Z", want: 0},
-	}
-
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := loadTimeZoneOffset(tt.text)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tt.want {
-				t.Fatalf("loadTimeZoneOffset(%q) = %d, want %d", tt.text, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestTimeZoneOffsetLayouts(t *testing.T) {
-	got := timeZoneOffsetLayouts()
-	want := []string{"Z07:00:00", "Z07:00", "Z0700", "Z07"}
-	diff.Test(t, t.Errorf, got, want)
-}
-
-func TestLoadLocation(t *testing.T) {
-	cases := []struct {
-		name string
-		text string
-	}{
-		{name: "iana", text: "America/Los_Angeles"},
-		{name: "posix", text: "EST5EDT"},
-		{name: "utc", text: "UTC"},
-		{name: "gmt", text: "GMT"},
-	}
-
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			loc, err := loadLocation(tt.text)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if loc.String() != tt.text {
-				t.Fatalf("loadLocation(%q) = %q, want %q", tt.text, loc.String(), tt.text)
-			}
-		})
-	}
-}
-
 func TestTimestampMicrosecondRoundingInSQL(t *testing.T) {
 	t.Parallel()
 
@@ -458,7 +396,7 @@ func currentTimeZone(t *testing.T, cn *Conn) *time.Location {
 		if err != nil {
 			t.Fatal(err)
 		}
-		loc, err := loadLocation(tz)
+		loc, err := time.LoadLocation(tz)
 		if err != nil {
 			t.Fatal(err)
 		}

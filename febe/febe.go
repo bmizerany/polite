@@ -117,8 +117,6 @@ type Conn struct {
 
 	readyStatus ReadyStatus
 
-	parameterStatusHook func(Parameter)
-
 	// backendPID and backendSecret are the values reported by the backend
 	// in BackendKeyData during startup. They are required to issue a
 	// CancelRequest on a side connection.
@@ -162,12 +160,6 @@ func WriteCancelRequest(w io.Writer, pid, secret int32) error {
 func New(r io.Reader, w io.Writer) *Conn {
 	cn := febeio.NewConn(r, w)
 	return &Conn{c: cn}
-}
-
-// SetParameterStatusHook sets fn to receive ParameterStatus messages consumed
-// by ReadHeader. A nil fn disables the hook.
-func (c *Conn) SetParameterStatusHook(fn func(Parameter)) {
-	c.parameterStatusHook = fn
 }
 
 func isTimeout(err error) bool {
@@ -341,12 +333,6 @@ func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 			s, err := c.readParameterStatus()
 			if err != nil {
 				return zero, c.setErr(err)
-			}
-			if c.parameterStatusHook != nil {
-				c.parameterStatusHook(Parameter{
-					Name:  s.Name,
-					Value: s.Value,
-				})
 			}
 			if t.ReceivedParameterStatus != nil {
 				t.ReceivedParameterStatus(ctx, Parameter{

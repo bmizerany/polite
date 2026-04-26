@@ -64,8 +64,7 @@ type Conn struct {
 	cn net.Conn
 	fc *febe.Conn
 
-	now      func() time.Time
-	timeZone *time.Location
+	now func() time.Time
 
 	// Redial parameters captured at Dial. They allow opening a fresh
 	// side connection to issue a CancelRequest using the same network,
@@ -415,40 +414,6 @@ func (c *Conn) updateGoTime(ctx context.Context) error {
 	return c.Exec(ctx, "SELECT set_config('polite.go_time', $1, false)", formatGoTime(now()))
 }
 
-func (c *Conn) handleParameterStatus(p febe.Parameter) {
-	if p.Name != "TimeZone" {
-		return
-	}
-	loc, err := loadLocation(p.Value)
-	if err != nil {
-		return
-	}
-	c.timeZone = loc
-}
-
-func loadLocation(name string) (*time.Location, error) {
-	loc, err := time.LoadLocation(name)
-	if err == nil {
-		return loc, nil
-	}
-	if offset, err := loadTimeZoneOffset(name); err == nil {
-		return time.FixedZone(name, offset), nil
-	}
-	return nil, err
-}
-
-func loadTimeZoneOffset(name string) (int, error) {
-	for _, layout := range timeZoneOffsetLayouts() {
-		ts, err := time.Parse(layout, name)
-		if err != nil {
-			continue
-		}
-		_, offset := ts.Zone()
-		return offset, nil
-	}
-	return 0, fmt.Errorf("unsupported timezone %q", name)
-}
-
 func (c *Conn) initGoTime(ctx context.Context) error {
 	for _, sql := range []string{
 		"CREATE SCHEMA IF NOT EXISTS polite",
@@ -763,8 +728,7 @@ type Column struct {
 	typeID  oids.ID
 	data    []byte
 
-	timeZone *time.Location
-	err      error
+	err error
 }
 
 // Ordinal returns the column's zero-based position in the row.
@@ -847,15 +811,6 @@ var (
 	pgEpoch     = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	pgEpochUnix = pgEpoch.Unix()
 )
-
-var timeZoneOffsetLayoutsList = []string{
-	"Z07:00:00",
-	"Z07:00",
-	"Z0700",
-	"Z07",
-}
-
-func timeZoneOffsetLayouts() []string { return timeZoneOffsetLayoutsList }
 
 const (
 	pgTimestampInfinity    = int64(^uint64(0) >> 1)
@@ -964,7 +919,7 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 			if c.row == nil {
 				c.row = &Row{}
 			}
-			columns, err := buildColumns(c.fc, c.row, fields, int(m.NumCols), c.timeZone)
+			columns, err := buildColumns(c.fc, c.row, fields, int(m.NumCols))
 			if err != nil {
 				return nil, err
 			}
@@ -987,7 +942,7 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 	}
 }
 
-func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCols int, loc *time.Location) ([]Column, error) {
+func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCols int) ([]Column, error) {
 	var columns []Column
 	if row != nil {
 		columns = row.columns
@@ -1009,23 +964,21 @@ func buildColumns(fc *febe.Conn, row *Row, fields []febe.FieldDescription, numCo
 		}
 		if v.Data == nil {
 			columns[i] = Column{
-				ordinal:  i,
-				name:     desc.Name,
-				size:     int(desc.DataTypeSize),
-				typeID:   desc.DataTypeOID,
-				timeZone: loc,
+				ordinal: i,
+				name:    desc.Name,
+				size:    int(desc.DataTypeSize),
+				typeID:  desc.DataTypeOID,
 			}
 			continue
 		}
 		start := len(data)
 		data = append(data, v.Data...)
 		columns[i] = Column{
-			ordinal:  i,
-			name:     desc.Name,
-			size:     int(desc.DataTypeSize),
-			typeID:   desc.DataTypeOID,
-			data:     data[start:],
-			timeZone: loc,
+			ordinal: i,
+			name:    desc.Name,
+			size:    int(desc.DataTypeSize),
+			typeID:  desc.DataTypeOID,
+			data:    data[start:],
 		}
 	}
 	row.data = data

@@ -81,10 +81,9 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	})
 
 	c := &Conn{
-		cn:       cn,
-		fc:       febe.New(cn, cn),
-		now:      cfg.Now,
-		timeZone: time.UTC,
+		cn:  cn,
+		fc:  febe.New(cn, cn),
+		now: cfg.Now,
 
 		dial:      cfg.Dial,
 		network:   network,
@@ -92,7 +91,6 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 		dsnOpts:   o,
 		tlsConfig: cfg.TLSConfig,
 	}
-	c.fc.SetParameterStatusHook(c.handleParameterStatus)
 
 	err = func() error {
 		if err := c.fc.WriteStartupMessage(o.Extra...); err != nil {
