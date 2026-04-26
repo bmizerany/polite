@@ -87,6 +87,7 @@ type Conn struct {
 	inCopyFrom           bool
 	copyHeaderWritten    bool
 	copyOutHeaderPending bool
+	copyOutNumCols       int16
 
 	// busy is true while a Query iterator is active. It prevents
 	// re-entrant Query/Exec calls on the same Conn, which would
@@ -921,7 +922,6 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 				return nil, err
 			}
 		case 'H':
-			// TODO(bmizerany): maybe save NumCols for comparing against 'd' messages?
 			m, err := c.fc.ReadCopyOut()
 			if err != nil {
 				return nil, err
@@ -930,6 +930,7 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 				return nil, ErrCopyFormat
 			}
 			c.copyOutHeaderPending = true
+			c.copyOutNumCols = m.NumCols
 		case 'G':
 			m, err := c.fc.ReadCopyIn()
 			if err != nil {
@@ -953,6 +954,9 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 			}
 			if m.NumCols == -1 {
 				continue
+			}
+			if h.Type() == 'd' && m.NumCols != c.copyOutNumCols {
+				return nil, fmt.Errorf("polite: COPY OUT row width %d does not match declared %d", m.NumCols, c.copyOutNumCols)
 			}
 			if c.row == nil {
 				c.row = &Row{}
