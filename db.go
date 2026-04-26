@@ -261,13 +261,22 @@ func Notifications(ctx context.Context, cn *Conn) iter.Seq[*febe.Notification] {
 	return func(yield func(*febe.Notification) bool) {
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		ctx = febe.WithTrace(ctx, &febe.Trace{
-			ReceivedNotification: func(_ context.Context, n *febe.Notification) {
-				if !yield(n) {
-					cancel()
-				}
-			},
-		})
+		// Preserve any caller-installed Trace by copying it and chaining
+		// the caller's ReceivedNotification after our yield.
+		trace := febe.Trace{}
+		if prev := febe.TraceFromContext(ctx); prev != nil {
+			trace = *prev
+		}
+		prevRecv := trace.ReceivedNotification
+		trace.ReceivedNotification = func(ctx context.Context, n *febe.Notification) {
+			if !yield(n) {
+				cancel()
+			}
+			if prevRecv != nil {
+				prevRecv(ctx, n)
+			}
+		}
+		ctx = febe.WithTrace(ctx, &trace)
 		for ctx.Err() == nil {
 			if _, err := cn.fc.ReadHeader(ctx); err != nil {
 				return

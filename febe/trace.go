@@ -64,6 +64,13 @@ func WithTrace(ctx context.Context, trace *Trace) context.Context {
 var emptyTrace = &Trace{}
 
 func traceFromContext(ctx context.Context) *Trace {
+	return cmp.Or(TraceFromContext(ctx), emptyTrace)
+}
+
+// TraceFromContext returns the [Trace] attached to ctx by [WithTrace], or
+// nil if none is attached. Callers wrapping a Trace can use this to chain
+// to any previously-installed callbacks.
+func TraceFromContext(ctx context.Context) *Trace {
 	trace, _ := ctx.Value(traceKey).(*Trace)
-	return cmp.Or(trace, emptyTrace)
+	return trace
 }

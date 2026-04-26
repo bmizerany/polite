@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1706,6 +1707,50 @@ func TestEvents(t *testing.T) {
 	// Connection should still be usable after breaking out of Notifications.
 	if err := listener.Exec(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestNotificationsPreservesCallerTrace verifies that Notifications does
+// not silently overwrite a caller-installed febe.Trace: the caller's
+// ReceivedNotification must still fire, alongside polite's own yield.
+func TestNotificationsPreservesCallerTrace(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	listener, err := Dial(ctx, testDSN, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	cn := newSession(t)
+
+	if err := listener.Exec(ctx, "LISTEN trace_events"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Exec(ctx, "NOTIFY trace_events, 'hi'"); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []string
+	ctx = febe.WithTrace(ctx, &febe.Trace{
+		ReceivedNotification: func(_ context.Context, n *febe.Notification) {
+			got = append(got, string(n.Payload))
+		},
+	})
+
+	var yielded []string
+	for n := range Notifications(ctx, listener) {
+		yielded = append(yielded, string(n.Payload))
+		break
+	}
+
+	if want := []string{"hi"}; !slices.Equal(yielded, want) {
+		t.Fatalf("yielded = %q; want %q", yielded, want)
+	}
+	if want := []string{"hi"}; !slices.Equal(got, want) {
+		t.Fatalf("caller trace got = %q; want %q", got, want)
 	}
 }
 
