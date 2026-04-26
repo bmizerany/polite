@@ -21,12 +21,14 @@ import (
 
 // Errors
 var (
-	// ErrTerminate is returned when the server has terminated a
-	// connection.
+	// ErrTerminated is returned when the backend has terminated the
+	// connection. It is sticky: once observed, [Conn.Err] returns it.
 	ErrTerminated = errors.New("febe: connection terminated by backend")
 
-	// ErrEmptyQuery is returned when the server has terminated a
-	// query because it was empty.
+	// ErrEmptyQuery is returned when the backend replies with
+	// EmptyQueryResponse, which happens when a Query message carries
+	// SQL that contains no statements (an empty or whitespace-only
+	// query string).
 	ErrEmptyQuery = errors.New("febe: empty query")
 
 	// errShortMessage is returned when ReadHeader encounters a
@@ -111,6 +113,18 @@ type ReadyForQueryResponse struct {
 }
 
 // Conn reads and writes frontend/backend protocol messages.
+//
+// A Conn is not safe for concurrent use; callers must serialize their
+// own access. Once a fatal condition is observed — a backend FATAL
+// error, [ErrTerminated], or a non-timeout I/O failure — it is sticky:
+// [Conn.Err] returns it, and further reads and writes report the same
+// error without doing I/O. Non-fatal backend *[Error] values from
+// [Conn.ReadHeader] are surfaced once and cleared by the next
+// ReadyForQuery; they do not stick.
+//
+// [Conn.WriteTerminate] sets the sticky error to [ErrTerminated] and
+// queues the Terminate byte. The next [Conn.Flush] is allowed through
+// to deliver it to the backend; after that the Conn is finished.
 type Conn struct {
 	c *febeio.Conn
 	h MessageHeader // the last header read
@@ -264,12 +278,26 @@ func (h MessageHeader) String() string {
 	return fmt.Sprintf("<MessageHeader Type:%q Len:%d>", h.msgType, h.msgLen)
 }
 
-// ReadHeader reads the next febe message header on the Conn after
-// discarding any remaining bytes from the previous message. It returns a
-// network or deserialization error if any.
+// ReadHeader reads the next message header on the Conn after discarding
+// any unread bytes from the previous message.
 //
-// As a special case, if the message type is 'E', it will read the error
-// response and return an *Error.
+// Some backend messages are handled internally and the loop continues
+// until a header for an unhandled message is available. NoticeResponse
+// ('N'), ParameterStatus ('S'), and NotificationResponse ('A') are each
+// decoded, dispatched to the trace callbacks installed via ctx, and
+// skipped.
+//
+// A few message types surface directly as errors:
+//
+//   - ErrorResponse ('E') is decoded and returned as *[Error]. A FATAL
+//     error becomes the Conn's sticky error; non-fatal errors are
+//     returned once and cleared by the next ReadyForQuery.
+//   - CopyFail ('f') is decoded and returned as *[Error] (sticky).
+//   - EmptyQueryResponse ('I') returns [ErrEmptyQuery].
+//   - Terminate ('X') returns [ErrTerminated] (sticky).
+//
+// Any other message type is yielded to the caller, which is expected to
+// read the body before calling ReadHeader again.
 func (c *Conn) ReadHeader(ctx context.Context) (MessageHeader, error) {
 	var zero MessageHeader
 	t := traceFromContext(ctx)

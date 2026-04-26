@@ -162,11 +162,17 @@ var isWhitespace = [256]bool{
 //
 // The following tokens are yielded:
 //
+//	"host"
+//	"="
 //	"localhost"
+//	"port"
 //	"="
 //	"5432"
+//	"sslmode"
 //	"="
-//	"verify"
+//	"verify-full"
+//	"somestring"
+//	"="
 //	"some 'quoted' string"
 //	"k"
 //	"="

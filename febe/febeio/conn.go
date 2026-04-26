@@ -40,10 +40,9 @@ func (rw *setErrReadWriter) Write(p []byte) (int, error) {
 
 // NewConn returns a Conn ready for use.
 //
-// The provided reader and writer will be wrapped in a bufio.Reader and
-// bufio.Writer via bufio.NewReaderSize and bufio.NewWriterSize. This means
-// clients may use a buffer size larger than the default by passing
-// bufio.Reader and bufio.Writer.
+// The reader is wrapped in an internal sliding-window buffer, and the writer
+// is wrapped with [bufio.NewWriterSize]. The buffer sizes are fixed; passing
+// a pre-buffered reader or writer does not change them.
 func NewConn(r io.Reader, w io.Writer) *Conn {
 	rw := &setErrReadWriter{r: r, w: w}
 	cn := &Conn{rw: rw}

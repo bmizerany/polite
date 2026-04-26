@@ -37,7 +37,7 @@ type Config struct {
 
 // Dial opens a connection to postgres using the parameters in dsnOrURL,
 // which is a DSN or URL. By default, host=/tmp (Unix socket), port=5432,
-// user=$USER, and sslmode=require.
+// user=$USER, and sslmode=verify-full.
 func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	o, err := dsn.ParseOptions(dsnOrURL)
 	if err != nil {

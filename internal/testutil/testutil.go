@@ -46,8 +46,8 @@ func SloggerFail(t testing.TB) *slog.Logger {
 	return slog.New(failOnERRORHandler{t, slog.NewTextHandler(logWriter{t}, handlerOptions)})
 }
 
-// Slogger returns a logger suitable for use in tests. It logs to t.Logf and
-// will fail if the log level is ERROR.
+// Slogger returns a logger suitable for use in tests. It logs to t.Logf.
+// Use [SloggerFail] if you want ERROR logs to fail the test.
 func Slogger(t testing.TB) *slog.Logger {
 	t.Helper()
 	return slog.New(slog.NewTextHandler(logWriter{t}, handlerOptions))
