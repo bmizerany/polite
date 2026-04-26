@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"blake.io/polite/dsn"
@@ -101,6 +102,34 @@ type Conn struct {
 	// client-initiated Terminate from a backend-initiated one so that
 	// ErrClosed is only reported for the former.
 	closed bool
+
+	// Cancel-watcher plumbing. Per-Query Query spawns watchCancel
+	// (when ctx is cancellable) which races ctx.Done against
+	// cancelStop and either fires cancelQuery or backs off cleanly.
+	// We avoid context.AfterFunc to keep the watcher path zero-alloc:
+	// AfterFunc costs at least one heap closure and an internal node
+	// per registration. The cancelStop and cancelWG fields are reused
+	// across Query calls so spawning the watcher allocates nothing
+	// beyond the goroutine itself.
+	//
+	// cancelStop is buffered (cap 1) so endCancelWatch can signal
+	// non-blockingly even when watchCancel is mid-cancelQuery.
+	cancelStop chan struct{}
+	cancelWG   sync.WaitGroup
+	// cancelCtx is the ctx for the in-flight Query whose watcher is
+	// running. It is set by Query before the watcher observes it and
+	// read only by the watcher; safe because Conn is single-user and
+	// cancelWG forces the watcher to finish before the next Query
+	// mutates the field.
+	cancelCtx context.Context
+
+	// cancelReq is non-nil when a long-lived watcher goroutine
+	// (cancelLoop) is running; Query hands it the next ctx via this
+	// channel. It is started in Dial only when not running under
+	// testing/synctest, since synctest bubbles forbid goroutines from
+	// outliving the bubble. When cancelReq is nil, Query falls back
+	// to spawning a per-call watcher (one heap alloc for `go`).
+	cancelReq chan struct{}
 }
 
 // flushSync writes a Sync and flushes. On success, the backend owes the
@@ -131,12 +160,74 @@ func (c *Conn) readReadyForQuery() error {
 //
 // Close returns the error from closing the underlying connection.
 func (c *Conn) Close() error {
+	if c.closed {
+		return nil
+	}
 	c.closed = true
+	if c.cancelReq != nil {
+		// A Query may still be holding the watcher (e.g. caller
+		// called Close mid-iteration). Wake it so cancelWG.Wait does
+		// not block forever; the watcher's existing endCancelWatch
+		// in the in-flight Query will be a no-op once the Done has
+		// already happened. Then close cancelReq so cancelLoop's
+		// range exits.
+		select {
+		case c.cancelStop <- struct{}{}:
+		default:
+		}
+		c.cancelWG.Wait()
+		close(c.cancelReq)
+	}
 	c.cn.SetDeadline(time.Now().Add(100 * time.Millisecond))
 	defer c.cn.Close()
 	c.fc.WriteTerminate()
 	c.fc.Flush()
 	return c.cn.Close()
+}
+
+// cancelLoop is the long-lived cancel watcher started by Dial in
+// non-synctest mode. For each Query that opts in it receives a wake-up
+// on cancelReq, races c.cancelCtx.Done against cancelStop, and either
+// fires cancelQuery or backs off cleanly. Lives on the Conn and runs
+// until Close terminates it via close(cancelReq); the per-Query Query
+// path then allocates nothing for the watcher.
+func (c *Conn) cancelLoop() {
+	for range c.cancelReq {
+		select {
+		case <-c.cancelCtx.Done():
+			c.cancelQuery()
+		case <-c.cancelStop:
+		}
+		c.cancelWG.Done()
+	}
+}
+
+// watchCancel is the per-Query cancel watcher used in synctest mode,
+// where a long-lived goroutine on Conn is forbidden (the bubble panics
+// on goroutines that outlive it). It is a free function (not a method)
+// so `go watchCancel(c)` lowers to runtime.newproc with the smallest
+// possible gowrap closure.
+func watchCancel(c *Conn) {
+	defer c.cancelWG.Done()
+	select {
+	case <-c.cancelCtx.Done():
+		c.cancelQuery()
+	case <-c.cancelStop:
+	}
+}
+
+// endCancelWatch is the per-Query teardown for the cancel watcher. It
+// is a method (not a closure) so the deferred call in Query is
+// open-coded by the compiler and contributes no per-Query allocation.
+func (c *Conn) endCancelWatch() {
+	// Non-blocking send: if watchCancel is already in cancelQuery the
+	// send fails and we fall through to Wait; watchCancel's Done will
+	// release us once cancelQuery returns.
+	select {
+	case c.cancelStop <- struct{}{}:
+	default:
+	}
+	c.cancelWG.Wait()
 }
 
 // Idle reports whether the connection is ready for the next query: the
@@ -518,6 +609,10 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 			r.err = c.wrapCtxErr(ctx, r.err)
 			return yield(r)
 		}
+		if c.closed {
+			emit(&Row{err: ErrClosed})
+			return
+		}
 		if c.busy {
 			emit(&Row{err: ErrBusy})
 			return
@@ -536,25 +631,40 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 		defer func() { c.busy = false }()
 
 		// Best-effort: a failed cancel just means the query keeps
-		// running until natural completion. If AfterFunc has already
-		// started cancelQuery by the time we stop it, wait for it to
-		// finish so we do not return from Query while a side-connection
-		// CancelRequest is still in flight against this backend.
-		//
-		// Skip the watcher entirely when ctx has no Done channel; with
-		// no possible cancel signal there is nothing to watch, and the
-		// AfterFunc registration alone costs several allocs per call.
+		// running until natural completion. The watcher is the
+		// long-lived cancelLoop goroutine on Conn; we hand it the
+		// ctx and rely on endCancelWatch to release it before Query
+		// returns, so a side-connection CancelRequest cannot outlive
+		// this call. Skip the handoff entirely when ctx has no Done
+		// channel — no possible cancel signal to watch.
 		if ctx.Done() != nil {
-			cancelDone := make(chan struct{})
-			stopCancel := context.AfterFunc(ctx, func() {
-				defer close(cancelDone)
-				c.cancelQuery()
-			})
-			defer func() {
-				if !stopCancel() {
-					<-cancelDone
-				}
-			}()
+			if c.cancelStop == nil {
+				// Synctest fallback: long-lived cancelLoop was not
+				// started in Dial, so allocate per-Conn watcher
+				// state lazily and spawn a per-Query goroutine.
+				c.cancelStop = make(chan struct{}, 1)
+			}
+			// Drain a stale signal left over from the previous Query
+			// whose ctx.Done branch won the race with endCancelWatch's
+			// non-blocking send. Conn is single-user so this drain is
+			// race-free.
+			select {
+			case <-c.cancelStop:
+			default:
+			}
+			c.cancelCtx = ctx
+			c.cancelWG.Add(1)
+			if c.cancelReq != nil {
+				// Production path: wake the long-lived cancelLoop.
+				// Buffered cap-1 send is non-blocking because Conn
+				// is single-user and the previous Query's
+				// endCancelWatch already drained the loop.
+				c.cancelReq <- struct{}{}
+			} else {
+				// Synctest fallback: spawn one watcher per Query.
+				go watchCancel(c)
+			}
+			defer c.endCancelWatch()
 		}
 
 		stmt, err := c.prepare(ctx, "", sql, args...)

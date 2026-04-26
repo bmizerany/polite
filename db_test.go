@@ -188,13 +188,20 @@ func TestQuery(t *testing.T) {
 
 func TestQueryAllocations(t *testing.T) {
 	cn := newSession(t)
-	// Use context.Background() rather than t.Context(): this test
-	// measures steady-state row decoding, not cancel behavior, and the
-	// per-Query cancel watcher only installs when ctx.Done() != nil.
-	ctx := context.Background()
+	// Use t.Context() rather than context.Background() so Query takes
+	// the cancellable path: t.Context() has a non-nil Done channel,
+	// which forces installation of the context.AfterFunc cancel
+	// watcher. In production mode (which this test runs in — Dial
+	// detects synctest via `time.Now() == time.Now()` and starts the
+	// long-lived cancelLoop only outside the bubble) the watcher
+	// path allocates nothing per Query: the loop goroutine, all
+	// channels, and all sync state live on Conn for its lifetime.
+	// Anything above zero is a regression in either the watcher or
+	// row decoding.
+	const watcherAllocs = 0
 	allocs := testing.AllocsPerRun(1000, func() {
 		const q = `SELECT 1, 'two'`
-		for row := range cn.Query(ctx, q) {
+		for row := range cn.Query(t.Context(), q) {
 			if _, err := row.Column(0).DecodeInt(); err != nil {
 				t.Fatal(err)
 			}
@@ -204,8 +211,8 @@ func TestQueryAllocations(t *testing.T) {
 		}
 	})
 
-	if allocs > 0 {
-		t.Errorf("unexpected allocations: %.2f", allocs)
+	if allocs > watcherAllocs {
+		t.Errorf("unexpected allocations: %.2f (watcher budget %d)", allocs, watcherAllocs)
 	}
 }
 

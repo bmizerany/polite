@@ -143,6 +143,18 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Detect testing/synctest mode: inside a bubble the fake clock is
+	// frozen, so two adjacent time.Now() calls return identical values
+	// (monotonic component included). Outside, they always differ.
+	// We avoid spawning a long-lived watcher goroutine under synctest
+	// because the bubble panics on goroutines that outlive it.
+	if !time.Now().Equal(time.Now()) {
+		c.cancelStop = make(chan struct{}, 1)
+		c.cancelReq = make(chan struct{}, 1)
+		go c.cancelLoop()
+	}
+
 	return c, err
 }
 
