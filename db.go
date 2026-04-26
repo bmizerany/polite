@@ -277,7 +277,8 @@ func Notifications(ctx context.Context, cn *Conn) iter.Seq[*febe.Notification] {
 }
 
 // Exec executes a query that is not intended to return rows, such as an
-// INSERT, UPDATE, or DELETE. It returns only an error.
+// INSERT, UPDATE, or DELETE. It returns only an error. Any rows the server
+// does return are still read from the connection and discarded.
 //
 // When a COPY FROM is in progress, calling Exec with an empty sql string sends
 // a single COPY data row encoded from args.
