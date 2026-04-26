@@ -229,12 +229,16 @@ func (c *Conn) Err() error {
 }
 
 // Status reports the backend status from the most recent ReadyForQuery
-// message.
+// message. Before the first ReadyForQuery, after a fatal error, or after
+// [Conn.WriteTerminate], Status returns the zero value, which is not a
+// defined [ReadyStatus].
 func (c *Conn) Status() ReadyStatus {
 	return c.readyStatus
 }
 
-// Flush flushes any buffered writes.
+// Flush flushes any buffered writes. As a special case, a Terminate queued
+// by [Conn.WriteTerminate] is flushed even when the Conn already has a
+// sticky error, so the backend always gets a goodbye when the caller asks.
 func (c *Conn) Flush() error {
 	if c.terminatePending {
 		c.terminatePending = false

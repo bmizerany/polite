@@ -103,17 +103,12 @@ type Error struct {
 	*Notice
 }
 
-// ErrorCode creates an *Error with the given code and empty message.
-// This can be conveniently used to check with errors.Is for specific error
-// codes without needing to construct a full *Error.
-//
-// Example:
+// ErrorCode creates an *Error with the given code and empty message,
+// suitable for matching against a backend error with [errors.Is]:
 //
 //	if errors.Is(err, febe.ErrorCode("23505")) {
 //	    // handle unique violation
 //	}
-//
-// Common errors are defined in the polite package for convenience.
 func ErrorCode(code string) *Error {
 	return &Error{Notice: &Notice{Code: code}}
 }

@@ -7,7 +7,7 @@ import (
 // CopyFormat reports whether COPY data is encoded as text or binary.
 type CopyFormat byte
 
-var (
+const (
 	// CopyFormatText indicates text COPY encoding.
 	CopyFormatText CopyFormat = 0
 
@@ -16,8 +16,8 @@ var (
 )
 
 // String returns c as "text", "binary", or "unknown".
-func (c *CopyFormat) String() string {
-	switch *c {
+func (c CopyFormat) String() string {
+	switch c {
 	case CopyFormatText:
 		return "text"
 	case CopyFormatBinary:
