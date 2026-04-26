@@ -801,13 +801,11 @@ type FieldDescription struct {
 	FormatCode int16
 }
 
-// This is a zero value, so it is safe to use without initialization and
-// values of FieldDescription are comparable (e.g. the underlying memory
-// cannot be changed (without unsafe) by anyone once it is returned from a
-// Read call).
-//
-//lint:ignore SA4000 We're ensuring that FieldDescription is comparable
-var _ = (FieldDescription{}) == (FieldDescription{})
+// FieldDescription is intentionally comparable: callers may use == on
+// values or use them as map keys. The map type below enforces that at
+// compile time — adding an uncomparable field (e.g. a slice) breaks the
+// build instead of silently regressing the contract.
+var _ map[FieldDescription]struct{}
 
 // RowDescriptionResponse is the backend RowDescription message.
 type RowDescriptionResponse struct {
