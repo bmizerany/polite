@@ -1754,6 +1754,116 @@ func TestNotificationsPreservesCallerTrace(t *testing.T) {
 	}
 }
 
+// TestQuerySQLCastPinsParamType probes the user-facing workaround for
+// polite's WriteParse-emits-zero-OIDs design: callers who need a specific
+// parameter type can pin it with a SQL cast in the query text instead of
+// relying on Go-side type carriers.
+//
+// Each subtest exercises one cast pattern end-to-end through Conn.Query
+// and verifies (1) the column type the backend returned and (2) the
+// decoded value. The cases here are the patterns that actually compose
+// with appendArg's encoding rules; cases that don't (e.g. a Go int with
+// $1::int4, or a string with $1::inet) fail because polite encodes the
+// Go value in a wire format that doesn't match the backend's inferred
+// parameter type. Those failures motivate the analysis writeup; this
+// test pins the patterns that DO work today, on current HEAD, with no
+// production code change.
+func TestQuerySQLCastPinsParamType(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	ctx := t.Context()
+
+	t.Run("time.Time pinned to timestamp via $1::timestamp", func(t *testing.T) {
+		// Without a cast, polite/PostgreSQL would infer timestamptz.
+		// The cast forces ParameterDescription to report timestamp,
+		// and appendArg's time.Time branch handles that OID by
+		// stripping the zone (treating the wall-clock fields as UTC).
+		want := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+		const q = `SELECT $1::timestamp`
+
+		var gotType oids.ID
+		var gotTime time.Time
+		rows := 0
+		for row := range cn.Query(ctx, q, want) {
+			rows++
+			gotType = row.Column(0).Type()
+			tt, err := row.Column(0).DecodeTime()
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotTime = tt
+		}
+		if rows != 1 {
+			t.Fatalf("rows = %d; want 1", rows)
+		}
+		if gotType != oids.Timestamp {
+			t.Errorf("column type = %s; want timestamp", gotType)
+		}
+		if !gotTime.Equal(want) {
+			t.Errorf("got %v; want %v", gotTime, want)
+		}
+	})
+
+	t.Run("string pinned to int4 via $1::text::int4", func(t *testing.T) {
+		// The double cast pattern: typing $1 as text first lets polite
+		// send the Go string straight through (binary text is just the
+		// raw bytes), and the inner-to-outer cast is performed
+		// server-side. Without the inner ::text, $1 would infer int4
+		// and polite would send 8 bytes for what the backend expects
+		// to be a 4-byte binary int4 -- failing the bind.
+		const q = `SELECT $1::text::int4`
+
+		var gotType oids.ID
+		var gotVal int64
+		rows := 0
+		for row := range cn.Query(ctx, q, "42") {
+			rows++
+			gotType = row.Column(0).Type()
+			n, err := row.Column(0).DecodeInt()
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotVal = n
+		}
+		if rows != 1 {
+			t.Fatalf("rows = %d; want 1", rows)
+		}
+		if gotType != oids.Int4 {
+			t.Errorf("column type = %s; want int4", gotType)
+		}
+		if gotVal != 42 {
+			t.Errorf("got %d; want 42", gotVal)
+		}
+	})
+
+	t.Run("string pinned to inet via $1::text::inet", func(t *testing.T) {
+		// inet has a non-trivial binary wire format (family/bits/etc.
+		// header bytes followed by address bytes) that a Go string
+		// does not match. Routing through ::text::inet makes the
+		// server parse the textual address; polite's binary string
+		// passthrough is effectively a no-op for the text leg.
+		const q = `SELECT host($1::text::inet)`
+
+		var gotVal string
+		rows := 0
+		for row := range cn.Query(ctx, q, "192.168.1.42") {
+			rows++
+			s, err := row.Column(0).Text()
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotVal = s
+		}
+		if rows != 1 {
+			t.Fatalf("rows = %d; want 1", rows)
+		}
+		if gotVal != "192.168.1.42" {
+			t.Errorf("got %q; want %q", gotVal, "192.168.1.42")
+		}
+	})
+}
+
 var testDSN = cmp.Or(
 	os.Getenv("DATABASE_URL"),
 	"dbname=postgres host=/tmp port=5411 sslmode=disable user=postgres password=postgres",
