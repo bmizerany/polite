@@ -184,7 +184,7 @@ var isWhitespace = [256]bool{
 //
 // A valid DSN looks like this:
 //
-//	host=localhost port=5432 sslmode=verify-full somestring='some \'quoted\' string' k = v
+//	host=localhost port=5432 sslmode=verify-full somestring='quoted token' k = v
 //
 // The following tokens are yielded:
 //
@@ -199,10 +199,15 @@ var isWhitespace = [256]bool{
 //	"verify-full"
 //	"somestring"
 //	"="
-//	"some 'quoted' string"
+//	"'quoted token'"
 //	"k"
 //	"="
 //	"v"
+//
+// Quoted tokens retain their surrounding apostrophes, and any escape
+// sequences (\' or \\) inside them are passed through verbatim;
+// ScanDSN does not unquote or unescape. Callers that need libpq-style
+// values must do that step themselves.
 func ScanDSN(dsn string) iter.Seq2[string, error] {
 	return func(yield func(tok string, err error) bool) {
 		if len(dsn) == 0 {
