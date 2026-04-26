@@ -61,6 +61,11 @@ type Config struct {
 // (case-insensitive) loads the host's system trust roots via
 // [crypto/x509.SystemCertPool]. If sslrootcert is unset, the standard
 // crypto/tls defaults apply.
+//
+// Dial honors ctx through the entire connect path: the dial itself, the
+// TLS handshake, and the startup/auth round-trips. If ctx is canceled
+// mid-handshake, Dial returns ctx.Err(); the partially-opened socket is
+// closed before the call returns.
 func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	o, err := dsn.ParseOptions(dsnOrURL)
 	if err != nil {
@@ -228,11 +233,11 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 		} else {
 			data, err := rootedReadFile(o.SSLRootCert)
 			if err != nil {
-				return nil, fmt.Errorf("postgres: failed to read root certificate: %w", err)
+				return nil, fmt.Errorf("polite: failed to read root certificate: %w", err)
 			}
 			roots := x509.NewCertPool()
 			if !roots.AppendCertsFromPEM(data) {
-				return nil, fmt.Errorf("postgres: failed to parse root certificate")
+				return nil, fmt.Errorf("polite: failed to parse root certificate")
 			}
 			tcfg.RootCAs = roots
 			tcfg.ClientCAs = roots
@@ -244,7 +249,7 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 		tcfg.InsecureSkipVerify = false
 		tcfg.ServerName = o.Host
 	default:
-		return nil, fmt.Errorf("postgres: unsupported sslmode %q", o.SSLMode)
+		return nil, fmt.Errorf("polite: unsupported sslmode %q", o.SSLMode)
 	}
 	return tls.Client(cn, tcfg), nil
 }

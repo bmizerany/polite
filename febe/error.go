@@ -119,7 +119,10 @@ func (e *Notice) AsError() *Error {
 	return &Error{Notice: e}
 }
 
-// Error returns the backend message prefixed for use as an error string.
+// Error returns the backend message prefixed with "postgres: ". An *Error
+// constructed via [ErrorCode] for use as an [errors.Is] target carries no
+// message and renders as the bare prefix; that form is intended for code
+// matching, not for surfacing to users.
 func (e *Error) Error() string {
 	var b strings.Builder
 	b.WriteString("postgres: ")

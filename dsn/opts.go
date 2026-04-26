@@ -74,9 +74,16 @@ func setDefaults(o *Options) error {
 	return nil
 }
 
-// ParseOptions parses a DSN or URL string into an Options struct. The defaults are:
+// ParseOptions parses a connection string into an [Options] struct. It
+// accepts either a libpq-style DSN ("host=… port=… …") or a URL with the
+// "postgres" or "postgresql" scheme; ParseOptions auto-detects the form
+// by trying [net/url.Parse] first and falling back to the DSN scanner.
+// Any URL query parameter that is not "sslmode" or "sslrootcert" is
+// passed through unchanged in [Options.Extra].
 //
-//	dbname=postgres user=$USER host=/tmp port=5432 sslmode=verify-full
+// Missing fields are filled in with these defaults:
+//
+//	dbname=postgres user=<current OS user> host=/tmp port=5432 sslmode=verify-full
 func ParseOptions(dsn string) (*Options, error) {
 	o := &Options{}
 	defer setDefaults(o)

@@ -586,6 +586,10 @@ func (c *Conn) prepareStmt(ctx context.Context, sql string) (*statement, error) 
 //
 // When COPY FROM enters copy mode, Query yields a [Row] whose columns
 // report [ErrCopyFrom].
+//
+// When [Config.Now] is set, Query updates the per-connection clock by
+// running an internal SET before sending sql. If that SET fails, Query
+// yields a single Row carrying the failure and stops without sending sql.
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
 	return func(yield func(*Row) bool) {
 		emit := func(r *Row) bool {
