@@ -68,9 +68,15 @@
 //
 // # COPY
 //
-// Query supports COPY TO and COPY FROM in PostgreSQL's binary
-// format. See [Column] for details on reading that format and
-// [Conn.Query] for examples.
+// Query supports COPY TO and COPY FROM in PostgreSQL's binary format;
+// text COPY returns [ErrCopyFormat]. COPY FROM is entered through
+// Query: while the iterator yields rows whose columns report
+// [ErrCopyFrom], send each data row with [Conn.Exec] using an empty SQL
+// string and the row's column values as arguments. A nil argument is
+// sent as SQL NULL.
+//
+// See [Column] for details on reading binary values and [Conn.Query]
+// for examples.
 //
 // # Errors
 //

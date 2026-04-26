@@ -28,7 +28,7 @@ var (
 	ErrTLSRefused     = errors.New("polite: TLS refused by backend")
 	ErrCopyFormat     = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
 	ErrCopyFrom       = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
-	ErrBusy           = errors.New("polite: a Query range is active; complete or break it before calling Exec")
+	ErrBusy           = errors.New("polite: a Query range is active; complete or break it before calling Query or Exec")
 	ErrClosed         = errors.New("polite: closed")
 	ErrTooManyWaiters = errors.New("polite: pool: too many waiters")
 )
@@ -50,6 +50,8 @@ type statement struct {
 // Conn prepares SQL on first use and caches up to a fixed number of prepared
 // statements per connection by exact SQL text, evicting older entries when
 // the cache is full. Calls with the same SQL reuse the cached statement.
+// Server-side prepared statements created for evicted entries are not freed
+// until the connection closes.
 //
 // This statement cache is used by [Conn.Query] and [Conn.Exec].
 //
@@ -568,9 +570,15 @@ func (c *Conn) prepareStmt(ctx context.Context, sql string) (*statement, error) 
 // Each yielded [Row] carries either column data or an error. Errors are
 // surfaced through [Column] methods: calling [Column.Bytes], [Column.Text],
 // [Column.DecodeInt], [Column.DecodeFloat], or [Column.DecodeTime] on a
-// column from an error row returns the underlying error. Use
-// [Row.Column](0).[Column.Bytes]() as the canonical zero-allocation error
-// check.
+// column from an error row returns the underlying error. Reading column 0
+// with [Column.Bytes] is the canonical zero-allocation error check:
+//
+//	for row := range cn.Query(ctx, sql) {
+//		if _, err := row.Column(0).Bytes(); err != nil {
+//			return err
+//		}
+//		// ... read remaining columns ...
+//	}
 //
 // A Query range is active until the loop ends or the caller breaks. While a
 // range is active, further calls to [Conn.Query] or [Conn.Exec] on the same
@@ -692,6 +700,10 @@ func (c *Conn) execAndSync(portal string) error {
 // all of them. A row may carry an error instead of data; the error surfaces
 // through the [Column] decoders. Columns borrow the row's storage and are
 // valid only while that row is current.
+//
+// Row values are reused across iterations on the same Conn. A *Row stashed
+// past the next iteration will see the next row's data, not the original.
+// Copy out anything you need before yielding to the next row.
 type Row struct {
 	data    []byte
 	columns []Column
