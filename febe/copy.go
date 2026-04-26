@@ -94,10 +94,11 @@ const (
 
 // WriteCopyDataRow writes one CopyData message.
 //
-// Each value is encoded as a non-NULL field preceded by its length. If
-// includeHeader is true, the binary COPY header is written before the row
-// data. If values is empty, WriteCopyDataRow writes the binary COPY end
-// marker instead of a row.
+// Each value is preceded by its length. A nil slice is written as the SQL
+// NULL marker (length -1); a non-nil empty slice is written as a zero-
+// length value of the column's type. If includeHeader is true, the binary
+// COPY header is written before the row data. If values is empty,
+// WriteCopyDataRow writes the binary COPY end marker instead of a row.
 func (c *Conn) WriteCopyDataRow(values [][]byte, includeHeader bool) error {
 	var s sizer
 	s.addInt32() // length
@@ -109,7 +110,9 @@ func (c *Conn) WriteCopyDataRow(values [][]byte, includeHeader bool) error {
 	s.addInt16() // column count
 	for _, v := range values {
 		s.addInt32() // length
-		s.addBytes(len(v))
+		if v != nil {
+			s.addBytes(len(v))
+		}
 	}
 
 	c.c.WriteByte('d')
@@ -128,6 +131,10 @@ func (c *Conn) WriteCopyDataRow(values [][]byte, includeHeader bool) error {
 	} else {
 		c.c.WriteInt16(int16(len(values)))
 		for _, v := range values {
+			if v == nil {
+				c.c.WriteInt32(-1)
+				continue
+			}
 			c.c.WriteInt32(int32(len(v)))
 			c.c.Write(v)
 		}

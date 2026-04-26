@@ -320,6 +320,55 @@ func TestCopyFrom(t *testing.T) {
 	checkReady(t, cn)
 }
 
+func TestCopyFromNull(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+
+	err := cn.Exec(ctx, "CREATE TEMP TABLE foo (id INT, name TEXT)")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for row := range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
+		_, err = row.Column(0).Bytes()
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("column error = %v, want ErrCopyFrom", err)
+		}
+		// Send a row with NULL id and a non-NULL name.
+		if err := cn.Exec(ctx, "", nil, "qux"); err != nil {
+			t.Fatal(err)
+		}
+		// Send a row with a non-NULL id and NULL name.
+		if err := cn.Exec(ctx, "", int32(5), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// NULL columns arrive as nil from Bytes, distinct from a zero-length
+	// empty value.
+	var got [][2][]byte
+	for row := range cn.Query(ctx, "SELECT id, name FROM foo ORDER BY id NULLS FIRST") {
+		idBytes, err := row.Column(0).Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		nameBytes, err := row.Column(1).Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, [2][]byte{append([]byte(nil), idBytes...), append([]byte(nil), nameBytes...)})
+	}
+	want := [][2][]byte{
+		{nil, []byte("qux")},        // id is NULL
+		{[]byte("\x00\x00\x00\x05"), nil}, // name is NULL
+	}
+	diff.Test(t, t.Errorf, got, want)
+
+	checkReady(t, cn)
+}
+
 func TestCopyFromBreakBeforeSend(t *testing.T) {
 	t.Parallel()
 

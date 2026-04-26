@@ -105,3 +105,30 @@ func TestCopyData(t *testing.T) {
 		t.Fatalf("ReadHeader() = %v; want error", h)
 	}
 }
+
+// TestWriteCopyDataRowNull verifies a nil [][]byte entry is sent as the
+// PostgreSQL binary-COPY NULL marker (length -1) rather than a zero-length
+// non-NULL value.
+func TestWriteCopyDataRowNull(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(nil, &b)
+
+	if err := cn.WriteCopyDataRow([][]byte{nil, []byte("ok"), {}}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := b.Bytes()
+	want := bytes.Buffer{}
+	want.WriteByte('d')
+	// length: 4 (self) + 2 (col count) + 4 (col0 len) + 4 (col1 len) + 2 (col1 data) + 4 (col2 len)
+	want.Write([]byte{0, 0, 0, 20})
+	want.Write([]byte{0, 3})              // 3 columns
+	want.Write([]byte{0xff, 0xff, 0xff, 0xff}) // col0: NULL (-1)
+	want.Write([]byte{0, 0, 0, 2, 'o', 'k'})   // col1: "ok"
+	want.Write([]byte{0, 0, 0, 0})             // col2: zero-length non-NULL
+
+	diff.Test(t, t.Errorf, got, want.Bytes())
+}
