@@ -119,4 +119,10 @@
 // PostgreSQL's default time behavior unchanged. This is useful in tests,
 // including tests run under testing/synctest, because SQL that calls those
 // functions can observe the same clock as the Go test.
+//
+// The override is implemented by creating SQL functions in a "polite"
+// schema and prepending that schema to the connection's search_path.
+// Tests that read pg_proc or inspect the search_path will see those
+// functions; the original PostgreSQL versions remain reachable via their
+// fully qualified names (e.g. pg_catalog.now()).
 package polite

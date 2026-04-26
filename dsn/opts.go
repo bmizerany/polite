@@ -14,21 +14,40 @@ import (
 	"slices"
 )
 
+// Options is a parsed connection string. Zero-valued fields are filled in
+// with defaults by [ParseOptions].
 type Options struct {
+	// Host is the server host (a hostname, an IP address, or an absolute
+	// path for a Unix socket directory).
 	Host string
+
+	// Port is the TCP port or, for Unix sockets, the suffix appended to
+	// the .s.PGSQL. socket file in Host.
 	Port string
 
-	User     string // also included in Extra
+	// User is the PostgreSQL role to authenticate as. It is also placed
+	// into Extra under the "user" key for the startup message.
+	User string
+
+	// Password is used for password-based authentication (cleartext or
+	// SCRAM); it is never sent for trust or peer auth.
 	Password string
 
-	Database string // also included in Extra
+	// Database is the database name. It is also placed into Extra under
+	// the "database" key for the startup message.
+	Database string
 
-	SSLMode     string
+	// SSLMode selects the TLS policy: "disable", "require", or
+	// "verify-full" (and "" as an alias for "verify-full"). See
+	// [blake.io/polite.Dial] for the exact semantics.
+	SSLMode string
+
+	// SSLRootCert is a PEM file path or the special string "system",
+	// which loads the host's system trust roots.
 	SSLRootCert string
 
-	// Extra holds extra options that are not parsed or interpreted by this
-	// package. They are passed to postgres as-is and so should be in
-	// key=value form.
+	// Extra holds the remaining startup parameters in "key=value" form,
+	// passed through to PostgreSQL unchanged.
 	Extra []string
 }
 
