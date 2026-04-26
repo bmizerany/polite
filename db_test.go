@@ -186,42 +186,47 @@ func TestQuery(t *testing.T) {
 	}
 }
 
+// TestQueryAllocations asserts Query is allocation-free in steady
+// state, both with and without a cancellable ctx. The with-cancel
+// variant exercises the cancel watcher path (long-lived cancelLoop
+// goroutine in production mode); the without-cancel variant exercises
+// the fast path that skips the watcher entirely. Both must stay at
+// zero — any regression points at either the watcher or row decoding.
 func TestQueryAllocations(t *testing.T) {
-	cn := newSession(t)
-	// Use t.Context() rather than context.Background() so Query takes
-	// the cancellable path: t.Context() has a non-nil Done channel,
-	// which forces installation of the context.AfterFunc cancel
-	// watcher. In production mode (which this test runs in — Dial
-	// detects synctest via `time.Now() == time.Now()` and starts the
-	// long-lived cancelLoop only outside the bubble) the watcher
-	// path allocates nothing per Query: the loop goroutine, all
-	// channels, and all sync state live on Conn for its lifetime.
-	// Anything above zero is a regression in either the watcher or
-	// row decoding.
-	const watcherAllocs = 0
-	allocs := testing.AllocsPerRun(1000, func() {
-		const q = `SELECT 1, 'two'`
-		for row := range cn.Query(t.Context(), q) {
-			if _, err := row.Column(0).DecodeInt(); err != nil {
-				t.Fatal(err)
+	check := func(t *testing.T, ctx context.Context) {
+		t.Helper()
+		cn := newSession(t)
+		allocs := testing.AllocsPerRun(1000, func() {
+			const q = `SELECT 1, 'two'`
+			for row := range cn.Query(ctx, q) {
+				if _, err := row.Column(0).DecodeInt(); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := row.Column(1).Text(); err != nil {
+					t.Fatal(err)
+				}
 			}
-			if _, err := row.Column(1).Text(); err != nil {
-				t.Fatal(err)
-			}
+		})
+		if allocs > 0 {
+			t.Errorf("unexpected allocations: %.2f", allocs)
 		}
-	})
-
-	if allocs > watcherAllocs {
-		t.Errorf("unexpected allocations: %.2f (watcher budget %d)", allocs, watcherAllocs)
 	}
+
+	t.Run("with_cancel", func(t *testing.T) { check(t, t.Context()) })
+	t.Run("without_cancel", func(t *testing.T) { check(t, context.Background()) })
 }
 
 func BenchmarkQueryAllocations(b *testing.B) {
+	b.ReportAllocs()
+
 	cn := newSession(b)
 	ctx := b.Context()
 
-	run := func() {
-		const q = `SELECT 1, 'two'`
+	const q = `SELECT 1, 'two'`
+
+	cn.Exec(ctx, q) // warmup
+
+	for b.Loop() {
 		for row := range cn.Query(ctx, q) {
 			if _, err := row.Column(0).DecodeInt(); err != nil {
 				b.Fatal(err)
@@ -230,13 +235,6 @@ func BenchmarkQueryAllocations(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
-	}
-
-	run()
-
-	b.ReportAllocs()
-	for b.Loop() {
-		run()
 	}
 }
 
