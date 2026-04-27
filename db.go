@@ -975,6 +975,10 @@ func (c *Conn) nextRow(ctx context.Context, fields []febe.FieldDescription) (*Ro
 				return nil, ErrCopyFormat
 			}
 			c.copyOutHeaderPending = true
+			// NumCols in CopyOutResponse is advisory: CTEs and other
+			// constructs can report a width that does not match the
+			// rows that follow, so we capture it but do not treat a
+			// mismatch on 'D' rows as fatal.
 			c.copyOutNumCols = m.NumCols
 		case 'G':
 			m, err := c.fc.ReadCopyIn()
