@@ -134,10 +134,16 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 	}
 }
 
-// Close closes the pool and its idle connections. In-use connections are
-// left to the caller. After Close, Get returns [ErrClosed]; waiters
-// already blocked in Get wake with the same error. Put closes any
-// connection handed back.
+// Close closes the pool and every idle connection in it. After Close,
+// [Pool.Get] returns [ErrClosed], and waiters already blocked in Get
+// wake with the same error. Connections checked out via Get keep
+// running and are the caller's to use; [Pool.Put] closes them when
+// they come back rather than returning them to the pool.
+//
+// Close does not wait for in-flight operations, checked-out
+// connections, or the [Pool.Dial] retry loop to unwind, and returns
+// once it has signaled the closure and drained the idle set. The first
+// call returns nil; subsequent calls return [context.Canceled].
 //
 // As a known limitation, an open attempt already in flight when Close
 // runs may complete after Close returns and leak its connection,
