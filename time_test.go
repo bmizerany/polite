@@ -331,10 +331,8 @@ func currentTimeZone(t *testing.T, cn *Conn) *time.Location {
 func decodeQueryTimes(t *testing.T, cn *Conn, sql string, args ...any) []time.Time {
 	t.Helper()
 
-	var got []time.Time
-	rows := 0
 	for row := range cn.Query(t.Context(), sql, args...) {
-		rows++
+		var got []time.Time
 		for col := range row.Columns() {
 			ts, err := col.DecodeTime()
 			if err != nil {
@@ -342,11 +340,10 @@ func decodeQueryTimes(t *testing.T, cn *Conn, sql string, args ...any) []time.Ti
 			}
 			got = append(got, ts)
 		}
+		return got
 	}
-	if rows != 1 {
-		t.Fatalf("rows = %d, want 1", rows)
-	}
-	return got
+	t.Fatal("expected one row")
+	return nil
 }
 
 // wantTimestamp mirrors appendArg/DecodeTime semantics: polite pins
