@@ -267,19 +267,17 @@ func TestDecodeTimeRejectsUnsupportedValues(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			cn := newSession(t)
-			ctx := t.Context()
-			rows := 0
-			for row := range cn.Query(ctx, tt.sql) {
-				rows++
-				if _, err := row.Column(0).DecodeTime(); err == nil {
+			for row := range cn.Query(t.Context(), tt.sql) {
+				_, err := row.Column(0).DecodeTime()
+				if err == nil {
 					t.Fatalf("DecodeTime() error = nil for %s", tt.sql)
-				} else if !strings.Contains(err.Error(), tt.wantErr) {
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("DecodeTime() error = %q, want substring %q", err, tt.wantErr)
 				}
+				return
 			}
-			if rows != 1 {
-				t.Fatalf("rows = %d, want 1", rows)
-			}
+			t.Fatal("expected one row")
 		})
 	}
 }
