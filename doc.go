@@ -60,12 +60,23 @@
 // directly; for types without a built-in decoder, call [Column.Bytes] and
 // decode the wire bytes yourself. Raw column bytes refer to storage owned by
 // the current row and remain valid only until the next row is determined.
-// A SQL NULL is reported by [Column.Bytes] as a nil slice with a nil error.
 //
 // Rows reuse storage across iterations. In steady-state query paths, that lets
 // polite avoid per-row allocation. The same column metadata also makes it
 // straightforward to fill Go structs by matching column names in a single
 // pass, without reflection or per-row lookup tables.
+//
+// # NULL
+//
+// [Column.Bytes] reports SQL NULL as a nil slice with a nil error;
+// a non-null empty value returns a non-nil zero-length slice. The
+// typed decoders treat NULL as an error, because their return types
+// cannot represent "missing."
+//
+// NULL often goes away in the query. COALESCE supplies a default,
+// NULLIF reverses it, and IS NOT NULL filters at the source.
+// Pushing the question to PostgreSQL is usually clearer than a
+// client-side branch.
 //
 // # COPY
 //
