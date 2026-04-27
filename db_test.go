@@ -1102,7 +1102,6 @@ func TestEncodeArg(t *testing.T) {
 	}
 }
 
-
 func TestQueryExtendedMixedArguments(t *testing.T) {
 	t.Parallel()
 
@@ -1768,6 +1767,52 @@ func TestNotificationsPreservesCallerTrace(t *testing.T) {
 	if want := []string{"hi"}; !slices.Equal(got, want) {
 		t.Fatalf("caller trace got = %q; want %q", got, want)
 	}
+}
+
+// TestNotificationsInsideQueryYieldsNothing verifies that calling
+// Notifications from inside an active Conn.Query range body observes
+// the busy guard and returns immediately without yielding.
+func TestNotificationsInsideQueryYieldsNothing(t *testing.T) {
+	listener := newSession(t)
+	notifier := newSession(t)
+
+	listener.Exec(t.Context(), "LISTEN test_busy_q_in_n")
+	notifier.Exec(t.Context(), "NOTIFY test_busy_q_in_n, 'ping'")
+
+	for row := range listener.Query(t.Context(), "SELECT 1") {
+		if _, err := row.Column(0).Bytes(); err != nil {
+			t.Fatal(err)
+		}
+		for range Notifications(t.Context(), listener) {
+			t.Error("unexpected notification yielded inside Query")
+		}
+		return // success
+	}
+
+	t.Fatal("expected to receive row")
+}
+
+// TestQueryInsideNotificationsErrBusy verifies that calling Conn.Query
+// from inside an active Notifications range body returns ErrBusy via
+// the standard Row(0).Bytes() error path, leaving the wire untouched.
+func TestQueryInsideNotificationsErrBusy(t *testing.T) {
+	listener := newSession(t)
+	notifier := newSession(t)
+
+	listener.Exec(t.Context(), "LISTEN test_busy_n_in_q")
+	notifier.Exec(t.Context(), "NOTIFY test_busy_n_in_q, 'ping'")
+
+	for range Notifications(t.Context(), listener) {
+		for row := range listener.Query(t.Context(), "SELECT 1") {
+			_, err := row.Column(0).Bytes()
+			if !errors.Is(err, ErrBusy) {
+				t.Errorf("Query inside Notifications: err = %v; want ErrBusy", err)
+			}
+		}
+		return // success
+	}
+
+	t.Fatal("expected to receive notification")
 }
 
 // TestQuerySQLCastPinsParamType verifies that polite pins each argument's

@@ -257,6 +257,12 @@ func (c *Conn) Idle() bool {
 // side. To distinguish them, attach a [febe.Trace] with a ReceivedError
 // callback via [febe.WithTrace].
 //
+// While a Notifications range is active, further calls to [Conn.Query] or
+// [Conn.Exec] on the same Conn return [ErrBusy]; end the range before
+// calling either again. Calling Notifications on a Conn that is already
+// busy yields nothing and returns immediately, leaving the in-flight
+// activity untouched.
+//
 // Typical usage with LISTEN:
 //
 //	cn.Exec(ctx, "LISTEN chat")
@@ -265,6 +271,11 @@ func (c *Conn) Idle() bool {
 //	}
 func Notifications(ctx context.Context, cn *Conn) iter.Seq[*febe.Notification] {
 	return func(yield func(*febe.Notification) bool) {
+		if cn.busy {
+			return
+		}
+		cn.busy = true
+		defer func() { cn.busy = false }()
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		// Preserve any caller-installed Trace by copying it and chaining
