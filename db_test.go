@@ -176,7 +176,7 @@ func TestQuery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			v2, err := row.Column(2).Text()
+			v2, err := row.Column(2).DecodeText()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -207,7 +207,7 @@ func TestQueryAllocations(t *testing.T) {
 				if _, err := row.Column(0).DecodeInt(); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := row.Column(1).Text(); err != nil {
+				if _, err := row.Column(1).DecodeText(); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -424,7 +424,7 @@ func TestQueryExtended(t *testing.T) {
 	`
 	var got []string
 	for row := range cn.Query(t.Context(), q, "hello", "world") {
-		v, err := row.Column(0).Text()
+		v, err := row.Column(0).DecodeText()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -536,7 +536,7 @@ func TestRowColumn(t *testing.T) {
 		for row := range cn.Query(t.Context(), `SELECT 11::int4, 'two'::text`) {
 
 			col := row.Column(1)
-			s, err := col.Text()
+			s, err := col.DecodeText()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -717,7 +717,7 @@ func TestDecodeNull(t *testing.T) {
 		t.Fatal("expected 1 row")
 	})
 	t.Run("Text", func(t *testing.T) {
-		testDecodeNull(t, cn, `SELECT NULL::text`, Column.Text, "", "")
+		testDecodeNull(t, cn, `SELECT NULL::text`, Column.DecodeText, "", "")
 	})
 	t.Run("DecodeInt", func(t *testing.T) {
 		testDecodeNull(t, cn, `SELECT NULL::int4`, Column.DecodeInt, int64(0), "invalid length")
@@ -1127,7 +1127,7 @@ func TestQueryExtendedMixedArguments(t *testing.T) {
 	var gotFloat []byte
 	for row := range cn.Query(t.Context(), q, "hello", []byte("world"), in, uint(42), float64(3.5)) {
 		var err error
-		gotText, err = row.Column(0).Text()
+		gotText, err = row.Column(0).DecodeText()
 		check(err, nil)
 		gotBytes, err = row.Column(1).Bytes()
 		check(err, nil)
@@ -1271,7 +1271,7 @@ func TestQueryCacheHitAfterError(t *testing.T) {
 
 	// Run a parameterized query and verify the result.
 	for row := range cn.Query(ctx, "SELECT $1::text", "hello") {
-		got, err := row.Column(0).Text()
+		got, err := row.Column(0).DecodeText()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1287,7 +1287,7 @@ func TestQueryCacheHitAfterError(t *testing.T) {
 	// The cached statement from the first run must still work after
 	// error recovery on an unrelated query.
 	for row := range cn.Query(ctx, "SELECT $1::text", "world") {
-		got, err := row.Column(0).Text()
+		got, err := row.Column(0).DecodeText()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1845,7 +1845,7 @@ func TestQuerySQLCastPinsParamType(t *testing.T) {
 		const q = `SELECT host($1::inet)`
 
 		for row := range cn.Query(t.Context(), q, "192.168.1.42") {
-			if s, _ := row.Column(0).Text(); s != "192.168.1.42" {
+			if s, _ := row.Column(0).DecodeText(); s != "192.168.1.42" {
 				t.Errorf("got %q; want %q", s, "192.168.1.42")
 			}
 

@@ -313,7 +313,7 @@ func currentTimeZone(t *testing.T, cn *Conn) *time.Location {
 	t.Helper()
 
 	for row := range cn.Query(t.Context(), `SHOW TimeZone`) {
-		tz, err := row.Column(0).Text()
+		tz, err := row.Column(0).DecodeText()
 		if err != nil {
 			t.Fatal(err)
 		}

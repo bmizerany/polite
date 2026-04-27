@@ -604,7 +604,7 @@ func (c *Conn) prepareStmt(ctx context.Context, sql string, paramOIDs []oids.ID)
 
 // Query executes sql and returns an iterator over its result rows.
 // Each yielded [Row] carries either column data or an error. Errors are
-// surfaced through [Column] methods: calling [Column.Bytes], [Column.Text],
+// surfaced through [Column] methods: calling [Column.Bytes], [Column.DecodeText],
 // [Column.DecodeInt], [Column.DecodeFloat], or [Column.DecodeTime] on a
 // column from an error row returns the underlying error. Reading column 0
 // with [Column.Bytes] is the canonical zero-allocation error check:
@@ -823,13 +823,13 @@ func (c Column) Bytes() ([]byte, error) {
 	return c.data, nil
 }
 
-// Text returns the column bytes as a string. Unlike [Column.Bytes], the
+// DecodeText returns the column bytes as a string. Unlike [Column.Bytes], the
 // returned string is a copy and remains valid after the row advances.
 //
 // SQL NULL is returned as ("", nil) — indistinguishable from an
 // empty string column. The package's "NULL" section covers the
 // rationale and the SQL-side alternatives.
-func (c Column) Text() (string, error) {
+func (c Column) DecodeText() (string, error) {
 	if c.err != nil {
 		return "", c.err
 	}

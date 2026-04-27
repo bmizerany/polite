@@ -49,9 +49,9 @@ func ExampleRow_Columns() {
 			case "id":
 				address.ID, _ = col.DecodeInt()
 			case "street":
-				address.Street, _ = col.Text()
+				address.Street, _ = col.DecodeText()
 			case "city":
-				address.City, _ = col.Text()
+				address.City, _ = col.DecodeText()
 			}
 		}
 		fmt.Printf("%#v\n", address)
@@ -118,8 +118,8 @@ func ExampleRow_Column() {
 			City   string
 		}
 		address.ID, _ = row.Column(0).DecodeInt()
-		address.Street, _ = row.Column(1).Text()
-		address.City, _ = row.Column(2).Text()
+		address.Street, _ = row.Column(1).DecodeText()
+		address.City, _ = row.Column(2).DecodeText()
 		fmt.Printf("%#v\n", address)
 	}
 }
@@ -140,7 +140,7 @@ func ExampleConn_Query_copyTo() {
 	)
 	for row := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
 		id, _ = row.Column(0).DecodeInt()
-		name, _ = row.Column(1).Text()
+		name, _ = row.Column(1).DecodeText()
 		fmt.Println(id, name)
 	}
 }
@@ -202,7 +202,7 @@ func ExampleConn_Query_sqlCast() {
 
 	// Go int -> text.
 	for row := range cn.Query(ctx, `SELECT $1::text`, 42) {
-		s, _ := row.Column(0).Text()
+		s, _ := row.Column(0).DecodeText()
 		fmt.Println(s)
 	}
 

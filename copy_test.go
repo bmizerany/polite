@@ -29,7 +29,7 @@ func TestCopyFreestyle(t *testing.T) {
 		if g != 1 {
 			t.Fatalf("id = %v, want 1", g)
 		}
-		if g, err := row.Column(1).Text(); err != nil {
+		if g, err := row.Column(1).DecodeText(); err != nil {
 			t.Fatal(err)
 		} else if g != "foo" {
 			t.Fatalf("name = %q, want 'foo'", g)
@@ -306,7 +306,7 @@ func TestCopyFrom(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		g.Name, err = row.Column(1).Text()
+		g.Name, err = row.Column(1).DecodeText()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -362,7 +362,7 @@ func TestCopyFromNull(t *testing.T) {
 		got = append(got, [2][]byte{append([]byte(nil), idBytes...), append([]byte(nil), nameBytes...)})
 	}
 	want := [][2][]byte{
-		{nil, []byte("qux")},        // id is NULL
+		{nil, []byte("qux")},              // id is NULL
 		{[]byte("\x00\x00\x00\x05"), nil}, // name is NULL
 	}
 	diff.Test(t, t.Errorf, got, want)
