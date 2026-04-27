@@ -190,7 +190,7 @@ func TestParseOptions(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.dsn, func(t *testing.T) {
-			got, err := ParseOptions(tt.dsn)
+			got, err := Parse(tt.dsn)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -213,7 +213,7 @@ func TestURIUnsupportedScheme(t *testing.T) {
 	}
 	for _, dsn := range cases {
 		t.Run(dsn, func(t *testing.T) {
-			_, err := ParseOptions(dsn)
+			_, err := Parse(dsn)
 			if err == nil {
 				t.Fatal("expected error")
 			}

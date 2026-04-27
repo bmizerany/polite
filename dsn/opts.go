@@ -15,7 +15,7 @@ import (
 )
 
 // Options is a parsed connection string. Zero-valued fields are filled in
-// with defaults by [ParseOptions].
+// with defaults by [Parse].
 type Options struct {
 	// Host is the server host (a hostname, an IP address, or an absolute
 	// path for a Unix socket directory).
@@ -74,9 +74,9 @@ func setDefaults(o *Options) error {
 	return nil
 }
 
-// ParseOptions parses a connection string into an [Options] struct. It
+// Parse parses a connection string into an [Options] struct. It
 // accepts either a libpq-style DSN ("host=… port=… …") or a URL with the
-// "postgres" or "postgresql" scheme; ParseOptions auto-detects the form
+// "postgres" or "postgresql" scheme; Parse auto-detects the form
 // by trying [net/url.Parse] first and falling back to the DSN scanner.
 // Any URL query parameter that is not "sslmode" or "sslrootcert" is
 // passed through unchanged in [Options.Extra].
@@ -84,7 +84,7 @@ func setDefaults(o *Options) error {
 // Missing fields are filled in with these defaults:
 //
 //	dbname=postgres user=<current OS user> host=/tmp port=5432 sslmode=verify-full
-func ParseOptions(dsn string) (*Options, error) {
+func Parse(dsn string) (*Options, error) {
 	o := &Options{}
 	defer setDefaults(o)
 

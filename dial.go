@@ -67,7 +67,7 @@ type Config struct {
 // mid-handshake, Dial returns ctx.Err(); the partially-opened socket is
 // closed before the call returns.
 func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
-	o, err := dsn.ParseOptions(dsnOrURL)
+	o, err := dsn.Parse(dsnOrURL)
 	if err != nil {
 		return nil, err
 	}
