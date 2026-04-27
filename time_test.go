@@ -231,26 +231,19 @@ func TestDecodeTimeFromPostgres(t *testing.T) {
 }
 
 func TestDecodeTimeHandlesNegativeRemainder(t *testing.T) {
-	t.Parallel()
-
 	cn := newSession(t)
 
-	var got time.Time
-	rows := 0
 	for row := range cn.Query(t.Context(), `SELECT TIMESTAMPTZ '1999-12-31 23:59:59.999999+00'`) {
-		rows++
-		var err error
-		got, err = row.Column(0).DecodeTime()
+		got, err := row.Column(0).DecodeTime()
 		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	if rows != 1 {
-		t.Fatalf("rows = %d, want 1", rows)
+		want := time.Date(1999, 12, 31, 23, 59, 59, 999999000, time.UTC)
+		diff.Test(t, t.Errorf, got, want)
+		return // success
 	}
 
-	want := time.Date(1999, 12, 31, 23, 59, 59, 999999000, time.UTC)
-	diff.Test(t, t.Errorf, got, want)
+	t.Fatal("expected one row")
 }
 
 func TestDecodeTimeRejectsUnsupportedValues(t *testing.T) {
