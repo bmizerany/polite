@@ -218,6 +218,33 @@ func ExampleConn_Query_sqlCast() {
 	}
 }
 
+// NULL columns are detected by the contract on Column.Bytes: a SQL
+// NULL returns a nil slice with a nil error; a non-NULL value
+// returns a non-nil slice. The error must be checked first; only
+// then does b == nil mean NULL.
+//
+// This example handles the error explicitly because the error is
+// what distinguishes NULL from "could not read."
+func ExampleColumn_Bytes_nullCheck() {
+	ctx := context.Background()
+	cn, _ := polite.Dial(ctx, "", nil)
+	defer cn.Close()
+
+	for row := range cn.Query(ctx, "SELECT n FROM t WHERE id = $1", 42) {
+		col := row.Column(0)
+		b, err := col.Bytes()
+		if err != nil {
+			panic(err)
+		}
+		if b == nil {
+			fmt.Println("NULL")
+			continue
+		}
+		n, _ := col.DecodeInt() // bytes confirmed non-nil
+		fmt.Println(n)
+	}
+}
+
 func ExamplePool_Get() {
 	ctx := context.Background()
 
