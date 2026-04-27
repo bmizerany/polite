@@ -20,12 +20,8 @@ const (
 	DefaultDSN = "dbname=postgres host=localhost port=5432 sslmode=verify-full"
 )
 
-// Pool is a pool of connections. It is safe for concurrent use by multiple
-// goroutines.
-//
-// Concurrent [Pool.Get] callers are served in FIFO order to avoid starvation.
-// Each waiter receives the most recently returned connection, preserving warm
-// per-connection state such as prepared statements.
+// Pool is a pool of connections, safe for concurrent use by multiple
+// goroutines. See the package documentation for the scheduling discipline.
 //
 // [Pool.Get] prefers an idle connection that is already in the pool over
 // dialing or waiting for a new one, handing the caller a warm connection

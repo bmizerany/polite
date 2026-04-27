@@ -192,6 +192,41 @@
 // [Pool.Dial] for the retry contract and [Pool.Logger] for redirecting or
 // silencing the retry warnings.
 //
+// # Pool scheduling
+//
+// A pool has two queues: waiters blocked in [Pool.Get] and idle
+// connections waiting to be handed out. Polite serves waiters in FIFO
+// order and idle connections in LIFO order. The asymmetry is
+// deliberate.
+//
+//   - Bounded waiter latency. Under FIFO, the kth queued waiter is
+//     served after at most k/μ time, where μ is the rate at which
+//     [Pool.Put] returns connections to the idle set. Under LIFO no
+//     such bound exists: sustained overload keeps new arrivals on top
+//     of the stack and the early waiter never reaches the front.
+//
+//   - Concentrated reuse. Let N be the maximum pool size, λ the
+//     arrival rate of [Pool.Get] calls, D the mean time a connection
+//     is checked out, and A = λD the steady-state active set
+//     (Little's law). Pools are normally sized so A is well below N.
+//     Under LIFO the same A connections sit at the top of the idle
+//     set and serve nearly all requests; the other N − A stay dormant
+//     until demand rises. Under FIFO every connection rotates through
+//     use regardless of demand.
+//
+// Concentration matters because polite caches prepared statements per
+// connection: the first execution of a SQL on a fresh connection pays
+// one extra round trip for Parse. With M distinct SQL texts in the
+// workload, the server-side prepared-statement footprint is roughly
+// A × M under LIFO and N × M under FIFO, and first-use Parse round
+// trips scale the same way. For N = 100, A = 10, M = 50 — a typical
+// web app at off-peak load — that is 500 prepared statements versus
+// 5,000.
+//
+// The two choices are independent. FIFO on waiters is about fairness
+// on a rate-limited resource; LIFO on connections is about reuse of
+// stateful per-connection caches.
+//
 // # Testing and Time
 //
 // When a [Config]'s Now function is set, unqualified SQL calls to now(),
