@@ -155,8 +155,12 @@ func (c *Conn) readReadyForQuery() error {
 // Close sends Terminate, flushes, and closes the underlying connection. It
 // closes the connection even if Terminate cannot be sent.
 //
-// Close may block briefly, up to about 100ms, attempting to deliver the
-// Terminate before closing regardless.
+// Close may block briefly. If a Query is in flight, Close waits on a small
+// internal lock for the cancel watcher goroutine to finish before
+// proceeding; the wait is bounded by the in-flight Query's own teardown.
+// Close then sets a 100ms read deadline so the Terminate write cannot hang
+// the caller, and closes the connection regardless of whether the Terminate
+// reached the backend.
 //
 // After Close, all Conn methods return [ErrClosed]. A Terminate received
 // from the backend surfaces as [febe.ErrTerminated]; transport failures and
