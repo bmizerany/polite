@@ -19,7 +19,10 @@
 //
 // Polite prepares SQL on first use and caches prepared statements per
 // connection by exact SQL text. Reusing the same SQL on the same connection
-// reuses the prepared statement as well.
+// reuses the prepared statement as well. The cache is bounded; the
+// server-side prepared statement for an evicted entry is not freed until
+// the connection closes, so workloads that rotate through unbounded SQL
+// text accumulate dead prepared statements on the backend.
 //
 // # Arguments
 //
