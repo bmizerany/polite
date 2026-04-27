@@ -805,6 +805,9 @@ func (c Column) Bytes() ([]byte, error) {
 
 // Text returns the column bytes as a string. Unlike [Column.Bytes], the
 // returned string is a copy and remains valid after the row advances.
+//
+// SQL NULL is returned as ("", nil), indistinguishable from an empty
+// string column. See the "NULL" section in the package documentation.
 func (c Column) Text() (string, error) {
 	if c.err != nil {
 		return "", c.err
@@ -816,6 +819,8 @@ func (c Column) Text() (string, error) {
 // wire format. It accepts the four fixed integer widths — 1, 2, 4, or 8
 // bytes — and returns the value as int64. Any other width is reported as an
 // error rather than guessed at.
+//
+// See the "NULL" section in the package documentation.
 func (c Column) DecodeInt() (int64, error) {
 	if c.err != nil {
 		return 0, c.err
@@ -840,6 +845,8 @@ func (c Column) DecodeInt() (int64, error) {
 // PostgreSQL's binary wire format. It accepts the two fixed widths, 4 bytes
 // (float4) and 8 bytes (float8), and returns the value as float64. Any
 // other width is reported as an error.
+//
+// See the "NULL" section in the package documentation.
 func (c Column) DecodeFloat() (float64, error) {
 	if c.err != nil {
 		return 0, c.err
@@ -891,6 +898,8 @@ func pgMicrosecondsToTime(microseconds int64) time.Time {
 //
 // PostgreSQL's positive and negative infinity sentinels are reported
 // as an error rather than mapped to a Go time value.
+//
+// See the "NULL" section in the package documentation.
 func (c Column) DecodeTime() (time.Time, error) {
 	if c.err != nil {
 		return time.Time{}, c.err
