@@ -742,8 +742,8 @@ func (c *Conn) execAndSync(portal string) error {
 // valid only while that row is current.
 //
 // Row values are reused across iterations on the same Conn. A *Row stashed
-// past the next iteration will see the next row's data, not the original.
-// Copy out anything you need before yielding to the next row.
+// past the iterator's next yield will see the next row's data, not the
+// original. Copy out anything you need before yielding to the next row.
 type Row struct {
 	data    []byte
 	columns []Column
