@@ -806,8 +806,9 @@ func (c Column) Bytes() ([]byte, error) {
 // Text returns the column bytes as a string. Unlike [Column.Bytes], the
 // returned string is a copy and remains valid after the row advances.
 //
-// SQL NULL is returned as ("", nil), indistinguishable from an empty
-// string column. See the "NULL" section in the package documentation.
+// SQL NULL is returned as ("", nil) — indistinguishable from an
+// empty string column. The package's "NULL" section covers the
+// rationale and the SQL-side alternatives.
 func (c Column) Text() (string, error) {
 	if c.err != nil {
 		return "", c.err
@@ -820,7 +821,9 @@ func (c Column) Text() (string, error) {
 // bytes — and returns the value as int64. Any other width is reported as an
 // error rather than guessed at.
 //
-// See the "NULL" section in the package documentation.
+// SQL NULL has a zero-length payload, so DecodeInt reports it as
+// "invalid length: 0". The package's "NULL" section covers the
+// rationale and the SQL-side alternatives.
 func (c Column) DecodeInt() (int64, error) {
 	if c.err != nil {
 		return 0, c.err
@@ -846,7 +849,9 @@ func (c Column) DecodeInt() (int64, error) {
 // (float4) and 8 bytes (float8), and returns the value as float64. Any
 // other width is reported as an error.
 //
-// See the "NULL" section in the package documentation.
+// SQL NULL has a zero-length payload, so DecodeFloat reports it as
+// "invalid length: 0". The package's "NULL" section covers the
+// rationale and the SQL-side alternatives.
 func (c Column) DecodeFloat() (float64, error) {
 	if c.err != nil {
 		return 0, c.err
@@ -899,7 +904,9 @@ func pgMicrosecondsToTime(microseconds int64) time.Time {
 // PostgreSQL's positive and negative infinity sentinels are reported
 // as an error rather than mapped to a Go time value.
 //
-// See the "NULL" section in the package documentation.
+// SQL NULL has a zero-length payload, so DecodeTime reports it as
+// "invalid length: 0". The package's "NULL" section covers the
+// rationale and the SQL-side alternatives.
 func (c Column) DecodeTime() (time.Time, error) {
 	if c.err != nil {
 		return time.Time{}, c.err
