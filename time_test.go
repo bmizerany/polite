@@ -324,8 +324,7 @@ func currentTimeZone(t *testing.T, cn *Conn) *time.Location {
 		return loc
 	}
 
-	t.Fatal("expected TimeZone row")
-	return nil
+	panic("expected one row")
 }
 
 func decodeQueryTimes(t *testing.T, cn *Conn, sql string, args ...any) []time.Time {
@@ -342,8 +341,8 @@ func decodeQueryTimes(t *testing.T, cn *Conn, sql string, args ...any) []time.Ti
 		}
 		return got
 	}
-	t.Fatal("expected one row")
-	return nil
+
+	panic("expected one row")
 }
 
 // wantTimestamp mirrors appendArg/DecodeTime semantics: polite pins
