@@ -65,11 +65,10 @@ type Config struct {
 // Dial honors ctx through the entire connect path: the dial itself, the
 // TLS handshake, and the startup/auth round-trips. If ctx is canceled
 // mid-handshake, Dial returns ctx.Err(); the partially-opened socket is
-// closed before the call returns.
-//
-// ctx does not stick to the returned [Conn]. Once Dial succeeds, its
-// cancellation no longer affects the connection; subsequent Query and
-// Exec calls take their own ctx.
+// closed before the call returns. The ctx does not stick to the
+// returned [Conn]: once Dial succeeds, its cancellation no longer
+// affects the connection, and subsequent Query and Exec calls take
+// their own ctx.
 func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	o, err := dsn.Parse(dsnOrURL)
 	if err != nil {
