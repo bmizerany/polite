@@ -9,8 +9,10 @@ import (
 
 const postgresBufferSize = 8 << 10
 
-// Conn reads and writes postgres wire protocol message types to and from it's
-// underlying Reader and Writers, without allocating.
+// Conn reads and writes postgres wire protocol message types to and from its
+// underlying Reader and Writers. Reads are amortized; the internal sliding-
+// window buffer allocates only when it must grow to satisfy a request that
+// does not fit the current window.
 //
 // It is not safe for concurrent use.
 //
@@ -51,7 +53,11 @@ func NewConn(r io.Reader, w io.Writer) *Conn {
 	return cn
 }
 
-func (c *Conn) N() int  { return c.n }
+// N returns the number of bytes read since the last call to ResetN
+// (or since the Conn was created).
+func (c *Conn) N() int { return c.n }
+
+// ResetN resets the byte counter returned by N to zero.
 func (c *Conn) ResetN() { c.n = 0 }
 
 func isTimeout(err error) bool {
@@ -76,6 +82,12 @@ func (c *Conn) setErr(err error) error {
 	return c.err
 }
 
+// Err returns the first sticky error observed on the Conn, or nil.
+//
+// As a side effect, Err probes the buffered writer (with a zero-length
+// Write) to surface any deferred write error. If that probe returns a
+// timeout error, the buffered writer is reset; any bytes still pending
+// in its buffer are discarded.
 func (c *Conn) Err() error {
 	if c.err != nil {
 		return c.err
@@ -125,6 +137,7 @@ func (c *Conn) ReadByte() (byte, error) {
 	return data[0], nil
 }
 
+// WriteByte writes a single byte to the buffered writer.
 func (c *Conn) WriteByte(b byte) error {
 	return c.w.WriteByte(b)
 }
@@ -138,6 +151,7 @@ func (c *Conn) ReadInt16() (int16, error) {
 	return n, nil
 }
 
+// WriteInt16 writes n as a big-endian int16.
 func (c *Conn) WriteInt16(n int16) error {
 	c.w.WriteByte(byte(n >> 8))
 	return c.w.WriteByte(byte(n))
@@ -153,6 +167,7 @@ func (c *Conn) ReadInt32() (int32, error) {
 	return n, nil
 }
 
+// WriteInt32 writes n as a big-endian int32.
 func (c *Conn) WriteInt32(n int32) error {
 	c.w.WriteByte(byte(n >> 24))
 	c.w.WriteByte(byte(n >> 16))
@@ -168,6 +183,7 @@ func (c *Conn) ReadByteN(n int) ([]byte, error) {
 	return c.peek(n)
 }
 
+// WriteBytesString writes s prefixed by its big-endian int32 length.
 func (c *Conn) WriteBytesString(s string) error {
 	if err := c.WriteInt32(int32(len(s))); err != nil {
 		return err
@@ -176,11 +192,13 @@ func (c *Conn) WriteBytesString(s string) error {
 	return c.Err()
 }
 
+// WriteString writes s followed by a null terminator.
 func (c *Conn) WriteString(s string) error {
 	io.WriteString(c.w, s)
 	return c.w.WriteByte(0)
 }
 
+// WriteSizedBytes writes b prefixed by its big-endian int32 length.
 func (c *Conn) WriteSizedBytes(b []byte) error {
 	if err := c.WriteInt32(int32(len(b))); err != nil {
 		return err
@@ -241,6 +259,10 @@ func (c *Conn) ReadString() ([]byte, error) {
 	}
 }
 
+// Discard advances the read position by n bytes, reading from the
+// underlying reader as needed. It may return any error the underlying
+// reader produces; an EOF before n bytes have been consumed is reported
+// as [io.ErrUnexpectedEOF].
 func (c *Conn) Discard(n int) error {
 	if c.err != nil {
 		return c.err
@@ -265,6 +287,10 @@ func (c *Conn) Discard(n int) error {
 }
 
 // Flush calls the underlying bufio.Writer's Flush method.
+//
+// If Flush returns a timeout error, the buffered writer is reset; any
+// bytes still pending in its buffer at that point are discarded, so a
+// caller that flushes again after a timeout will not re-send them.
 func (c *Conn) Flush() error {
 	if c.err != nil {
 		return c.err

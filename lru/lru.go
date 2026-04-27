@@ -45,6 +45,11 @@ func New[K comparable, V any](n int) *Cache[K, V] {
 // and returns the stored value; load is not called. On a miss, Get calls
 // load, stores the returned value under key, evicting an older entry if
 // the cache is full, and returns it.
+//
+// load must not panic. If it does, the cache may be left in an
+// inconsistent state (an eviction may already have been performed) and
+// further behavior is undefined. Callers should recover from panics
+// inside load and return a sentinel value instead of re-panicking.
 func (c *Cache[K, V]) Get(key K, load func() V) V {
 	if e, ok := c.m[key]; ok {
 		e.visited = true
