@@ -181,7 +181,7 @@ func getOIDs() ([]oid, error) {
 				}
 				o.ID = uint32(v)
 			case "typname":
-				v, err := col.Text()
+				v, err := col.DecodeText()
 				if err != nil {
 					return nil, fmt.Errorf("parse typname column: %w", err)
 				}
