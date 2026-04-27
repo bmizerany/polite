@@ -1,10 +1,12 @@
+// The examples in this file elide error handling for brevity. Real
+// code must check every returned error.
+
 package polite_test
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"blake.io/polite"
 )
@@ -14,15 +16,10 @@ import (
 func ExampleDial() {
 	ctx := context.Background()
 
-	cn, err := polite.Dial(ctx, "", nil)
-	if err != nil {
-		return
-	}
+	cn, _ := polite.Dial(ctx, "", nil)
 	defer cn.Close()
 
-	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
-		return
-	}
+	cn.Exec(ctx, "SELECT 1")
 }
 
 // Ranging over Columns and switching on Name reads each value by
@@ -33,10 +30,7 @@ func ExampleDial() {
 func ExampleRow_Columns() {
 	ctx := context.Background()
 
-	cn, err := polite.Dial(ctx, "", nil)
-	if err != nil {
-		return
-	}
+	cn, _ := polite.Dial(ctx, "", nil)
 	defer cn.Close()
 
 	const q = `
@@ -53,20 +47,11 @@ func ExampleRow_Columns() {
 		for col := range row.Columns() {
 			switch col.Name() {
 			case "id":
-				address.ID, err = col.DecodeInt()
-				if err != nil {
-					return
-				}
+				address.ID, _ = col.DecodeInt()
 			case "street":
-				address.Street, err = col.Text()
-				if err != nil {
-					return
-				}
+				address.Street, _ = col.Text()
 			case "city":
-				address.City, err = col.Text()
-				if err != nil {
-					return
-				}
+				address.City, _ = col.Text()
 			}
 		}
 		fmt.Printf("%#v\n", address)
@@ -84,10 +69,7 @@ func ExampleRow_Columns() {
 func ExampleRow_Column_toStruct() {
 	ctx := context.Background()
 
-	cn, err := polite.Dial(ctx, "", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	cn, _ := polite.Dial(ctx, "", nil)
 	defer cn.Close()
 
 	type User struct {
@@ -104,14 +86,9 @@ func ExampleRow_Column_toStruct() {
 		) AS t
 	`
 	for row := range cn.Query(ctx, q) {
-		b, err := row.Column(0).Bytes()
-		if err != nil {
-			log.Fatal(err)
-		}
+		b, _ := row.Column(0).Bytes()
 		var user User
-		if err := json.Unmarshal(b, &user); err != nil {
-			log.Fatal(err)
-		}
+		json.Unmarshal(b, &user)
 		fmt.Printf("%#v\n", user)
 	}
 }
@@ -126,10 +103,7 @@ func ExampleRow_Column_toStruct() {
 func ExampleRow_Column() {
 	ctx := context.Background()
 
-	cn, err := polite.Dial(ctx, "", nil)
-	if err != nil {
-		return
-	}
+	cn, _ := polite.Dial(ctx, "", nil)
 	defer cn.Close()
 
 	const q = `
@@ -143,18 +117,9 @@ func ExampleRow_Column() {
 			Street string
 			City   string
 		}
-		address.ID, err = row.Column(0).DecodeInt()
-		if err != nil {
-			return
-		}
-		address.Street, err = row.Column(1).Text()
-		if err != nil {
-			return
-		}
-		address.City, err = row.Column(2).Text()
-		if err != nil {
-			return
-		}
+		address.ID, _ = row.Column(0).DecodeInt()
+		address.Street, _ = row.Column(1).Text()
+		address.City, _ = row.Column(2).Text()
 		fmt.Printf("%#v\n", address)
 	}
 }
@@ -166,10 +131,7 @@ func ExampleRow_Column() {
 // is by index.
 func ExampleConn_Query_copyTo() {
 	ctx := context.Background()
-	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	cn, _ := polite.Dial(ctx, "postgres://localhost/mydb", nil)
 	defer cn.Close()
 
 	var (
@@ -177,14 +139,8 @@ func ExampleConn_Query_copyTo() {
 		name string
 	)
 	for row := range cn.Query(ctx, "COPY foo TO STDOUT WITH (FORMAT binary)") {
-		id, err = row.Column(0).DecodeInt()
-		if err != nil {
-			log.Fatal(err)
-		}
-		name, err = row.Column(1).Text()
-		if err != nil {
-			log.Fatal(err)
-		}
+		id, _ = row.Column(0).DecodeInt()
+		name, _ = row.Column(1).Text()
 		fmt.Println(id, name)
 	}
 }
@@ -196,10 +152,7 @@ func ExampleConn_Query_copyTo() {
 // runs once; the row value is unused.
 func ExampleConn_Query_copyFrom() {
 	ctx := context.Background()
-	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	cn, _ := polite.Dial(ctx, "postgres://localhost/mydb", nil)
 	defer cn.Close()
 
 	items := []struct {
@@ -212,9 +165,7 @@ func ExampleConn_Query_copyFrom() {
 
 	for range cn.Query(ctx, "COPY foo FROM STDIN WITH (FORMAT binary)") {
 		for _, item := range items {
-			if err := cn.Exec(ctx, "", item.ID, item.Name); err != nil {
-				log.Fatal(err)
-			}
+			cn.Exec(ctx, "", item.ID, item.Name)
 		}
 	}
 }
@@ -225,15 +176,10 @@ func ExampleConn_Query_copyFrom() {
 func ExampleNotifications_listenNotify() {
 	ctx := context.Background()
 
-	cn, err := polite.Dial(ctx, "postgres://localhost/mydb", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	cn, _ := polite.Dial(ctx, "postgres://localhost/mydb", nil)
 	defer cn.Close()
 
-	if err := cn.Exec(ctx, "LISTEN chat"); err != nil {
-		log.Fatal(err)
-	}
+	cn.Exec(ctx, "LISTEN chat")
 
 	for n := range polite.Notifications(ctx, cn) {
 		fmt.Printf("channel=%s payload=%s\n", n.Channel, n.Payload)
@@ -256,27 +202,18 @@ func ExampleNotifications_listenNotify() {
 // not encode.
 func ExampleConn_Query_sqlCast() {
 	ctx := context.Background()
-	cn, err := polite.Dial(ctx, "", nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+	cn, _ := polite.Dial(ctx, "", nil)
 	defer cn.Close()
 
 	// Go int -> text.
 	for row := range cn.Query(ctx, `SELECT $1::text`, 42) {
-		s, err := row.Column(0).Text()
-		if err != nil {
-			log.Fatal(err)
-		}
+		s, _ := row.Column(0).Text()
 		fmt.Println(s)
 	}
 
 	// Go string -> int4.
 	for row := range cn.Query(ctx, `SELECT $1::text::int4`, "42") {
-		n, err := row.Column(0).DecodeInt()
-		if err != nil {
-			log.Fatal(err)
-		}
+		n, _ := row.Column(0).DecodeInt()
 		fmt.Println(n)
 	}
 }
@@ -287,13 +224,8 @@ func ExamplePool_Get() {
 	p := new(polite.Pool) // use default settings
 	defer p.Close()
 
-	cn, err := p.Get(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
+	cn, _ := p.Get(ctx)
 	defer p.Put(cn)
 
-	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
-		log.Fatal(err)
-	}
+	cn.Exec(ctx, "SELECT 1")
 }
