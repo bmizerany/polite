@@ -52,6 +52,10 @@ var traceKey traceContextKey
 
 // WithTrace returns a copy of ctx that carries trace.
 // If trace is nil, WithTrace returns ctx unchanged.
+//
+// WithTrace replaces any trace previously attached to ctx; the callbacks
+// are not composed. Callers wrapping an existing trace should use
+// [TraceFromContext] to retrieve it and chain manually.
 func WithTrace(ctx context.Context, trace *Trace) context.Context {
 	if trace == nil {
 		// maintain the invariant that if ctx.Value(traceKey)

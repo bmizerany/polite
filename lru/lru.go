@@ -135,8 +135,9 @@ func (c *Cache[K, V]) Delete(key K) {
 }
 
 // Items returns an iterator that yields each cached entry from the most
-// recently inserted to the least recently inserted. [Cache.Get] must not
-// be called while the iterator is live.
+// recently inserted to the least recently inserted. The cache must not be
+// mutated while the iterator is live: [Cache.Get] (which may evict on miss),
+// [Cache.Delete], and any other mutating call invalidate the iteration.
 func (c *Cache[K, V]) Items() iter.Seq2[K, V] {
 	return func(yield func(K, V) bool) {
 		for e := c.head; e != nil; e = e.next {

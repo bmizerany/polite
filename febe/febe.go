@@ -474,7 +474,10 @@ func (c *Conn) WriteEmptyQuery() error {
 	return c.Err()
 }
 
-// WriteTerminate writes a frontend Terminate message.
+// WriteTerminate writes a frontend Terminate message and marks the Conn as
+// terminated: subsequent writes return [ErrTerminated], [Conn.Status] returns
+// the zero value, and [Conn.Flush] still flushes the queued Terminate so the
+// backend gets a goodbye.
 func (c *Conn) WriteTerminate() error {
 	if c.err != nil {
 		return c.err
@@ -864,7 +867,8 @@ func (c *Conn) WriteRowDescription(fields []FieldDescription) error {
 }
 
 // WriteDescribe writes a frontend Describe message for the named statement
-// or portal identified by typ.
+// or portal identified by typ. Pass 'S' to describe a prepared statement or
+// 'P' to describe a portal.
 func (c *Conn) WriteDescribe(typ byte, statement string) error {
 	var s sizer
 	s.addInt32() // length

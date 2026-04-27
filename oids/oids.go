@@ -271,6 +271,11 @@ var idNames = map[ID]string{
 	5069: "xid8",
 }
 
+// String returns the pg_type.typname for id, or "unknown" if id is 0
+// (PostgreSQL's "no type" sentinel, used for parameters whose type the
+// backend has not described). For OIDs not in this package's table — including
+// user-defined types (OID >= 10000) and built-ins this package omits — String
+// returns a synthetic "oids.ID(N)" string.
 func (id ID) String() string {
 	if id == 0 {
 		return "unknown"
@@ -281,6 +286,9 @@ func (id ID) String() string {
 	return unknownIDString(id)
 }
 
+// IsArray reports whether id names a built-in array type. It returns false
+// for any OID not in this package's table, including user-defined array
+// types and built-in array types this package omits.
 func (id ID) IsArray() bool {
 	s := idNames[id]
 	return len(s) > 0 && s[0] == '_'

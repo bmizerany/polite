@@ -27,7 +27,7 @@ const pgQueryCanceledCode = "57014"
 var (
 	ErrTLSRefused     = errors.New("polite: TLS refused by backend")
 	ErrCopyFormat     = errors.New("polite: unsupported COPY format: must use `... WITH (FORMAT binary)`")
-	ErrCopyFrom       = errors.New("polite: COPY FROM is active; use Exec(ctx, \"\", args...) to send rows")
+	ErrCopyFrom       = errors.New("polite: COPY FROM is active; the Query iterator yields a Row whose columns report this; use Exec(ctx, \"\", args...) to send each data row")
 	ErrBusy           = errors.New("polite: a Query range is active; complete or break it before calling Query or Exec")
 	ErrClosed         = errors.New("polite: closed")
 	ErrTooManyWaiters = errors.New("polite: pool: too many waiters")
