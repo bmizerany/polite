@@ -76,7 +76,8 @@
 // NULL often goes away in the query. COALESCE supplies a default,
 // NULLIF reverses it, and IS NOT NULL filters at the source.
 // Pushing the question to PostgreSQL is usually clearer than a
-// client-side branch.
+// client-side branch, and reuses the database's NULL semantics
+// instead of re-deriving them in Go.
 //
 // # COPY
 //
