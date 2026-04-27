@@ -815,13 +815,7 @@ func (c Column) Type() oids.ID { return c.typeID }
 // is valid only while that row is current.
 //
 // A SQL NULL column returns a nil slice and a nil error; a non-null empty
-// value returns a non-nil zero-length slice. Comparing the returned slice
-// to nil is the canonical NULL check:
-//
-//	b, err := col.Bytes()
-//	if err == nil && b == nil {
-//		// NULL
-//	}
+// value returns a non-nil zero-length slice.
 func (c Column) Bytes() ([]byte, error) {
 	if c.err != nil {
 		return nil, c.err
