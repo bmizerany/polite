@@ -14,7 +14,7 @@ import (
 func ExampleDial() {
 	ctx := context.Background()
 
-	cn, err := polite.Dial(ctx, polite.DefaultDSN, nil)
+	cn, err := polite.Dial(ctx, "", nil)
 	if err != nil {
 		return
 	}
@@ -33,7 +33,7 @@ func ExampleDial() {
 func ExampleRow_Columns() {
 	ctx := context.Background()
 
-	cn, err := polite.Dial(ctx, polite.DefaultDSN, nil)
+	cn, err := polite.Dial(ctx, "", nil)
 	if err != nil {
 		return
 	}
@@ -126,7 +126,7 @@ func ExampleRow_Column_toStruct() {
 func ExampleRow_Column() {
 	ctx := context.Background()
 
-	cn, err := polite.Dial(ctx, polite.DefaultDSN, nil)
+	cn, err := polite.Dial(ctx, "", nil)
 	if err != nil {
 		return
 	}
