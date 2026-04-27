@@ -20,6 +20,53 @@ import (
 	"blake.io/polite/internal/backoff"
 )
 
+// TestDialRejectsRelativeSSLRootCert verifies that Dial fails fast,
+// before any network I/O, when sslrootcert is a relative path. Trust-
+// root resolution must not depend on the process working directory;
+// the error is surfaced at parse time so callers cannot ship a DSN
+// that resolves to different files in dev vs. production.
+func TestDialRejectsRelativeSSLRootCert(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"bare filename", "ca.pem"},
+		{"dot-prefixed", "./certs/ca.pem"},
+		{"parent-traversal", "../ca.pem"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cn, err := Dial(t.Context(), "host=localhost sslmode=verify-full sslrootcert="+tc.path, nil)
+			if err == nil {
+				cn.Close()
+				t.Fatal("Dial succeeded; want error for relative sslrootcert")
+			}
+			if !strings.Contains(err.Error(), "sslrootcert must be an absolute path") {
+				t.Fatalf("error = %q; want substring %q", err, "sslrootcert must be an absolute path")
+			}
+		})
+	}
+}
+
+// TestDialAcceptsSystemSSLRootCert verifies that the special "system"
+// sentinel bypasses the absolute-path check (case-insensitively) and
+// is not rejected at parse time.
+func TestDialAcceptsSystemSSLRootCert(t *testing.T) {
+	t.Parallel()
+
+	for _, val := range []string{"system", "System", "SYSTEM"} {
+		// We do not need a reachable server; we only care that the
+		// absolute-path check is not what fails. A bogus host yields
+		// some other error, which is fine.
+		_, err := Dial(t.Context(), "host=127.0.0.1 port=1 sslmode=verify-full sslrootcert="+val, nil)
+		if err != nil && strings.Contains(err.Error(), "sslrootcert must be an absolute path") {
+			t.Errorf("sslrootcert=%q rejected as relative path; want pass-through", val)
+		}
+	}
+}
+
 func TestOpenAuthNone(t *testing.T) {
 	t.Parallel()
 

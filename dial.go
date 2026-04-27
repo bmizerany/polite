@@ -77,6 +77,9 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	if o.SSLRootCert != "" && !strings.EqualFold(o.SSLRootCert, "system") && !filepath.IsAbs(o.SSLRootCert) {
+		return nil, fmt.Errorf("polite: sslrootcert must be an absolute path or %q; got %q", "system", o.SSLRootCert)
+	}
 
 	cfg = cmp.Or(cfg, &Config{})
 
@@ -236,9 +239,6 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 			tcfg.RootCAs = roots
 			tcfg.ClientCAs = roots
 		} else {
-			if !filepath.IsAbs(o.SSLRootCert) {
-				return nil, fmt.Errorf("polite: sslrootcert must be an absolute path or %q; got %q", "system", o.SSLRootCert)
-			}
 			data, err := rootedReadFile(o.SSLRootCert)
 			if err != nil {
 				return nil, fmt.Errorf("polite: failed to read root certificate: %w", err)
