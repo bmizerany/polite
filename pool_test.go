@@ -166,8 +166,6 @@ func TestPoolGetMaxWaiters(t *testing.T) {
 }
 
 func TestPoolGetAllocations(t *testing.T) {
-	t.Skip("TODO: unskip and fix after synctest problems are fixed")
-
 	p := &Pool{
 		Dial: testDialer,
 	}
