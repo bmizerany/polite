@@ -160,8 +160,10 @@ func (c *Conn) WriteInt32(n int32) error {
 	return c.w.WriteByte(byte(n))
 }
 
-// ReadByteN returns upto n bytes from the stream, or an error if fewer than
-// n bytes are available.
+// ReadByteN returns up to n bytes from the stream, or an error if fewer
+// than n bytes are available. The returned slice borrows the [Conn]'s
+// internal read buffer and is valid only until the next read call on
+// the [Conn]; callers that need to retain it must copy.
 func (c *Conn) ReadByteN(n int) ([]byte, error) {
 	return c.peek(n)
 }
