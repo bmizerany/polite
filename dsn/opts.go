@@ -14,40 +14,39 @@ import (
 	"slices"
 )
 
-// Options is a parsed connection string. Zero-valued fields are filled in
-// with defaults by [Parse].
+// Options holds the parsed connection parameters used to reach a
+// PostgreSQL server. It is populated by [Parse] from a libpq DSN or
+// URL and consumed by [blake.io/polite.Dial] when opening a connection.
+// Zero-valued fields are filled in with defaults by Parse; see Dial
+// for the defaults and the semantics of each field at connect time.
 type Options struct {
-	// Host is the server host (a hostname, an IP address, or an absolute
-	// path for a Unix socket directory).
+	// Host is the server hostname, IP address, or absolute path to a
+	// Unix socket directory.
 	Host string
 
-	// Port is the TCP port or, for Unix sockets, the suffix appended to
-	// the .s.PGSQL. socket file in Host.
+	// Port is the TCP port, or the suffix appended to the .s.PGSQL.
+	// socket file in Host for Unix sockets.
 	Port string
 
-	// User is the PostgreSQL role to authenticate as. It is also placed
-	// into Extra under the "user" key for the startup message.
+	// User is the PostgreSQL role to authenticate as.
 	User string
 
-	// Password is used for password-based authentication (cleartext or
-	// SCRAM); it is never sent for trust or peer auth.
+	// Password is the secret used for password-based authentication.
 	Password string
 
-	// Database is the database name. It is also placed into Extra under
-	// the "database" key for the startup message.
+	// Database is the database name to connect to.
 	Database string
 
 	// SSLMode selects the TLS policy: "disable", "require", or
-	// "verify-full" (and "" as an alias for "verify-full"). See
-	// [blake.io/polite.Dial] for the exact semantics.
+	// "verify-full".
 	SSLMode string
 
-	// SSLRootCert is a PEM file path or the special string "system",
-	// which loads the host's system trust roots.
+	// SSLRootCert is a PEM file path, or the special value "system"
+	// to load the host's system trust roots.
 	SSLRootCert string
 
-	// Extra holds the remaining startup parameters in "key=value" form,
-	// passed through to PostgreSQL unchanged.
+	// Extra holds the remaining startup parameters as "key=value"
+	// strings, passed through to PostgreSQL unchanged.
 	Extra []string
 }
 
@@ -75,11 +74,23 @@ func setDefaults(o *Options) error {
 }
 
 // Parse parses a connection string into an [Options] struct. It
-// accepts either a libpq-style DSN ("host=… port=… …") or a URL with the
-// "postgres" or "postgresql" scheme; Parse auto-detects the form
-// by trying [net/url.Parse] first and falling back to the DSN scanner.
-// Any URL query parameter that is not "sslmode" or "sslrootcert" is
-// passed through unchanged in [Options.Extra].
+// accepts either a URL with the "postgres" or "postgresql" scheme or
+// a libpq-style DSN.
+//
+// The form is auto-detected from the input: a "postgres://" or
+// "postgresql://" scheme selects URL parsing; anything else, including
+// an input with no scheme at all, is parsed as a libpq DSN. The scheme
+// is required for URL form.
+//
+//	postgres://user:pass@host:5432/dbname?sslmode=verify-full
+//
+//	host=localhost port=5432 user=alice dbname=app
+//
+// Recognized URL query parameters ("sslmode" and "sslrootcert") and
+// recognized DSN keys ("host", "port", "user", "password", "dbname",
+// "database", "sslmode", "sslrootcert") populate the corresponding
+// fields on [Options]. Unrecognized URL query parameters and DSN keys
+// are appended to [Options.Extra] verbatim as "key=value" strings.
 //
 // Missing fields are filled in with these defaults:
 //
