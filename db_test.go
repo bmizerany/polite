@@ -107,6 +107,10 @@ func newSession(t testing.TB) *Conn {
 	}
 	t.Cleanup(func() { cn.Close() })
 
+	if err := cn.Exec(ctx, "SET TimeZone TO 'UTC'"); err != nil {
+		t.Fatal(err)
+	}
+
 	if funcsCreated.Swap(true) == true {
 		return cn
 	}
@@ -483,24 +487,6 @@ func TestQueryExtendedUnsupportedType(t *testing.T) {
 	}
 	if got[0] == nil || !strings.Contains(got[0].Error(), "polite:") {
 		t.Fatalf("expected polite error; got %v", got[0])
-	}
-}
-
-func TestQueryExtendedUnsignedOverflow(t *testing.T) {
-	t.Parallel()
-
-	cn := newSession(t)
-
-	var got string
-	for row := range cn.Query(t.Context(), "SELECT $1", uint64(math.MaxUint64)) {
-		var err error
-		got, err = row.Column(0).Text()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got != "18446744073709551615" {
-		t.Fatalf("got %q want %q", got, "18446744073709551615")
 	}
 }
 
@@ -953,7 +939,6 @@ func TestEncodeArg(t *testing.T) {
 		name    string
 		dst     []byte
 		arg     any
-		oid     oids.ID
 		wantFmt int16
 		want    []byte
 		wantErr string
@@ -1037,28 +1022,13 @@ func TestEncodeArg(t *testing.T) {
 		{
 			name:    "time arg",
 			arg:     time.Date(2024, 2, 3, 4, 5, 6, 987654321, time.FixedZone("UTC+2", 2*60*60)),
-			oid:     oids.Timestamptz,
 			want:    []byte{0x00, 0x02, 0xb3, 0x6f, 0x6d, 0x20, 0x2a, 0x86},
 			wantFmt: formatBinary,
 		},
 		{
 			name:    "time arg far-future beyond unixmicro limit",
 			arg:     time.Date(294260, 1, 1, 0, 0, 0, 0, time.UTC),
-			oid:     oids.Timestamptz,
 			want:    []byte{0x7f, 0xfe, 0x17, 0x5f, 0xd1, 0x2b, 0xe0, 0x00},
-			wantFmt: formatBinary,
-		},
-		{
-			name:    "time arg unknown oid",
-			arg:     time.Date(2024, 2, 3, 4, 5, 6, 987654321, time.UTC),
-			wantErr: "time.Time requires timestamp or timestamptz parameter type; got unknown",
-			wantFmt: formatBinary,
-		},
-		{
-			name:    "time arg int8 oid",
-			arg:     time.Date(2024, 2, 3, 4, 5, 6, 987654321, time.UTC),
-			oid:     oids.Numeric,
-			wantErr: "time.Time requires timestamp or timestamptz parameter type; got numeric",
 			wantFmt: formatBinary,
 		},
 		{
@@ -1098,10 +1068,10 @@ func TestEncodeArg(t *testing.T) {
 			wantFmt: formatBinary,
 		},
 		{
-			name:    "unsigned overflow",
+			name:    "unsigned overflow wraps to int64",
 			arg:     uint64(math.MaxUint64),
-			want:    []byte("18446744073709551615"),
-			wantFmt: formatText,
+			want:    []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+			wantFmt: formatBinary,
 		},
 	}
 
@@ -1109,7 +1079,7 @@ func TestEncodeArg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Helper()
 
-			got, gotFmt, err := appendArg(tt.dst, tt.arg, tt.oid)
+			got, gotFmt, err := appendArg(tt.dst, tt.arg)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("got error %v", err)
@@ -1132,26 +1102,6 @@ func TestEncodeArg(t *testing.T) {
 	}
 }
 
-func TestAppendArgUintOverflow(t *testing.T) {
-	t.Parallel()
-
-	u := ^uint(0)
-	if uint64(u) <= maxInt64 {
-		t.Skip("uint does not overflow signed 64-bit on this platform")
-	}
-
-	got, gotFmt, err := appendArg(nil, u, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotFmt != formatText {
-		t.Fatalf("format got=%v want=%v", gotFmt, formatText)
-	}
-	want := fmt.Appendf(nil, "%d", uint64(u))
-	if !bytes.Equal(got, want) {
-		t.Fatalf("got=%q want=%q", got, want)
-	}
-}
 
 func TestQueryExtendedMixedArguments(t *testing.T) {
 	t.Parallel()
@@ -1820,31 +1770,67 @@ func TestNotificationsPreservesCallerTrace(t *testing.T) {
 	}
 }
 
-// TestQuerySQLCastPinsParamType probes the user-facing workaround for
-// polite's WriteParse-emits-zero-OIDs design: callers who need a specific
-// parameter type can pin it with a SQL cast in the query text instead of
-// relying on Go-side type carriers.
-//
-// Each subtest exercises one cast pattern end-to-end through Conn.Query
-// and verifies (1) the column type the backend returned and (2) the
-// decoded value. The cases here are the patterns that actually compose
-// with appendArg's encoding rules; cases that don't (e.g. a Go int with
-// $1::int4, or a string with $1::inet) fail because polite encodes the
-// Go value in a wire format that doesn't match the backend's inferred
-// parameter type. Those failures motivate the analysis writeup; this
-// test pins the patterns that DO work today, on current HEAD, with no
-// production code change.
+// TestQuerySQLCastPinsParamType verifies that polite pins each argument's
+// PostgreSQL OID in the Parse message, so the backend casts on its side
+// when the SQL wants a different type. Cases that previously needed a
+// double cast (e.g. $1::text::int4 to bridge a Go int) now compose
+// directly.
 func TestQuerySQLCastPinsParamType(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
 	ctx := t.Context()
 
+	t.Run("Go int pinned to int4", func(t *testing.T) {
+		const q = `SELECT $1::int4`
+
+		var gotType oids.ID
+		var gotVal int64
+		rows := 0
+		for row := range cn.Query(ctx, q, 42) {
+			rows++
+			gotType = row.Column(0).Type()
+			n, err := row.Column(0).DecodeInt()
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotVal = n
+		}
+		if rows != 1 {
+			t.Fatalf("rows = %d; want 1", rows)
+		}
+		if gotType != oids.Int4 {
+			t.Errorf("column type = %s; want int4", gotType)
+		}
+		if gotVal != 42 {
+			t.Errorf("got %d; want 42", gotVal)
+		}
+	})
+
+	t.Run("Go string pinned to inet", func(t *testing.T) {
+		const q = `SELECT host($1::inet)`
+
+		var gotVal string
+		rows := 0
+		for row := range cn.Query(ctx, q, "192.168.1.42") {
+			rows++
+			s, err := row.Column(0).Text()
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotVal = s
+		}
+		if rows != 1 {
+			t.Fatalf("rows = %d; want 1", rows)
+		}
+		if gotVal != "192.168.1.42" {
+			t.Errorf("got %q; want %q", gotVal, "192.168.1.42")
+		}
+	})
+
 	t.Run("time.Time pinned to timestamp via $1::timestamp", func(t *testing.T) {
-		// Without a cast, polite/PostgreSQL would infer timestamptz.
-		// The cast forces ParameterDescription to report timestamp,
-		// and appendArg's time.Time branch handles that OID by
-		// stripping the zone (treating the wall-clock fields as UTC).
+		// Polite sends timestamptz; PostgreSQL casts to timestamp on
+		// its side because the SQL says ::timestamp.
 		want := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 		const q = `SELECT $1::timestamp`
 
@@ -1868,64 +1854,6 @@ func TestQuerySQLCastPinsParamType(t *testing.T) {
 		}
 		if !gotTime.Equal(want) {
 			t.Errorf("got %v; want %v", gotTime, want)
-		}
-	})
-
-	t.Run("string pinned to int4 via $1::text::int4", func(t *testing.T) {
-		// The double cast pattern: typing $1 as text first lets polite
-		// send the Go string straight through (binary text is just the
-		// raw bytes), and the inner-to-outer cast is performed
-		// server-side. Without the inner ::text, $1 would infer int4
-		// and polite would send 8 bytes for what the backend expects
-		// to be a 4-byte binary int4 -- failing the bind.
-		const q = `SELECT $1::text::int4`
-
-		var gotType oids.ID
-		var gotVal int64
-		rows := 0
-		for row := range cn.Query(ctx, q, "42") {
-			rows++
-			gotType = row.Column(0).Type()
-			n, err := row.Column(0).DecodeInt()
-			if err != nil {
-				t.Fatal(err)
-			}
-			gotVal = n
-		}
-		if rows != 1 {
-			t.Fatalf("rows = %d; want 1", rows)
-		}
-		if gotType != oids.Int4 {
-			t.Errorf("column type = %s; want int4", gotType)
-		}
-		if gotVal != 42 {
-			t.Errorf("got %d; want 42", gotVal)
-		}
-	})
-
-	t.Run("string pinned to inet via $1::text::inet", func(t *testing.T) {
-		// inet has a non-trivial binary wire format (family/bits/etc.
-		// header bytes followed by address bytes) that a Go string
-		// does not match. Routing through ::text::inet makes the
-		// server parse the textual address; polite's binary string
-		// passthrough is effectively a no-op for the text leg.
-		const q = `SELECT host($1::text::inet)`
-
-		var gotVal string
-		rows := 0
-		for row := range cn.Query(ctx, q, "192.168.1.42") {
-			rows++
-			s, err := row.Column(0).Text()
-			if err != nil {
-				t.Fatal(err)
-			}
-			gotVal = s
-		}
-		if rows != 1 {
-			t.Fatalf("rows = %d; want 1", rows)
-		}
-		if gotVal != "192.168.1.42" {
-			t.Errorf("got %q; want %q", gotVal, "192.168.1.42")
 		}
 	})
 }

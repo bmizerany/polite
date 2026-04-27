@@ -24,29 +24,32 @@
 // # Arguments
 //
 // Query and Exec bind variadic arguments to placeholders ($1, $2, ...) in
-// the SQL. Polite encodes arguments in PostgreSQL's binary wire format;
-// the format is chosen at prepare time to match the placeholder type.
+// the SQL. Polite pins each parameter's PostgreSQL type from the Go
+// argument's type and sends that OID in the Parse message. PostgreSQL
+// casts from there to whatever the column or expression actually wants,
+// so a Go int can drive an int4 column and a Go string can drive an inet,
+// uuid, or numeric without an intermediate ::text hop.
 //
 // The encoding rules are:
 //
 //   - nil, and a nil []byte, become NULL.
-//   - []byte and string pass through as raw parameter bytes; the binary
-//     format for text and bytea is the bytes themselves.
-//   - Fixed-width integers and floats use their natural width: 2 bytes
-//     for int8, int16, and uint8; 4 bytes for int32, uint16, and float32;
-//     8 bytes for int, int64, uint32, and float64. PostgreSQL widens
-//     narrower integers to fit the column type.
-//   - uint and uint64 encode as int8 when they fit a signed 64-bit
-//     value; values that overflow encode as NUMERIC text.
-//   - time.Time encodes as a microsecond-precision timestamp or
-//     timestamptz; any other placeholder type returns an error, because
-//     polite will not invent a destination type for a Go time.
+//   - []byte pins bytea; string pins text. Both pass through as raw
+//     parameter bytes, since the binary format for text and bytea is
+//     the bytes themselves.
+//   - Fixed-width integers pin the matching PostgreSQL integer type:
+//     int2 for int8, int16, and uint8; int4 for int32 and uint16; int8
+//     for int, int64, uint, uint32, and uint64. uint and uint64 values
+//     above the int64 maximum wrap to a negative int8; pass them as a
+//     Go string for the full unsigned range.
+//   - float32 pins float4; float64 pins float8.
+//   - time.Time pins timestamptz. SQL casts (e.g. $1::timestamp,
+//     $1::date) coerce to other temporal types on the server.
 //
 // Every other Go type, including bool, is rejected with an "unsupported
 // argument type" error. To pass a boolean, use a SQL literal (TRUE /
 // FALSE) or a string parameter with an explicit cast such as $1::bool.
 // The same trick works for any type polite does not encode directly:
-// pass the value as text and let PostgreSQL parse it.
+// pass the value as a string and cast in SQL.
 //
 // From there, the row API defines how results are read.
 //

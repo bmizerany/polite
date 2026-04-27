@@ -37,7 +37,6 @@ var errDone = errors.New("polite: done")
 
 type statement struct {
 	name string
-	in   febe.ParameterDescriptionResponse
 	out  febe.RowDescriptionResponse
 }
 
@@ -310,16 +309,11 @@ func (c *Conn) copyFromRow(args ...any) error {
 	values := make([][]byte, len(args))
 	scratch := make([]byte, 0, len(args)*8)
 	for i, arg := range args {
-		// COPY data rows carry no per-column parameter type, so
-		// pick a sensible default for argument types that demand
-		// one. time.Time gets timestamptz: it preserves an instant
-		// across zones and is what callers passing time.Now() want.
-		oid := oids.ID(0)
-		if _, ok := arg.(time.Time); ok {
-			oid = oids.Timestamptz
+		if _, err := argOID(arg); err != nil {
+			return err
 		}
 		start := len(scratch)
-		encoded, _, err := appendArg(scratch, arg, oid)
+		encoded, _, err := appendArg(scratch, arg)
 		if err != nil {
 			return err
 		}
@@ -339,12 +333,7 @@ func (c *Conn) copyFromRow(args ...any) error {
 	return c.fc.WriteCopyDataRow(values)
 }
 
-var (
-	formatText   int16 = 0
-	formatBinary int16 = 1
-)
-
-const maxInt64 = uint64(^uint64(0) >> 1)
+var formatBinary int16 = 1
 
 func formatGoTime(t time.Time) string {
 	return t.UTC().Round(time.Microsecond).Format("2006-01-02 15:04:05.999999Z07:00")
@@ -358,7 +347,35 @@ func appendBinaryArg(dst []byte, arg any) ([]byte, int16, error) {
 	return dst, formatBinary, nil
 }
 
-func appendArg(dst []byte, arg any, oid oids.ID) ([]byte, int16, error) {
+// argOID returns the PostgreSQL OID polite pins for arg in the Parse
+// message. It mirrors appendArg's type switch: every encodable Go type maps
+// to one OID, and the backend casts from there to whatever the SQL wants.
+func argOID(arg any) (oids.ID, error) {
+	switch arg.(type) {
+	case nil:
+		return 0, nil
+	case []byte:
+		return oids.Bytea, nil
+	case string:
+		return oids.Text, nil
+	case uint8, int8, int16:
+		return oids.Int2, nil
+	case uint16, int32:
+		return oids.Int4, nil
+	case float32:
+		return oids.Float4, nil
+	case time.Time:
+		return oids.Timestamptz, nil
+	case uint32, uint, uint64, int, int64:
+		return oids.Int8, nil
+	case float64:
+		return oids.Float8, nil
+	default:
+		return 0, fmt.Errorf("polite: unsupported argument type %T", arg)
+	}
+}
+
+func appendArg(dst []byte, arg any) ([]byte, int16, error) {
 	switch v := arg.(type) {
 	case nil:
 		return nil, formatBinary, nil
@@ -384,41 +401,15 @@ func appendArg(dst []byte, arg any, oid oids.ID) ([]byte, int16, error) {
 		return appendBinaryArg(dst, v)
 	// 8-byte wire values.
 	case time.Time:
-		// PostgreSQL timestamps are represented at microsecond
-		// precision. Round instead of truncate so we choose the
-		// nearest representable PostgreSQL timestamp; truncate would
-		// always bias earlier than round.
-		switch oid {
-		case oids.Timestamp:
-			v = time.Date(
-				v.Year(),
-				v.Month(),
-				v.Day(),
-				v.Hour(),
-				v.Minute(),
-				v.Second(),
-				v.Round(time.Microsecond).Nanosecond(),
-				time.UTC,
-			)
-		case oids.Timestamptz:
-			v = v.UTC()
-		default:
-			return nil, formatBinary, fmt.Errorf("polite: time.Time requires timestamp or timestamptz parameter type; got %s", oid)
-		}
-		return appendBinaryArg(dst, timeToPGMicroseconds(v))
+		// PostgreSQL timestamptz is microsecond-precision and stores
+		// the UTC instant. Round instead of truncate to land on the
+		// nearest representable microsecond.
+		return appendBinaryArg(dst, timeToPGMicroseconds(v.UTC()))
 	case uint32:
 		return appendBinaryArg(dst, int64(v))
 	case uint:
-		u := uint64(v)
-		if u > maxInt64 {
-			return strconv.AppendUint(dst, u, 10), formatText, nil
-		}
-		return appendBinaryArg(dst, int64(u))
+		return appendBinaryArg(dst, int64(v))
 	case uint64:
-		// Encode as NUMERIC text only for values that overflow signed 64-bit.
-		if v > maxInt64 {
-			return strconv.AppendUint(dst, v, 10), formatText, nil
-		}
 		return appendBinaryArg(dst, int64(v))
 	case int:
 		return appendBinaryArg(dst, int64(v))
@@ -456,7 +447,16 @@ func (c *Conn) initGoTime(ctx context.Context) error {
 }
 
 func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (*statement, error) {
-	stmt, err := c.getStmt(ctx, sql)
+	paramOIDs := make([]oids.ID, len(args))
+	for i, arg := range args {
+		oid, err := argOID(arg)
+		if err != nil {
+			return nil, err
+		}
+		paramOIDs[i] = oid
+	}
+
+	stmt, err := c.getStmt(ctx, sql, paramOIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -466,11 +466,7 @@ func (c *Conn) prepare(ctx context.Context, portal, sql string, args ...any) (*s
 	scratch := make([]byte, 0, len(args)*8)
 	for i, arg := range args {
 		start := len(scratch)
-		oid := oids.ID(0)
-		if i < len(stmt.in.OIDs) {
-			oid = stmt.in.OIDs[i]
-		}
-		encoded, format, err := appendArg(scratch, arg, oid)
+		encoded, format, err := appendArg(scratch, arg)
 		if err != nil {
 			return nil, err
 		}
@@ -505,13 +501,14 @@ func (c *Conn) newStmtName() string {
 // connection closes.
 const stmtCacheMax = 256
 
-func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
+func (c *Conn) getStmt(ctx context.Context, sql string, paramOIDs []oids.ID) (*statement, error) {
 	if c.cache == nil {
 		c.cache = lru.New[string, *statement](stmtCacheMax)
 	}
+	key := stmtCacheKey(sql, paramOIDs)
 	var loadErr error
-	stmt := c.cache.Get(sql, func() *statement {
-		s, err := c.prepareStmt(ctx, sql)
+	stmt := c.cache.Get(key, func() *statement {
+		s, err := c.prepareStmt(ctx, sql, paramOIDs)
 		if err != nil {
 			loadErr = err
 			return nil
@@ -519,16 +516,32 @@ func (c *Conn) getStmt(ctx context.Context, sql string) (*statement, error) {
 		return s
 	})
 	if loadErr != nil {
-		c.cache.Delete(sql)
+		c.cache.Delete(key)
 		return nil, loadErr
 	}
 	return stmt, nil
 }
 
-func (c *Conn) prepareStmt(ctx context.Context, sql string) (*statement, error) {
+// stmtCacheKey is the per-connection prepared-statement cache key. The same
+// SQL with different parameter OIDs is a different prepared statement, since
+// polite pins OIDs in the Parse message and the backend casts from there.
+func stmtCacheKey(sql string, paramOIDs []oids.ID) string {
+	if len(paramOIDs) == 0 {
+		return sql
+	}
+	b := make([]byte, 0, len(sql)+1+4*len(paramOIDs))
+	b = append(b, sql...)
+	b = append(b, 0)
+	for _, o := range paramOIDs {
+		b = binary.BigEndian.AppendUint32(b, uint32(o))
+	}
+	return string(b)
+}
+
+func (c *Conn) prepareStmt(ctx context.Context, sql string, paramOIDs []oids.ID) (*statement, error) {
 	stmt := &statement{name: c.newStmtName()}
 
-	c.fc.WriteParse(stmt.name, sql)
+	c.fc.WriteParse(stmt.name, sql, paramOIDs...)
 	c.fc.WriteDescribe('S', stmt.name)
 	if err := c.flushSync(); err != nil {
 		return nil, err
@@ -543,11 +556,9 @@ func (c *Conn) prepareStmt(ctx context.Context, sql string) (*statement, error) 
 		case '1':
 			continue
 		case 't':
-			pd, err := c.fc.ReadParameterDescription()
-			if err != nil {
+			if _, err := c.fc.ReadParameterDescription(); err != nil {
 				return nil, err
 			}
-			stmt.in = pd
 		case 'T':
 			rd, err := c.fc.ReadRowDescription()
 			if err != nil {

@@ -767,19 +767,27 @@ func (c *Conn) readNotification() (Notification, error) {
 	}, nil
 }
 
-// WriteParse writes a frontend Parse message.
-func (c *Conn) WriteParse(stmt, sql string) error {
+// WriteParse writes a frontend Parse message. The oids slice pins each
+// parameter's PostgreSQL type; an empty slice (or 0 entries within it) lets
+// the backend infer types from the SQL.
+func (c *Conn) WriteParse(stmt, sql string, oids ...oids.ID) error {
 	var s sizer
 	s.addInt32() // length
 	s.addString(stmt)
 	s.addString(sql)
-	s.addInt16() // 0 for no param types
+	s.addInt16() // parameter count
+	for range oids {
+		s.addInt32() // OID
+	}
 
 	c.c.WriteByte('P')
 	c.c.WriteInt32(s.size())
 	c.c.WriteString(stmt)
 	c.c.WriteString(sql)
-	c.c.WriteInt16(0) // 0 for no param types
+	c.c.WriteInt16(int16(len(oids)))
+	for _, id := range oids {
+		c.c.WriteInt32(int32(id))
+	}
 	return c.Err()
 }
 

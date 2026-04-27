@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"blake.io/polite/oids"
 	"kr.dev/diff"
 )
 
@@ -817,23 +818,43 @@ func TestReadNotification(t *testing.T) {
 }
 
 func TestWriteParse(t *testing.T) {
-	var b bytes.Buffer
-	cn := New(&b, &b)
+	t.Run("no oids", func(t *testing.T) {
+		var b bytes.Buffer
+		cn := New(&b, &b)
 
-	if err := cn.WriteParse("test", "SELECT 1"); err != nil {
-		t.Fatal(err)
-	}
-	cn.Flush()
+		if err := cn.WriteParse("test", "SELECT 1"); err != nil {
+			t.Fatal(err)
+		}
+		cn.Flush()
 
-	want := []byte{
-		'P', 0, 0, 0, 20, // message header
-		't', 'e', 's', 't', 0, // portal name
-		'S', 'E', 'L', 'E', 'C', 'T', ' ', '1', 0, // sql
-		0, 0, // number of params (int16)
-	}
-	t.Logf("got:  %q", b.Bytes())
-	t.Logf("want: %q", want)
-	diff.Test(t, t.Errorf, b.Bytes(), want)
+		want := []byte{
+			'P', 0, 0, 0, 20, // message header
+			't', 'e', 's', 't', 0, // portal name
+			'S', 'E', 'L', 'E', 'C', 'T', ' ', '1', 0, // sql
+			0, 0, // number of params (int16)
+		}
+		diff.Test(t, t.Errorf, b.Bytes(), want)
+	})
+
+	t.Run("with oids", func(t *testing.T) {
+		var b bytes.Buffer
+		cn := New(&b, &b)
+
+		if err := cn.WriteParse("s", "SELECT $1, $2", oids.Int4, oids.Text); err != nil {
+			t.Fatal(err)
+		}
+		cn.Flush()
+
+		want := []byte{
+			'P', 0, 0, 0, 30, // message header
+			's', 0, // statement name
+			'S', 'E', 'L', 'E', 'C', 'T', ' ', '$', '1', ',', ' ', '$', '2', 0, // sql
+			0, 2, // number of params (int16)
+			0, 0, 0, 23, // int4 OID
+			0, 0, 0, 25, // text OID
+		}
+		diff.Test(t, t.Errorf, b.Bytes(), want)
+	})
 }
 
 func TestWriteBind(t *testing.T) {

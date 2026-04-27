@@ -186,20 +186,15 @@ func ExampleNotifications_listenNotify() {
 	}
 }
 
-// SQL casts on a placeholder name the type polite is encoding and
-// the type the column expects. Polite always sends Go args in
-// binary — a Go int as an 8-byte int8, a Go string as raw text
-// bytes — so when the column type does not match, the cast in the
-// SQL closes the gap.
+// SQL casts let the placeholder's encoded type differ from the
+// column's. Polite tells PostgreSQL each parameter's type up front,
+// so a cast in the SQL is a server-side coercion rather than a
+// workaround for the wire format.
 //
-// The two common cases are mirror images. Send a Go int to a text
-// column with $1::text; Postgres has an int8-to-text cast. Send a
-// Go string to an int4 column with $1::text::int4; the inner
-// ::text matches polite's wire bytes and Postgres parses to int4
-// server-side. ::text is the universal hop: Postgres parses text
-// against any type, so the pattern generalizes to inet, uuid,
-// numeric, jsonb — anything whose binary wire format polite does
-// not encode.
+// Pass a Go int into a text column with $1::text. Pass a Go string
+// into an int4 column with $1::int4. The same pattern reaches types
+// polite does not encode directly — uuid, inet, numeric, jsonb —
+// because PostgreSQL accepts a text representation for each.
 func ExampleConn_Query_sqlCast() {
 	ctx := context.Background()
 	cn, _ := polite.Dial(ctx, "", nil)
@@ -212,7 +207,7 @@ func ExampleConn_Query_sqlCast() {
 	}
 
 	// Go string -> int4.
-	for row := range cn.Query(ctx, `SELECT $1::text::int4`, "42") {
+	for row := range cn.Query(ctx, `SELECT $1::int4`, "42") {
 		n, _ := row.Column(0).DecodeInt()
 		fmt.Println(n)
 	}

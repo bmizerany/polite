@@ -65,34 +65,6 @@ func TestDecodeTimeRoundTrip(t *testing.T) {
 	}
 }
 
-func TestDecodeTimeIgnoresSessionTimeZone(t *testing.T) {
-	t.Parallel()
-
-	// PostgreSQL timestamp (without time zone) carries no zone, so
-	// DecodeTime always returns the wall-clock fields in time.UTC,
-	// regardless of the session's TimeZone GUC. Use timestamptz when
-	// you need an instant.
-
-	cn := newSession(t)
-
-	start := time.Date(2024, 1, 2, 3, 4, 5, 123456789, time.UTC)
-	assertTime(t, decodeQueryTimes(t, cn, `SELECT $1::timestamp`, start)[0], wantTimestamp(start))
-
-	if err := cn.Exec(t.Context(), `SET TimeZone TO 'America/Los_Angeles'`); err != nil {
-		t.Fatal(err)
-	}
-
-	la, err := time.LoadLocation("America/Los_Angeles")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// A time.Time in a non-UTC location: the wall-clock fields are
-	// what get sent and what come back; the location is dropped.
-	other := time.Date(2024, 7, 8, 9, 10, 11, 123456789, la)
-	assertTime(t, decodeQueryTimes(t, cn, `SELECT $1::timestamp`, other)[0], wantTimestamp(other))
-}
-
 func TestDecodeTimeIgnoresSessionTimeZoneAcrossStatements(t *testing.T) {
 	t.Parallel()
 
@@ -185,48 +157,6 @@ func TestTimestampMicrosecondRoundingInSQL(t *testing.T) {
 				if len(got) != 1 || got[0] != 1 {
 					t.Fatalf("got %v, want true", got)
 				}
-			}
-		})
-	}
-}
-
-func TestTimeArgRejectsUnknownAndNonTemporalParameterTypes(t *testing.T) {
-	t.Parallel()
-
-	cn := newSession(t)
-	defer checkReady(t, cn)
-
-	in := time.Date(2024, 1, 2, 3, 4, 5, 123456789, time.UTC)
-	cases := []struct {
-		name    string
-		sql     string
-		wantErr string
-	}{
-		{
-			name:    "text",
-			sql:     `SELECT $1`,
-			wantErr: "time.Time requires timestamp or timestamptz parameter type; got text",
-		},
-		{
-			name:    "int8",
-			sql:     `SELECT $1::int8`,
-			wantErr: "time.Time requires timestamp or timestamptz parameter type; got int8",
-		},
-		{
-			name:    "numeric",
-			sql:     `SELECT $1::numeric`,
-			wantErr: "time.Time requires timestamp or timestamptz parameter type; got numeric",
-		},
-	}
-
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			err := cn.Exec(t.Context(), tt.sql, in)
-			if err == nil {
-				t.Fatalf("Exec(%q) error = nil", tt.sql)
-			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("Exec(%q) error = %q, want substring %q", tt.sql, err, tt.wantErr)
 			}
 		})
 	}
@@ -428,22 +358,12 @@ func decodeQueryTimes(t *testing.T, cn *Conn, sql string, args ...any) []time.Ti
 	return got
 }
 
-// wantTimestamp mirrors appendArg/DecodeTime semantics for timestamp:
-// take the wall-clock fields, ignore the input's location, and place
-// them in [time.UTC]. The PostgreSQL timestamp type carries no zone;
-// polite uses UTC as a placeholder.
+// wantTimestamp mirrors appendArg/DecodeTime semantics: polite pins
+// time.Time to timestamptz, so a $1::timestamp cast goes through the
+// session's TimeZone GUC. The newSession default is UTC, so the wall
+// clock matches the input's UTC instant.
 func wantTimestamp(in time.Time) time.Time {
-	t := in.Round(time.Microsecond)
-	return time.Date(
-		in.Year(),
-		in.Month(),
-		in.Day(),
-		in.Hour(),
-		in.Minute(),
-		in.Second(),
-		t.Nanosecond(),
-		time.UTC,
-	)
+	return in.UTC().Round(time.Microsecond)
 }
 
 func wantTimestamptz(in time.Time) time.Time {
