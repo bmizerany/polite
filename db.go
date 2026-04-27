@@ -330,12 +330,13 @@ func (c *Conn) copyFromRow(args ...any) error {
 		scratch = encoded
 		values[i] = scratch[start:]
 	}
-	err := c.fc.WriteCopyDataRow(values, !c.copyHeaderWritten)
-	if err != nil {
-		return err
+	if !c.copyHeaderWritten {
+		if err := c.fc.WriteCopyDataHeader(); err != nil {
+			return err
+		}
+		c.copyHeaderWritten = true
 	}
-	c.copyHeaderWritten = true
-	return nil
+	return c.fc.WriteCopyDataRow(values)
 }
 
 var (
@@ -1045,7 +1046,10 @@ func (c *Conn) abortCopyFrom() error {
 
 func (c *Conn) finalizeCopyFrom(ctx context.Context) error {
 	c.inCopyFrom = false
-	c.fc.WriteCopyDataRow(nil, !c.copyHeaderWritten)
+	if !c.copyHeaderWritten {
+		c.fc.WriteCopyDataHeader()
+	}
+	c.fc.WriteCopyDataTrailer()
 	c.fc.WriteCopyDone()
 	if err := c.flushSync(); err != nil {
 		return err

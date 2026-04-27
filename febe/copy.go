@@ -90,56 +90,49 @@ const (
 	binarySignature = "PGCOPY\n\377\r\n\000"
 	binaryFlags     = "\x00\x00\x00\x00"
 	binaryExtLength = "\x00\x00\x00\x00"
+	binaryHeader    = binarySignature + binaryFlags + binaryExtLength
 )
 
-// WriteCopyDataRow writes one CopyData message.
-//
-// Each value is preceded by its length. A nil slice is written as the SQL
-// NULL marker (length -1); a non-nil empty slice is written as a zero-
-// length value of the column's type. If includeHeader is true, the binary
-// COPY header is written before the row data. If values is empty,
-// WriteCopyDataRow writes the binary COPY end marker instead of a row.
-func (c *Conn) WriteCopyDataRow(values [][]byte, includeHeader bool) error {
-	var s sizer
-	s.addInt32() // length
-	if includeHeader {
-		s.addBytes(len(binarySignature))
-		s.addBytes(len(binaryFlags))
-		s.addBytes(len(binaryExtLength))
-	}
-	s.addInt16() // column count
-	for _, v := range values {
-		s.addInt32() // length
-		if v != nil {
-			s.addBytes(len(v))
-		}
-	}
-
+// WriteCopyDataHeader writes the header that begins a binary COPY FROM
+// data stream. It must precede any rows.
+func (c *Conn) WriteCopyDataHeader() error {
 	c.c.WriteByte('d')
-	c.c.WriteInt32(s.size())
+	c.c.WriteInt32(int32(4 + len(binaryHeader)))
+	io.WriteString(c.c, binaryHeader)
+	return c.Err()
+}
 
-	if includeHeader {
-		io.WriteString(c.c, binarySignature)
-		io.WriteString(c.c, binaryFlags)
-		io.WriteString(c.c, binaryExtLength)
+// WriteCopyDataRow writes one row of values to a binary COPY FROM data
+// stream. Each value is sent length-prefixed: a nil slice is SQL NULL,
+// a non-nil empty slice is a zero-length value of the column's type,
+// and an empty values slice writes a row with no columns.
+func (c *Conn) WriteCopyDataRow(values [][]byte) error {
+	size := 4 + 2 // length + column count
+	for _, v := range values {
+		size += 4 // length prefix
+		size += len(v)
 	}
-
-	if len(values) == 0 {
-		// final row
-		c.c.WriteInt16(-1)
-		return c.Err()
-	} else {
-		c.c.WriteInt16(int16(len(values)))
-		for _, v := range values {
-			if v == nil {
-				c.c.WriteInt32(-1)
-				continue
-			}
-			c.c.WriteInt32(int32(len(v)))
-			c.c.Write(v)
+	c.c.WriteByte('d')
+	c.c.WriteInt32(int32(size))
+	c.c.WriteInt16(int16(len(values)))
+	for _, v := range values {
+		if v == nil {
+			c.c.WriteInt32(-1)
+			continue
 		}
-		return c.Err()
+		c.c.WriteInt32(int32(len(v)))
+		c.c.Write(v)
 	}
+	return c.Err()
+}
+
+// WriteCopyDataTrailer writes the end-of-stream marker that terminates
+// a binary COPY FROM data stream. It must follow the last row.
+func (c *Conn) WriteCopyDataTrailer() error {
+	c.c.WriteByte('d')
+	c.c.WriteInt32(6) // 4 (length) + 2 (column count)
+	c.c.WriteInt16(-1)
+	return c.Err()
 }
 
 func (c *Conn) discardBinarySignatureFlagsAndExt() error {

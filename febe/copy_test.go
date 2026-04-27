@@ -113,7 +113,7 @@ func TestWriteCopyDataRowNull(t *testing.T) {
 	var b bytes.Buffer
 	cn := New(nil, &b)
 
-	if err := cn.WriteCopyDataRow([][]byte{nil, []byte("ok"), {}}, false); err != nil {
+	if err := cn.WriteCopyDataRow([][]byte{nil, []byte("ok"), {}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := cn.Flush(); err != nil {
@@ -125,10 +125,73 @@ func TestWriteCopyDataRowNull(t *testing.T) {
 	want.WriteByte('d')
 	// length: 4 (self) + 2 (col count) + 4 (col0 len) + 4 (col1 len) + 2 (col1 data) + 4 (col2 len)
 	want.Write([]byte{0, 0, 0, 20})
-	want.Write([]byte{0, 3})              // 3 columns
+	want.Write([]byte{0, 3})                   // 3 columns
 	want.Write([]byte{0xff, 0xff, 0xff, 0xff}) // col0: NULL (-1)
 	want.Write([]byte{0, 0, 0, 2, 'o', 'k'})   // col1: "ok"
 	want.Write([]byte{0, 0, 0, 0})             // col2: zero-length non-NULL
 
 	diff.Test(t, t.Errorf, got, want.Bytes())
+}
+
+// TestWriteCopyDataHeader verifies the binary COPY header bytes.
+func TestWriteCopyDataHeader(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(nil, &b)
+
+	if err := cn.WriteCopyDataHeader(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := bytes.Buffer{}
+	want.WriteByte('d')
+	want.Write([]byte{0, 0, 0, 23})       // length: 4 (self) + 11 (sig) + 4 (flags) + 4 (ext)
+	want.WriteString("PGCOPY\n\xff\r\n\x00") // signature
+	want.Write([]byte{0, 0, 0, 0})        // flags
+	want.Write([]byte{0, 0, 0, 0})        // ext length
+
+	diff.Test(t, t.Errorf, b.Bytes(), want.Bytes())
+}
+
+// TestWriteCopyDataTrailer verifies the binary COPY end-of-stream marker.
+func TestWriteCopyDataTrailer(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(nil, &b)
+
+	if err := cn.WriteCopyDataTrailer(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := bytes.Buffer{}
+	want.WriteByte('d')
+	want.Write([]byte{0, 0, 0, 6}) // length: 4 (self) + 2 (column count)
+	want.Write([]byte{0xff, 0xff}) // column count -1
+
+	diff.Test(t, t.Errorf, b.Bytes(), want.Bytes())
+}
+
+// TestWriteCopyDataRowZeroColumns verifies that an empty values slice
+// writes a row with column count 0, distinct from the trailer's -1.
+func TestWriteCopyDataRowZeroColumns(t *testing.T) {
+	var b bytes.Buffer
+	cn := New(nil, &b)
+
+	if err := cn.WriteCopyDataRow(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := bytes.Buffer{}
+	want.WriteByte('d')
+	want.Write([]byte{0, 0, 0, 6}) // length: 4 (self) + 2 (column count)
+	want.Write([]byte{0, 0})       // column count 0
+
+	diff.Test(t, t.Errorf, b.Bytes(), want.Bytes())
 }

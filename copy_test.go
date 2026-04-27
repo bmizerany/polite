@@ -463,3 +463,44 @@ func TestCopyFromEmpty(t *testing.T) {
 
 	checkReady(t, cn)
 }
+
+// TestCopyFromZeroColumns COPYs into a zero-column table. PostgreSQL
+// permits zero-column relations and zero-column rows in binary COPY,
+// so polite must distinguish a row with no columns (column count 0)
+// from the end-of-stream marker (column count -1).
+func TestCopyFromZeroColumns(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cn := newSession(t)
+
+	err := cn.Exec(ctx, "CREATE TEMP TABLE void()")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for row := range cn.Query(ctx, "COPY void FROM STDIN WITH (FORMAT binary)") {
+		_, err = row.Column(0).Bytes()
+		if !errors.Is(err, ErrCopyFrom) {
+			t.Fatalf("column error = %v, want ErrCopyFrom", err)
+		}
+		for range 3 {
+			if err := cn.Exec(ctx, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	var count int64
+	for row := range cn.Query(ctx, "SELECT count(*) FROM void") {
+		count, err = row.Column(0).DecodeInt()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if count != 3 {
+		t.Fatalf("count = %d, want 3", count)
+	}
+
+	checkReady(t, cn)
+}
