@@ -115,16 +115,18 @@ type ReadyForQueryResponse struct {
 // Conn reads and writes frontend/backend protocol messages.
 //
 // A Conn is not safe for concurrent use; callers must serialize their
-// own access. Once a fatal condition is observed — a backend FATAL
-// error, [ErrTerminated], or a non-timeout I/O failure — it is sticky:
+// own access.
+//
+// Once a fatal condition is observed — a backend FATAL error,
+// [ErrTerminated], or a non-timeout I/O failure — it is sticky:
 // [Conn.Err] returns it, and further reads and writes report the same
 // error without doing I/O. Non-fatal backend *[Error] values from
-// [Conn.ReadHeader] are surfaced once and cleared by the next
-// ReadyForQuery; they do not stick.
+// [Conn.ReadHeader] are returned once; the Conn remains usable.
+// Timeouts are not cached either, so a timed-out read may be retried.
 //
-// [Conn.WriteTerminate] sets the sticky error to [ErrTerminated] and
-// queues the Terminate byte. The next [Conn.Flush] is allowed through
-// to deliver it to the backend; after that the Conn is finished.
+// [Conn.WriteTerminate] makes [ErrTerminated] sticky and queues the
+// Terminate byte. The next [Conn.Flush] bypasses the sticky-error
+// check to deliver it to the backend; after that the Conn is finished.
 type Conn struct {
 	c *febeio.Conn
 	h MessageHeader // the last header read
