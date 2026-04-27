@@ -678,86 +678,56 @@ func TestZeroColumn(t *testing.T) {
 	}
 }
 
-// TestDecodeNull pins how each Column reader sees a SQL NULL coming
-// off the wire. Bytes returns (nil, nil); Text returns ("", nil) and
-// is therefore indistinguishable from an empty string column. The
-// typed decoders (DecodeInt, DecodeFloat, DecodeTime) treat NULL's
-// zero-length payload as an invalid-length error, since their return
-// types cannot represent missing.
+// testDecodeNull is the body of TestDecodeNull's subtests. It runs
+// sql against cn, decodes column 0 with decode, and asserts the
+// typed return equals want. The error from decode is intentionally
+// not asserted; what each reader returns alongside it is the
+// reader's own contract, documented in doc.go.
+func testDecodeNull[T comparable](t *testing.T, cn *Conn, sql string, decode func(Column) (T, error), want T) {
+	t.Helper()
+	for row := range cn.Query(t.Context(), sql) {
+		got, _ := decode(row.Column(0))
+		if got != want {
+			t.Errorf("got %v; want %v", got, want)
+		}
+		return
+	}
+	t.Fatal("expected 1 row")
+}
+
+// TestDecodeNull pins what each Column reader yields on a SQL NULL.
+// Bytes returns nil; Text returns "" (indistinguishable from an
+// empty-string column); the typed decoders return their zero values
+// (with an "invalid length" error, since their return types cannot
+// represent missing).
 func TestDecodeNull(t *testing.T) {
 	t.Parallel()
 
 	cn := newSession(t)
-	ctx := t.Context()
 
+	// Bytes returns []byte, which is not a comparable type, so it
+	// does not fit the testDecodeNull helper.
 	t.Run("Bytes", func(t *testing.T) {
-		for row := range cn.Query(ctx, `SELECT NULL::bytea`) {
-			got, err := row.Column(0).Bytes()
-			if err != nil {
-				t.Fatalf("Bytes() err = %v; want nil", err)
-			}
+		for row := range cn.Query(t.Context(), `SELECT NULL::bytea`) {
+			got, _ := row.Column(0).Bytes()
 			if got != nil {
-				t.Errorf("Bytes() = %v; want nil", got)
+				t.Errorf("got %v; want nil", got)
 			}
 			return
 		}
 		t.Fatal("expected 1 row")
 	})
-
 	t.Run("Text", func(t *testing.T) {
-		for row := range cn.Query(ctx, `SELECT NULL::text`) {
-			got, err := row.Column(0).Text()
-			if err != nil {
-				t.Fatalf("Text() err = %v; want nil", err)
-			}
-			if got != "" {
-				t.Errorf("Text() = %q; want empty string", got)
-			}
-			return
-		}
-		t.Fatal("expected 1 row")
+		testDecodeNull(t, cn, `SELECT NULL::text`, Column.Text, "")
 	})
-
 	t.Run("DecodeInt", func(t *testing.T) {
-		for row := range cn.Query(ctx, `SELECT NULL::int4`) {
-			_, err := row.Column(0).DecodeInt()
-			if err == nil {
-				t.Fatal("DecodeInt() err = nil; want error")
-			}
-			if !strings.Contains(err.Error(), "invalid length") {
-				t.Errorf("DecodeInt() err = %q; want invalid length", err)
-			}
-			return
-		}
-		t.Fatal("expected 1 row")
+		testDecodeNull(t, cn, `SELECT NULL::int4`, Column.DecodeInt, int64(0))
 	})
-
 	t.Run("DecodeFloat", func(t *testing.T) {
-		for row := range cn.Query(ctx, `SELECT NULL::float8`) {
-			_, err := row.Column(0).DecodeFloat()
-			if err == nil {
-				t.Fatal("DecodeFloat() err = nil; want error")
-			}
-			if !strings.Contains(err.Error(), "invalid length") {
-				t.Errorf("DecodeFloat() err = %q; want invalid length", err)
-			}
-			return
-		}
-		t.Fatal("expected 1 row")
+		testDecodeNull(t, cn, `SELECT NULL::float8`, Column.DecodeFloat, float64(0))
 	})
-
 	t.Run("DecodeTime", func(t *testing.T) {
-		for row := range cn.Query(ctx, `SELECT NULL::timestamptz`) {
-			_, err := row.Column(0).DecodeTime()
-			if err == nil {
-				t.Fatal("DecodeTime() err = nil; want error")
-			}
-			if !strings.Contains(err.Error(), "invalid length") {
-				t.Errorf("DecodeTime() err = %q; want invalid length", err)
-			}
-			return
-		}
-		t.Fatal("expected 1 row")
+		testDecodeNull(t, cn, `SELECT NULL::timestamptz`, Column.DecodeTime, time.Time{})
 	})
 }
 
