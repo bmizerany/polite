@@ -1821,56 +1821,38 @@ func TestQueryInsideNotificationsErrBusy(t *testing.T) {
 // double cast (e.g. $1::text::int4 to bridge a Go int) now compose
 // directly.
 func TestQuerySQLCastPinsParamType(t *testing.T) {
-	t.Parallel()
-
 	cn := newSession(t)
-	ctx := t.Context()
 
 	t.Run("Go int pinned to int4", func(t *testing.T) {
 		const q = `SELECT $1::int4`
 
-		var gotType oids.ID
-		var gotVal int64
-		rows := 0
-		for row := range cn.Query(ctx, q, 42) {
-			rows++
-			gotType = row.Column(0).Type()
-			n, err := row.Column(0).DecodeInt()
-			if err != nil {
-				t.Fatal(err)
+		for row := range cn.Query(t.Context(), q, 42) {
+			col := row.Column(0)
+			if col.Type() != oids.Int4 {
+				t.Errorf("column type = %s; want int4", col.Type())
 			}
-			gotVal = n
+			if n, _ := col.DecodeInt(); n != 42 {
+				t.Errorf("got %d; want 42", n)
+			}
+
+			return
 		}
-		if rows != 1 {
-			t.Fatalf("rows = %d; want 1", rows)
-		}
-		if gotType != oids.Int4 {
-			t.Errorf("column type = %s; want int4", gotType)
-		}
-		if gotVal != 42 {
-			t.Errorf("got %d; want 42", gotVal)
-		}
+
+		t.Fatalf("expected one row")
 	})
 
 	t.Run("Go string pinned to inet", func(t *testing.T) {
 		const q = `SELECT host($1::inet)`
 
-		var gotVal string
-		rows := 0
-		for row := range cn.Query(ctx, q, "192.168.1.42") {
-			rows++
-			s, err := row.Column(0).Text()
-			if err != nil {
-				t.Fatal(err)
+		for row := range cn.Query(t.Context(), q, "192.168.1.42") {
+			if s, _ := row.Column(0).Text(); s != "192.168.1.42" {
+				t.Errorf("got %q; want %q", s, "192.168.1.42")
 			}
-			gotVal = s
+
+			return
 		}
-		if rows != 1 {
-			t.Fatalf("rows = %d; want 1", rows)
-		}
-		if gotVal != "192.168.1.42" {
-			t.Errorf("got %q; want %q", gotVal, "192.168.1.42")
-		}
+
+		t.Fatalf("expected one row")
 	})
 
 	t.Run("time.Time pinned to timestamp via $1::timestamp", func(t *testing.T) {
@@ -1879,27 +1861,19 @@ func TestQuerySQLCastPinsParamType(t *testing.T) {
 		want := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 		const q = `SELECT $1::timestamp`
 
-		var gotType oids.ID
-		var gotTime time.Time
-		rows := 0
-		for row := range cn.Query(ctx, q, want) {
-			rows++
-			gotType = row.Column(0).Type()
-			tt, err := row.Column(0).DecodeTime()
-			if err != nil {
-				t.Fatal(err)
+		for row := range cn.Query(t.Context(), q, want) {
+			col := row.Column(0)
+			if col.Type() != oids.Timestamp {
+				t.Errorf("column type = %s; want timestamp", col.Type())
 			}
-			gotTime = tt
+			if got, _ := col.DecodeTime(); !got.Equal(want) {
+				t.Errorf("got %v; want %v", got, want)
+			}
+
+			return
 		}
-		if rows != 1 {
-			t.Fatalf("rows = %d; want 1", rows)
-		}
-		if gotType != oids.Timestamp {
-			t.Errorf("column type = %s; want timestamp", gotType)
-		}
-		if !gotTime.Equal(want) {
-			t.Errorf("got %v; want %v", gotTime, want)
-		}
+
+		t.Fatalf("expected one row")
 	})
 }
 
