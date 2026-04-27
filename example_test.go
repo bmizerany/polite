@@ -241,7 +241,7 @@ func ExampleNotifications_listenNotify() {
 }
 
 // SQL casts on a placeholder name the type polite is encoding and
-// the type the column expects. polite always sends Go args in
+// the type the column expects. Polite always sends Go args in
 // binary — a Go int as an 8-byte int8, a Go string as raw text
 // bytes — so when the column type does not match, the cast in the
 // SQL closes the gap.

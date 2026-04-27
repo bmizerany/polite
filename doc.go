@@ -17,14 +17,14 @@
 // and errors. Exec is a thin convenience wrapper for commands such as INSERT,
 // UPDATE, and DELETE.
 //
-// polite prepares SQL on first use and caches prepared statements per
+// Polite prepares SQL on first use and caches prepared statements per
 // connection by exact SQL text. Reusing the same SQL on the same connection
 // reuses the prepared statement as well.
 //
 // # Arguments
 //
 // Query and Exec bind variadic arguments to placeholders ($1, $2, ...) in
-// the SQL. polite encodes arguments in PostgreSQL's binary wire format;
+// the SQL. Polite encodes arguments in PostgreSQL's binary wire format;
 // the format is chosen at prepare time to match the placeholder type.
 //
 // The encoding rules are:
@@ -52,7 +52,7 @@
 //
 // # Rows and Columns
 //
-// A [Row] is a view of the current result row. polite requests every column
+// A [Row] is a view of the current result row. Polite requests every column
 // in PostgreSQL's binary format, so [Column] values arrive as raw wire bytes
 // rather than decimal strings. Each Column reports its name, width,
 // PostgreSQL type OID, and those bytes. [Column.DecodeInt],
@@ -97,7 +97,7 @@
 // a ReadyForQuery will follow — from a FATAL or PANIC that has closed the
 // connection.
 //
-// polite's own `Err*` sentinels, such as [ErrBusy], are produced
+// Polite's own `Err*` sentinels, such as [ErrBusy], are produced
 // by polite or [Pool] when they detect a local condition — not decoded
 // from a backend message.
 //
