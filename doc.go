@@ -175,6 +175,10 @@
 //
 // Use [febe.Error.IsFatal] to tell a recoverable backend error — one where
 // a ReadyForQuery will follow — from a FATAL or PANIC that has closed the
+// connection. A non-fatal *Error is returned only by the call that
+// observed it; the underlying [febe.Conn] keeps it out of its sticky-error
+// state so subsequent calls work normally. A fatal *Error or transport
+// error becomes sticky and is returned by every subsequent call on the
 // connection.
 //
 // Polite's own `Err*` sentinels, such as [ErrBusy], are produced

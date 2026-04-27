@@ -18,6 +18,11 @@ type Parameter struct {
 // Each callback runs after the message has been decoded.
 // Nil callbacks are ignored.
 // The zero Trace does nothing.
+//
+// For each message, callbacks fire in struct field order: ReceivedHeader
+// runs first for every message, followed by the message-specific callback
+// (ReceivedNotice, ReceivedError, ReceivedNotification, or
+// ReceivedParameterStatus).
 type Trace struct {
 	// ReceivedHeader is called for each backend message header.
 	ReceivedHeader func(context.Context, MessageHeader)
