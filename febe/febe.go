@@ -285,20 +285,23 @@ func (h MessageHeader) String() string {
 // ReadHeader reads the next message header on the Conn after discarding
 // any unread bytes from the previous message.
 //
-// Some backend messages are handled internally and the loop continues
-// until a header for an unhandled message is available. NoticeResponse
-// ('N'), ParameterStatus ('S'), and NotificationResponse ('A') are each
-// decoded, dispatched to the trace callbacks installed via ctx, and
-// skipped.
+// Several message types are handled internally and never surface to the
+// caller, broken down by the leading type byte:
 //
-// A few message types surface directly as errors:
-//
-//   - ErrorResponse ('E') is decoded and returned as *[Error]. A FATAL
-//     error becomes the Conn's sticky error; non-fatal errors are
-//     returned once and cleared by the next ReadyForQuery.
-//   - CopyFail ('f') is decoded and returned as *[Error] (sticky).
-//   - EmptyQueryResponse ('I') returns [ErrEmptyQuery].
-//   - Terminate ('X') returns [ErrTerminated] (sticky).
+//   - 'N' NoticeResponse: decoded and dispatched to
+//     [Trace.ReceivedNotice]; ReadHeader loops to the next message.
+//   - 'S' ParameterStatus: decoded and dispatched to
+//     [Trace.ReceivedParameterStatus]; loops.
+//   - 'A' NotificationResponse: decoded and dispatched to
+//     [Trace.ReceivedNotification]; loops.
+//   - 'E' ErrorResponse: decoded and returned as *[Error] after firing
+//     [Trace.ReceivedError]. A FATAL error becomes the Conn's sticky
+//     error; non-fatal errors are returned once and cleared by the
+//     next ReadyForQuery.
+//   - 'f' CopyFail: decoded and returned as a sticky *[Error] after
+//     firing [Trace.ReceivedError].
+//   - 'I' EmptyQueryResponse: returns [ErrEmptyQuery]; not sticky.
+//   - 'X' Terminate: returns [ErrTerminated] as the Conn's sticky error.
 //
 // Any other message type is yielded to the caller, which is expected to
 // read the body before calling ReadHeader again.
