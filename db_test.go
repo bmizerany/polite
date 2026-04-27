@@ -679,14 +679,24 @@ func TestZeroColumn(t *testing.T) {
 }
 
 // testDecodeNull is the body of TestDecodeNull's subtests. It runs
-// sql against cn, decodes column 0 with decode, and asserts the
-// typed return equals want. The error from decode is intentionally
-// not asserted; what each reader returns alongside it is the
-// reader's own contract, documented in doc.go.
-func testDecodeNull[T comparable](t *testing.T, cn *Conn, sql string, decode func(Column) (T, error), want T) {
+// sql against cn, decodes column 0 with decode, and asserts both
+// the typed return equals want and the error matches wantErrSubstr
+// (empty wantErrSubstr means err must be nil).
+func testDecodeNull[T comparable](t *testing.T, cn *Conn, sql string, decode func(Column) (T, error), want T, wantErrSubstr string) {
 	t.Helper()
 	for row := range cn.Query(t.Context(), sql) {
-		got, _ := decode(row.Column(0))
+		got, err := decode(row.Column(0))
+		if wantErrSubstr == "" {
+			if err != nil {
+				t.Errorf("err = %v; want nil", err)
+			}
+		} else {
+			if err == nil {
+				t.Errorf("err = nil; want substring %q", wantErrSubstr)
+			} else if !strings.Contains(err.Error(), wantErrSubstr) {
+				t.Errorf("err = %q; want substring %q", err, wantErrSubstr)
+			}
+		}
 		if got != want {
 			t.Errorf("got %v; want %v", got, want)
 		}
@@ -698,8 +708,8 @@ func testDecodeNull[T comparable](t *testing.T, cn *Conn, sql string, decode fun
 // TestDecodeNull pins what each Column reader yields on a SQL NULL.
 // Bytes returns nil; Text returns "" (indistinguishable from an
 // empty-string column); the typed decoders return their zero values
-// (with an "invalid length" error, since their return types cannot
-// represent missing).
+// with an "invalid length" error, since their return types cannot
+// represent missing.
 func TestDecodeNull(t *testing.T) {
 	t.Parallel()
 
@@ -709,7 +719,10 @@ func TestDecodeNull(t *testing.T) {
 	// does not fit the testDecodeNull helper.
 	t.Run("Bytes", func(t *testing.T) {
 		for row := range cn.Query(t.Context(), `SELECT NULL::bytea`) {
-			got, _ := row.Column(0).Bytes()
+			got, err := row.Column(0).Bytes()
+			if err != nil {
+				t.Errorf("err = %v; want nil", err)
+			}
 			if got != nil {
 				t.Errorf("got %v; want nil", got)
 			}
@@ -718,16 +731,16 @@ func TestDecodeNull(t *testing.T) {
 		t.Fatal("expected 1 row")
 	})
 	t.Run("Text", func(t *testing.T) {
-		testDecodeNull(t, cn, `SELECT NULL::text`, Column.Text, "")
+		testDecodeNull(t, cn, `SELECT NULL::text`, Column.Text, "", "")
 	})
 	t.Run("DecodeInt", func(t *testing.T) {
-		testDecodeNull(t, cn, `SELECT NULL::int4`, Column.DecodeInt, int64(0))
+		testDecodeNull(t, cn, `SELECT NULL::int4`, Column.DecodeInt, int64(0), "invalid length")
 	})
 	t.Run("DecodeFloat", func(t *testing.T) {
-		testDecodeNull(t, cn, `SELECT NULL::float8`, Column.DecodeFloat, float64(0))
+		testDecodeNull(t, cn, `SELECT NULL::float8`, Column.DecodeFloat, float64(0), "invalid length")
 	})
 	t.Run("DecodeTime", func(t *testing.T) {
-		testDecodeNull(t, cn, `SELECT NULL::timestamptz`, Column.DecodeTime, time.Time{})
+		testDecodeNull(t, cn, `SELECT NULL::timestamptz`, Column.DecodeTime, time.Time{}, "invalid length")
 	})
 }
 
