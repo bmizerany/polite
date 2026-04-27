@@ -690,90 +690,75 @@ func TestDecodeNull(t *testing.T) {
 	cn := newSession(t)
 	ctx := t.Context()
 
-	cases := []struct {
-		name  string
-		sql   string
-		check func(t *testing.T, col Column)
-	}{
-		{
-			name: "Bytes",
-			sql:  `SELECT NULL::bytea`,
-			check: func(t *testing.T, col Column) {
-				got, err := col.Bytes()
-				if err != nil {
-					t.Fatalf("Bytes() err = %v; want nil", err)
-				}
-				if got != nil {
-					t.Errorf("Bytes() = %v; want nil", got)
-				}
-			},
-		},
-		{
-			name: "Text",
-			sql:  `SELECT NULL::text`,
-			check: func(t *testing.T, col Column) {
-				got, err := col.Text()
-				if err != nil {
-					t.Fatalf("Text() err = %v; want nil", err)
-				}
-				if got != "" {
-					t.Errorf("Text() = %q; want empty string", got)
-				}
-			},
-		},
-		{
-			name: "DecodeInt",
-			sql:  `SELECT NULL::int4`,
-			check: func(t *testing.T, col Column) {
-				_, err := col.DecodeInt()
-				if err == nil {
-					t.Fatal("DecodeInt() err = nil; want error")
-				}
-				if !strings.Contains(err.Error(), "invalid length") {
-					t.Errorf("DecodeInt() err = %q; want invalid length", err)
-				}
-			},
-		},
-		{
-			name: "DecodeFloat",
-			sql:  `SELECT NULL::float8`,
-			check: func(t *testing.T, col Column) {
-				_, err := col.DecodeFloat()
-				if err == nil {
-					t.Fatal("DecodeFloat() err = nil; want error")
-				}
-				if !strings.Contains(err.Error(), "invalid length") {
-					t.Errorf("DecodeFloat() err = %q; want invalid length", err)
-				}
-			},
-		},
-		{
-			name: "DecodeTime",
-			sql:  `SELECT NULL::timestamptz`,
-			check: func(t *testing.T, col Column) {
-				_, err := col.DecodeTime()
-				if err == nil {
-					t.Fatal("DecodeTime() err = nil; want error")
-				}
-				if !strings.Contains(err.Error(), "invalid length") {
-					t.Errorf("DecodeTime() err = %q; want invalid length", err)
-				}
-			},
-		},
-	}
+	t.Run("Bytes", func(t *testing.T) {
+		for row := range cn.Query(ctx, `SELECT NULL::bytea`) {
+			got, err := row.Column(0).Bytes()
+			if err != nil {
+				t.Fatalf("Bytes() err = %v; want nil", err)
+			}
+			if got != nil {
+				t.Errorf("Bytes() = %v; want nil", got)
+			}
+			return
+		}
+		t.Fatal("expected 1 row")
+	})
 
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
-			rows := 0
-			for row := range cn.Query(ctx, tt.sql) {
-				rows++
-				tt.check(t, row.Column(0))
+	t.Run("Text", func(t *testing.T) {
+		for row := range cn.Query(ctx, `SELECT NULL::text`) {
+			got, err := row.Column(0).Text()
+			if err != nil {
+				t.Fatalf("Text() err = %v; want nil", err)
 			}
-			if rows != 1 {
-				t.Fatalf("rows = %d; want 1", rows)
+			if got != "" {
+				t.Errorf("Text() = %q; want empty string", got)
 			}
-		})
-	}
+			return
+		}
+		t.Fatal("expected 1 row")
+	})
+
+	t.Run("DecodeInt", func(t *testing.T) {
+		for row := range cn.Query(ctx, `SELECT NULL::int4`) {
+			_, err := row.Column(0).DecodeInt()
+			if err == nil {
+				t.Fatal("DecodeInt() err = nil; want error")
+			}
+			if !strings.Contains(err.Error(), "invalid length") {
+				t.Errorf("DecodeInt() err = %q; want invalid length", err)
+			}
+			return
+		}
+		t.Fatal("expected 1 row")
+	})
+
+	t.Run("DecodeFloat", func(t *testing.T) {
+		for row := range cn.Query(ctx, `SELECT NULL::float8`) {
+			_, err := row.Column(0).DecodeFloat()
+			if err == nil {
+				t.Fatal("DecodeFloat() err = nil; want error")
+			}
+			if !strings.Contains(err.Error(), "invalid length") {
+				t.Errorf("DecodeFloat() err = %q; want invalid length", err)
+			}
+			return
+		}
+		t.Fatal("expected 1 row")
+	})
+
+	t.Run("DecodeTime", func(t *testing.T) {
+		for row := range cn.Query(ctx, `SELECT NULL::timestamptz`) {
+			_, err := row.Column(0).DecodeTime()
+			if err == nil {
+				t.Fatal("DecodeTime() err = nil; want error")
+			}
+			if !strings.Contains(err.Error(), "invalid length") {
+				t.Errorf("DecodeTime() err = %q; want invalid length", err)
+			}
+			return
+		}
+		t.Fatal("expected 1 row")
+	})
 }
 
 func TestQueryAll(t *testing.T) {
