@@ -56,11 +56,14 @@ type Config struct {
 // performs no hostname verification under "require"; polite verifies the
 // server name against the certificate, the same as "verify-full".
 //
-// The sslrootcert option selects the trust roots for verification. A path
-// loads PEM-encoded certificates from that file; the special value "system"
-// (case-insensitive) loads the host's system trust roots via
+// The sslrootcert option selects the trust roots for verification. An
+// absolute path loads PEM-encoded certificates from that file; the special
+// value "system" (case-insensitive) loads the host's system trust roots via
 // [crypto/x509.SystemCertPool]. If sslrootcert is unset, the standard
-// crypto/tls defaults apply.
+// crypto/tls defaults apply. A relative path is rejected: trust-root
+// resolution must not depend on the process working directory. The file
+// is read through [os.OpenRoot] rooted at its containing directory, so
+// symlinks that escape that directory are refused.
 //
 // Dial honors ctx through the entire connect path: the dial itself, the
 // TLS handshake, and the startup/auth round-trips. If ctx is canceled
@@ -233,6 +236,9 @@ func maybeUpgradeToTLS(cn net.Conn, o *dsn.Options, cfg *Config) (net.Conn, erro
 			tcfg.RootCAs = roots
 			tcfg.ClientCAs = roots
 		} else {
+			if !filepath.IsAbs(o.SSLRootCert) {
+				return nil, fmt.Errorf("polite: sslrootcert must be an absolute path or %q; got %q", "system", o.SSLRootCert)
+			}
 			data, err := rootedReadFile(o.SSLRootCert)
 			if err != nil {
 				return nil, fmt.Errorf("polite: failed to read root certificate: %w", err)

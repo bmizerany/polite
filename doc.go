@@ -50,11 +50,16 @@
 //		              falls back from TLS to plaintext.
 //		              default: verify-full
 //		- sslrootcert trust roots for certificate verification:
-//		                <path>       PEM-encoded certificates
-//		                             loaded from that file.
+//		                <abs-path>   PEM-encoded certificates
+//		                             loaded from that file. Must
+//		                             be an absolute path; relative
+//		                             paths are rejected.
 //		                system       case-insensitive; loads the
 //		                             host's system trust roots
 //		                             via [crypto/x509.SystemCertPool].
+//		              The file is read through [os.OpenRoot] rooted
+//		              at its containing directory, refusing symlinks
+//		              that escape it.
 //		              If unset, the [crypto/tls] defaults apply.
 //		              default: empty
 //

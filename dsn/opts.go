@@ -41,8 +41,17 @@ type Options struct {
 	// "verify-full".
 	SSLMode string
 
-	// SSLRootCert is a PEM file path, or the special value "system"
-	// to load the host's system trust roots.
+	// SSLRootCert names the trust roots used to verify the server
+	// certificate. It is either an absolute path to a PEM file or the
+	// special value "system", which loads the host's system trust
+	// roots via [crypto/x509.SystemCertPool].
+	//
+	// File paths must be absolute. [blake.io/polite.Dial] rejects a
+	// relative path so the resolution does not depend on the process
+	// working directory, which is brittle across launch environments
+	// (development shell, systemd unit, container entrypoint, cron).
+	// The file is read through [os.OpenRoot] rooted at its containing
+	// directory, so symlinks that escape that directory are refused.
 	SSLRootCert string
 
 	// Extra holds the remaining startup parameters as "key=value"
