@@ -852,16 +852,16 @@ func (c *Conn) WriteRowDescription(fields []FieldDescription) error {
 
 // WriteDescribe writes a frontend Describe message for the named statement
 // or portal identified by typ.
-func (c *Conn) WriteDescribe(typ byte, statment string) error {
+func (c *Conn) WriteDescribe(typ byte, statement string) error {
 	var s sizer
 	s.addInt32() // length
 	s.addByte()
-	s.addString(statment)
+	s.addString(statement)
 
 	c.c.WriteByte('D')
 	c.c.WriteInt32(s.size())
 	c.c.WriteByte(typ)
-	c.c.WriteString(statment)
+	c.c.WriteString(statement)
 	return c.Err()
 }
 

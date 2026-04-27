@@ -87,7 +87,6 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 		addr = o.Host + ":" + o.Port
 	}
 
-	// TODO(bmizerany): check info is a valid file and socket
 	if cfg.Dial == nil {
 		cfg.Dial = (&net.Dialer{}).DialContext
 	}
