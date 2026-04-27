@@ -2,6 +2,7 @@ package scram
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/pbkdf2"
 	crand "crypto/rand"
@@ -549,7 +550,7 @@ func runHandshake(t *testing.T, mechanisms []string, continueType febe.Authentic
 
 	var client bytes.Buffer
 	err := withFixedRand(func() error {
-		return Handshake(febe.New(bytes.NewReader(server.Bytes()), &client), febe.AuthenticationResponse{
+		return Handshake(context.Background(), febe.New(bytes.NewReader(server.Bytes()), &client), febe.AuthenticationResponse{
 			Type:           febe.AuthenticationTypeSASL,
 			SASLMechanisms: mechanisms,
 		}, user, password)

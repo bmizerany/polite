@@ -30,8 +30,7 @@ const (
 
 var escapeUsernameRE = strings.NewReplacer("=", "=3D", ",", "=2C")
 
-func Handshake(cn *febe.Conn, cr febe.AuthenticationResponse, user, password string) error {
-	ctx := context.Background()
+func Handshake(ctx context.Context, cn *febe.Conn, cr febe.AuthenticationResponse, user, password string) error {
 	next := func(want febe.AuthenticationType) (febe.AuthenticationResponse, error) {
 		var zero febe.AuthenticationResponse
 		if err := cn.Flush(); err != nil {

@@ -135,7 +135,7 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 
 			switch h.Type() {
 			case 'R':
-				if err := c.handleAuth(o); err != nil {
+				if err := c.handleAuth(ctx, o); err != nil {
 					return err
 				}
 			case 'K':
@@ -184,7 +184,7 @@ func Dial(ctx context.Context, dsnOrURL string, cfg *Config) (*Conn, error) {
 	return c, err
 }
 
-func (c *Conn) handleAuth(o *dsn.Options) error {
+func (c *Conn) handleAuth(ctx context.Context, o *dsn.Options) error {
 	// TODO(bmizerany): add tracing
 
 	cr, err := c.fc.ReadAuthentication()
@@ -196,7 +196,7 @@ func (c *Conn) handleAuth(o *dsn.Options) error {
 		// ok
 		return nil
 	case febe.AuthenticationTypeSASL:
-		return scram.Handshake(c.fc, cr, o.User, o.Password)
+		return scram.Handshake(ctx, c.fc, cr, o.User, o.Password)
 	default:
 		return fmt.Errorf("unexpected authentication type %s", cr.Type)
 	}

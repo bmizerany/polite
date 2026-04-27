@@ -1,10 +1,43 @@
 package scram
 
 import (
+	"bytes"
+	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
+
+	"blake.io/polite/febe"
 )
+
+// TestHandshakeCtxCancel verifies that a canceled caller context aborts
+// the SCRAM handshake on the first read instead of blocking on the
+// underlying reader.
+func TestHandshakeCtxCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// A reader that would block forever if read; the canceled ctx must
+	// short-circuit the read before it reaches the wire.
+	cn := febe.New(blockingReader{}, &bytes.Buffer{})
+	err := Handshake(ctx, cn, febe.AuthenticationResponse{
+		Type:           febe.AuthenticationTypeSASL,
+		SASLMechanisms: []string{"SCRAM-SHA-256"},
+	}, "user", "pencil")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Handshake() err = %v; want context.Canceled", err)
+	}
+}
+
+// blockingReader blocks on Read until the test fails or returns; it
+// exists so a test can prove no read happened. Read is never expected
+// to be called.
+type blockingReader struct{}
+
+func (blockingReader) Read([]byte) (int, error) {
+	select {}
+}
 
 func TestParseChallenge(t *testing.T) {
 	tests := []struct {
