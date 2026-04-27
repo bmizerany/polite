@@ -27,6 +27,13 @@ const (
 // Each waiter receives the most recently returned connection, preserving warm
 // per-connection state such as prepared statements.
 //
+// [Pool.Get] prefers an idle connection that is already in the pool over
+// dialing or waiting for a new one, handing the caller a warm connection
+// when one is available. [Pool.Put] returns a connection to the pool only
+// when it reports [Conn.Idle]; non-idle connections are closed instead of
+// being re-pooled, freeing the slot for a future [Pool.Get] to dial a
+// fresh connection.
+//
 // The zero value is ready for use, with [DefaultPoolMaxConns] as the
 // connection cap and [DefaultPoolMaxWaiters] as the waiting limit.
 type Pool struct {
