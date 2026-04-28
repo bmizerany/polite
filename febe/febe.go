@@ -1154,7 +1154,10 @@ type DataRowValueResponse struct {
 	// MessageHeader is not populated by ReadDataRowValue.
 	MessageHeader
 
-	// Data is the raw bytes for the column value.
+	// Data is the raw bytes for the column value, borrowed from the
+	// underlying read buffer; it is valid only until the next read on the
+	// Conn. Data is nil when the column is SQL NULL (on-wire length -1)
+	// and a non-nil zero-length slice when the column is an empty value.
 	Data []byte
 }
 
@@ -1180,6 +1183,9 @@ func (c *Conn) ReadDataRow(discardBinaryHeader bool) (DataRowResponse, error) {
 }
 
 // ReadDataRowValue reads the next column value from the current row.
+// A SQL NULL column (on-wire length -1) is reported as a zero
+// [DataRowValueResponse] with Data == nil; callers distinguish NULL from
+// an empty value by checking whether Data is nil.
 func (c *Conn) ReadDataRowValue() (DataRowValueResponse, error) {
 	if err := c.checkMessageHeader('D', 'd'); err != nil {
 		return DataRowValueResponse{}, err
