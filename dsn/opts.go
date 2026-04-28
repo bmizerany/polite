@@ -1,8 +1,3 @@
-// Package dsn provides utilities for parsing DSN strings and URLs into a
-// structured Options struct. It supports both key=value DSN strings and URL
-// formats, with sensible defaults for missing values. The package also
-// includes a scanner for tokenizing DSN strings, handling quoted values and
-// escaping.
 package dsn
 
 import (

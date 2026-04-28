@@ -42,7 +42,8 @@ type Config struct {
 // Dial opens a connection to postgres using the parameters in dsnOrURL,
 // which is a DSN or URL. The defaults are host=/tmp (Unix socket),
 // port=5432, user=$(current OS user, falling back to "postgres"), and
-// sslmode=verify-full.
+// sslmode=verify-full. See [blake.io/polite/dsn] for the full set of
+// recognized connection parameters and their defaults.
 //
 // The supported sslmode values are "disable", "require", and "verify-full".
 // An unset sslmode is treated as "verify-full". Any other value, including
