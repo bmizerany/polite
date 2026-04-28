@@ -22,16 +22,6 @@ const (
 
 // Pool is a pool of connections, safe for concurrent use by multiple
 // goroutines. See the package documentation for the scheduling discipline.
-//
-// [Pool.Get] prefers an idle connection that is already in the pool over
-// dialing or waiting for a new one, handing the caller a warm connection
-// when one is available. [Pool.Put] returns a connection to the pool only
-// when it reports [Conn.Idle]; non-idle connections are closed instead of
-// being re-pooled, freeing the slot for a future [Pool.Get] to dial a
-// fresh connection.
-//
-// The zero value is ready for use, with [DefaultPoolMaxConns] as the
-// connection cap and [DefaultPoolMaxWaiters] as the waiting limit.
 type Pool struct {
 	// Dial opens a new connection when the pool needs one. If Dial is
 	// nil, the package-level [Dial] is used with [DefaultDSN] and nil
