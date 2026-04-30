@@ -36,24 +36,14 @@ type Item struct {
 // ON CONFLICT clause makes the call idempotent so the HTTP handler can
 // call it on every page load without a SELECT-then-INSERT race.
 func Ensure(ctx context.Context, pool *polite.Pool, listID string) error {
-	cn, err := pool.Get(ctx)
-	if err != nil {
-		return err
-	}
-	defer pool.Put(cn)
 	const q = `INSERT INTO lists (id) VALUES ($1) ON CONFLICT DO NOTHING`
-	return cn.Exec(ctx, q, listID)
+	return pool.Exec(ctx, q, listID)
 }
 
 // Items returns the list's items in insertion order (id is bigserial,
 // so ORDER BY id is the same as ORDER BY created_at without depending
 // on the clock).
 func Items(ctx context.Context, pool *polite.Pool, listID string) ([]Item, error) {
-	cn, err := pool.Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer pool.Put(cn)
 	const q = `
 		SELECT id, body, done
 		FROM items
@@ -61,7 +51,10 @@ func Items(ctx context.Context, pool *polite.Pool, listID string) ([]Item, error
 		ORDER BY id
 	`
 	var out []Item
-	for row := range cn.Query(ctx, q, listID) {
+	for row := range pool.Query(ctx, q, listID) {
+		if _, err := row.Column(0).Bytes(); err != nil {
+			return nil, err
+		}
 		var it Item
 		it.ID, _ = row.Column(0).DecodeInt()
 		it.Body, _ = row.Column(1).DecodeText()
@@ -88,12 +81,6 @@ func decodeBool(row *polite.Row) bool {
 // happen in a single SQL statement using a CTE so the notification can
 // only fire if the row is actually committed.
 func Add(ctx context.Context, pool *polite.Pool, listID, tabID, body string) (Item, error) {
-	cn, err := pool.Get(ctx)
-	if err != nil {
-		return Item{}, err
-	}
-	defer pool.Put(cn)
-
 	const q = `
 		WITH inserted AS (
 			INSERT INTO items (list_id, body)
@@ -105,7 +92,10 @@ func Add(ctx context.Context, pool *polite.Pool, listID, tabID, body string) (It
 		FROM inserted
 	`
 	var it Item
-	for row := range cn.Query(ctx, q, listID, body, Channel, tabID) {
+	for row := range pool.Query(ctx, q, listID, body, Channel, tabID) {
+		if _, err := row.Column(0).Bytes(); err != nil {
+			return Item{}, err
+		}
 		it.ID, _ = row.Column(0).DecodeInt()
 		it.Body, _ = row.Column(1).DecodeText()
 		it.Done = decodeBool(row)
@@ -121,12 +111,6 @@ func Add(ctx context.Context, pool *polite.Pool, listID, tabID, body string) (It
 // inserts from updates — it just re-renders the item by id, and htmx
 // out-of-band swaps replace the existing <li> in the DOM.
 func Toggle(ctx context.Context, pool *polite.Pool, listID, tabID string, itemID int64) (Item, error) {
-	cn, err := pool.Get(ctx)
-	if err != nil {
-		return Item{}, err
-	}
-	defer pool.Put(cn)
-
 	const q = `
 		WITH updated AS (
 			UPDATE items
@@ -139,7 +123,10 @@ func Toggle(ctx context.Context, pool *polite.Pool, listID, tabID string, itemID
 		FROM updated
 	`
 	var it Item
-	for row := range cn.Query(ctx, q, itemID, listID, Channel, tabID) {
+	for row := range pool.Query(ctx, q, itemID, listID, Channel, tabID) {
+		if _, err := row.Column(0).Bytes(); err != nil {
+			return Item{}, err
+		}
 		it.ID, _ = row.Column(0).DecodeInt()
 		it.Body, _ = row.Column(1).DecodeText()
 		it.Done = decodeBool(row)
@@ -153,15 +140,13 @@ func Toggle(ctx context.Context, pool *polite.Pool, listID, tabID string, itemID
 // Get fetches a single item by id. SSE handlers use it to re-render
 // the row when a NOTIFY arrives.
 func Get(ctx context.Context, pool *polite.Pool, listID string, itemID int64) (Item, error) {
-	cn, err := pool.Get(ctx)
-	if err != nil {
-		return Item{}, err
-	}
-	defer pool.Put(cn)
 	const q = `SELECT id, body, done FROM items WHERE id = $1 AND list_id = $2`
 	var it Item
 	var found bool
-	for row := range cn.Query(ctx, q, itemID, listID) {
+	for row := range pool.Query(ctx, q, itemID, listID) {
+		if _, err := row.Column(0).Bytes(); err != nil {
+			return Item{}, err
+		}
 		it.ID, _ = row.Column(0).DecodeInt()
 		it.Body, _ = row.Column(1).DecodeText()
 		it.Done = decodeBool(row)

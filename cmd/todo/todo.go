@@ -121,24 +121,18 @@ func main() {
 }
 
 func applySchema(ctx context.Context, pool *polite.Pool) error {
-	cn, err := pool.Get(ctx)
-	if err != nil {
-		return err
-	}
-	defer pool.Put(cn)
 	// polite prepares every statement, and the extended-query
 	// protocol allows only one command per Parse. Split the file
 	// on top-level semicolons and run each piece. The schema is
 	// plain DDL, so a naive split is safe — no quoted semicolons,
-	// no $$-quoted bodies.
-	// Strip comments before splitting on ';' — a stray semicolon
-	// inside a comment would otherwise cut a statement in half.
+	// no $$-quoted bodies. Strip comments before splitting so a
+	// stray semicolon in a comment can't cut a statement in half.
 	for stmt := range strings.SplitSeq(stripComments(schemaSQL), ";") {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
 		}
-		if err := cn.Exec(ctx, stmt); err != nil {
+		if err := pool.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("schema %q: %w", firstLine(stmt), err)
 		}
 	}
