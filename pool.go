@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"iter"
 	"log/slog"
 	"sync"
 	"time"
@@ -124,6 +125,52 @@ func (p *Pool) Get(ctx context.Context) (*Conn, error) {
 		return nil, cmp.Or(context.Cause(p.cancelCtx), ErrClosed)
 	default:
 		return cn, err
+	}
+}
+
+// Exec checks a connection out of the pool, runs sql, and returns the
+// connection to the pool. It is the [Pool] analogue of [Conn.Exec] for
+// the common one-shot case where the caller does not need to thread a
+// [*Conn] through several calls.
+//
+// If the pool cannot supply a connection, Exec returns the error from
+// [Pool.Get] without running sql. Otherwise it returns whatever
+// [Conn.Exec] returns. The connection is always returned to the pool;
+// [Pool.Put] decides whether the connection is still healthy enough to
+// keep.
+func (p *Pool) Exec(ctx context.Context, sql string, args ...any) error {
+	cn, err := p.Get(ctx)
+	if err != nil {
+		return err
+	}
+	defer p.Put(cn)
+	return cn.Exec(ctx, sql, args...)
+}
+
+// Query checks a connection out of the pool, runs sql, and returns the
+// connection to the pool when the iterator finishes. It is the [Pool]
+// analogue of [Conn.Query]; the iterator owns the connection for its
+// lifetime, so callers must let the loop run to completion (or break)
+// before issuing another pool operation that depends on the released
+// connection.
+//
+// If [Pool.Get] fails, Query yields a single error [Row] carrying that
+// error and stops. Errors from [Conn.Query] are surfaced through
+// columns the same way [Conn.Query] surfaces them; see that method
+// for the iteration contract.
+func (p *Pool) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
+	return func(yield func(*Row) bool) {
+		cn, err := p.Get(ctx)
+		if err != nil {
+			yield(&Row{err: err})
+			return
+		}
+		defer p.Put(cn)
+		for row := range cn.Query(ctx, sql, args...) {
+			if !yield(row) {
+				return
+			}
+		}
 	}
 }
 
