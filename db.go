@@ -912,8 +912,8 @@ func (c Column) DecodeBool() (bool, error) {
 	if c.err != nil {
 		return false, c.err
 	}
-	for _, b := range c.data {
-		if b != 0 {
+	for i := range c.data {
+		if c.data[i] != 0 {
 			return true, nil
 		}
 	}
