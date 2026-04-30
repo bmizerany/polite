@@ -85,19 +85,19 @@ func main() {
 		log.Fatalf("schema: %v", err)
 	}
 
-	hub := list.NewHub(pool)
+	cfg := list.New(pool)
 	go func() {
-		// The Hub owns one connection for LISTEN; if it ever
-		// returns we just log and let the demo continue without
-		// live updates rather than crashing the server.
-		if err := hub.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("hub: %v", err)
+		// Run owns one connection for LISTEN; if it ever returns
+		// we just log and let the demo continue without live
+		// updates rather than crashing the server.
+		if err := cfg.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("listen: %v", err)
 		}
 	}()
 
 	tmpl := template.Must(template.ParseFS(templateFS, "templates/*.tmpl"))
 
-	srv := &server{pool: pool, hub: hub, tmpl: tmpl}
+	srv := &server{cfg: cfg, tmpl: tmpl}
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /public/", http.StripPrefix("/public/", http.FileServer(http.FS(mustSub(publicFS, "public")))))
@@ -165,8 +165,7 @@ func mustSub(f embed.FS, dir string) fs.FS {
 }
 
 type server struct {
-	pool *polite.Pool
-	hub  *list.Hub
+	cfg  *list.Config
 	tmpl *template.Template
 }
 
@@ -183,11 +182,11 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad list id", http.StatusBadRequest)
 		return
 	}
-	if err := list.Ensure(r.Context(), s.pool, listID); err != nil {
+	if err := s.cfg.Ensure(r.Context(), listID); err != nil {
 		httpErr(w, err)
 		return
 	}
-	items, err := list.Items(r.Context(), s.pool, listID)
+	items, err := s.cfg.Items(r.Context(), listID)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -216,7 +215,7 @@ func (s *server) add(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	it, err := list.Add(r.Context(), s.pool, listID, tabID, body)
+	it, err := s.cfg.Add(r.Context(), listID, tabID, body)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -246,7 +245,7 @@ func (s *server) toggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tabID := r.PostFormValue("tab")
-	it, err := list.Toggle(r.Context(), s.pool, listID, tabID, id)
+	it, err := s.cfg.Toggle(r.Context(), listID, tabID, id)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -284,14 +283,14 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
 
-	sub := s.hub.Subscribe(listID)
-	defer s.hub.Unsubscribe(sub)
+	sub := s.cfg.Subscribe(listID)
+	defer s.cfg.Unsubscribe(sub)
 
 	// Track which item IDs this connection has already shown so we
 	// can choose between "append" (new) and "replace" (update). The
 	// initial set comes from the items we know are already in the
 	// page; we lazily fill it as events arrive.
-	seen, err := initialSeen(r.Context(), s.pool, listID)
+	seen, err := initialSeen(r.Context(), s.cfg, listID)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -325,7 +324,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 			if ev.TabID == tabID {
 				continue
 			}
-			it, err := list.Get(r.Context(), s.pool, ev.ListID, ev.ItemID)
+			it, err := s.cfg.Get(r.Context(), ev.ListID, ev.ItemID)
 			if err != nil {
 				continue
 			}
@@ -345,8 +344,8 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func initialSeen(ctx context.Context, pool *polite.Pool, listID string) (map[int64]bool, error) {
-	items, err := list.Items(ctx, pool, listID)
+func initialSeen(ctx context.Context, cfg *list.Config, listID string) (map[int64]bool, error) {
+	items, err := cfg.Items(ctx, listID)
 	if err != nil {
 		return nil, err
 	}
