@@ -20,12 +20,12 @@ import (
 	"blake.io/polite"
 )
 
-// Channel is the single PostgreSQL LISTEN channel the demo uses. Every
+// channel is the single PostgreSQL LISTEN channel the demo uses. Every
 // mutation NOTIFY's here with a payload of `listID|tabID|itemID`. A
 // single [Manager] consumes the channel and demultiplexes by listID, so
 // we keep one dedicated connection for notifications regardless of
 // how many browser tabs are connected.
-const Channel = "todo_changes"
+const channel = "todo_changes"
 
 // Item is a row in the `items` table.
 type Item struct {
@@ -48,17 +48,33 @@ type Event struct {
 // the process; construct it with [New], call [Manager.Run] in its
 // own goroutine, and reuse the value across HTTP handlers.
 type Manager struct {
+	dsn  string
 	pool *polite.Pool
 
 	mu   sync.Mutex
 	subs map[chan Event]string // chan -> listID
 }
 
-// New returns a Manager bound to pool. The returned value is ready to
-// use: data methods can be called immediately; [Manager.Run] starts the
-// LISTEN/NOTIFY worker.
-func New(pool *polite.Pool) *Manager {
-	return &Manager{pool: pool, subs: map[chan Event]string{}}
+// New returns a Manager that dials dsn for both pooled queries and the
+// dedicated LISTEN connection used by [Manager.Run]. The returned value
+// is ready to use: data methods can be called immediately. Call
+// [Manager.Close] to release the pool when done.
+func New(dsn string) *Manager {
+	m := &Manager{
+		dsn:  dsn,
+		subs: map[chan Event]string{},
+	}
+	m.pool = &polite.Pool{
+		Dial: func(ctx context.Context) (*polite.Conn, error) {
+			return polite.Dial(ctx, dsn, nil)
+		},
+	}
+	return m
+}
+
+// Close releases the pool's connections.
+func (m *Manager) Close() error {
+	return m.pool.Close()
 }
 
 // Ensure creates the list row if it does not already exist. The
@@ -105,7 +121,7 @@ func (m *Manager) Add(ctx context.Context, listID, tabID, body string) (Item, er
 		       pg_notify($3, $1 || '|' || $4 || '|' || id::text)
 		FROM inserted
 	`
-	for row := range m.pool.Query(ctx, q, listID, body, Channel, tabID) {
+	for row := range m.pool.Query(ctx, q, listID, body, channel, tabID) {
 		return decodeItem(row)
 	}
 	return Item{}, errors.New("list: insert returned no row")
@@ -127,7 +143,7 @@ func (m *Manager) Toggle(ctx context.Context, listID, tabID string, itemID int64
 		       pg_notify($3, $2 || '|' || $4 || '|' || id::text)
 		FROM updated
 	`
-	for row := range m.pool.Query(ctx, q, itemID, listID, Channel, tabID) {
+	for row := range m.pool.Query(ctx, q, itemID, listID, channel, tabID) {
 		return decodeItem(row)
 	}
 	return Item{}, fmt.Errorf("list: item %d not found in %q", itemID, listID)
@@ -176,21 +192,19 @@ func (m *Manager) Events(ctx context.Context, listID string) iter.Seq[Event] {
 	}
 }
 
-// Run owns one polite connection for the lifetime of ctx. It LISTENs
-// on [Channel] and dispatches every notification to matching
-// subscribers. Run uses its own connection (not pool-recycled) because
-// LISTEN binds to a specific session; returning the connection to the
-// pool would lose the subscription.
+// Run dials a dedicated connection and LISTENs on the demo's NOTIFY
+// channel for the lifetime of ctx, dispatching every notification to
+// matching subscribers. The connection is not pool-recycled because
+// LISTEN binds to a specific session; returning it to the pool would
+// lose the subscription.
 func (m *Manager) Run(ctx context.Context) error {
-	cn, err := m.pool.Get(ctx)
+	cn, err := polite.Dial(ctx, m.dsn, nil)
 	if err != nil {
 		return err
 	}
-	// We deliberately do not Put this connection back: it is
-	// dedicated to Run for its lifetime.
 	defer cn.Close()
 
-	if err := cn.Exec(ctx, `LISTEN `+quoteIdent(Channel)); err != nil {
+	if err := cn.Exec(ctx, `LISTEN `+channel); err != nil {
 		return err
 	}
 
@@ -244,12 +258,4 @@ func parsePayload(s string) (Event, bool) {
 		return Event{}, false
 	}
 	return Event{ListID: parts[0], TabID: parts[1], ItemID: id}, true
-}
-
-// quoteIdent quotes a SQL identifier the way PostgreSQL expects:
-// wrap in double quotes and double any embedded ones. We only ever
-// pass [Channel] through here, but keeping the quoting honest lets a
-// reader trust the call site at a glance.
-func quoteIdent(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }

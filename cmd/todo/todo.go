@@ -74,18 +74,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool := &polite.Pool{
-		Dial: func(ctx context.Context) (*polite.Conn, error) {
-			return polite.Dial(ctx, *dsn, nil)
-		},
-	}
-	defer pool.Close()
-
-	if err := applySchema(ctx, pool); err != nil {
+	if err := applySchema(ctx, *dsn); err != nil {
 		log.Fatalf("schema: %v", err)
 	}
 
-	mgr := list.New(pool)
+	mgr := list.New(*dsn)
+	defer mgr.Close()
 	go func() {
 		// Run owns one connection for LISTEN; if it ever returns
 		// we just log and let the demo continue without live
@@ -120,19 +114,24 @@ func main() {
 	}
 }
 
-func applySchema(ctx context.Context, pool *polite.Pool) error {
+func applySchema(ctx context.Context, dsn string) error {
 	// polite prepares every statement, and the extended-query
 	// protocol allows only one command per Parse. Split the file
 	// on top-level semicolons and run each piece. The schema is
 	// plain DDL, so a naive split is safe — no quoted semicolons,
 	// no $$-quoted bodies. Strip comments before splitting so a
 	// stray semicolon in a comment can't cut a statement in half.
+	cn, err := polite.Dial(ctx, dsn, nil)
+	if err != nil {
+		return err
+	}
+	defer cn.Close()
 	for stmt := range strings.SplitSeq(stripComments(schemaSQL), ";") {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
 		}
-		if err := pool.Exec(ctx, stmt); err != nil {
+		if err := cn.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("schema %q: %w", firstLine(stmt), err)
 		}
 	}
