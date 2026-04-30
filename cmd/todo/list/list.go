@@ -10,36 +10,38 @@ package list
 
 import (
 	"context"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"iter"
-	"strconv"
-	"strings"
 	"sync"
 
 	"blake.io/polite"
 )
 
 // channel is the single PostgreSQL LISTEN channel the demo uses. Every
-// mutation NOTIFY's here with a payload of `listID|tabID|itemID`. A
-// single [Manager] consumes the channel and demultiplexes by listID, so
-// we keep one dedicated connection for notifications regardless of
-// how many browser tabs are connected.
+// mutation NOTIFY's here with a JSON payload that unmarshals into an
+// [Event]. A single [Manager] consumes the channel and demultiplexes
+// by listID, so we keep one dedicated connection for notifications
+// regardless of how many browser tabs are connected.
 const channel = "todo_changes"
 
-// Item is a row in the `items` table.
+// Item is a row in the `items` table. Queries return it as a JSON
+// object built by `json_build_object` so the wire bytes drop straight
+// into [encoding/json/v2.Unmarshal].
 type Item struct {
-	ID   int64
-	Body string
-	Done bool
+	ID   int64  `json:"id"`
+	Body string `json:"body"`
+	Done bool   `json:"done"`
 }
 
-// Event is what [Manager] hands to subscribers. ListID and TabID come
-// from the NOTIFY payload; ItemID is the id of the row that changed.
+// Event is what [Manager] hands to subscribers. The NOTIFY payload is
+// a JSON object produced by `json_build_object` and unmarshaled with
+// [encoding/json/v2.Unmarshal].
 type Event struct {
-	ListID string
-	TabID  string
-	ItemID int64
+	ListID string `json:"list_id"`
+	TabID  string `json:"tab_id"`
+	ItemID int64  `json:"item_id"`
 }
 
 // Manager bundles the pool used for data access and the in-process
@@ -85,12 +87,16 @@ func (m *Manager) Ensure(ctx context.Context, listID string) error {
 	return m.pool.Exec(ctx, q, listID)
 }
 
+// itemJSON is the projection used by every Items/Add/Toggle/Get query;
+// it builds the JSON object decodeItem unmarshals.
+const itemJSON = `json_build_object('id', id, 'body', body, 'done', done)`
+
 // Items returns the list's items in insertion order (id is bigserial,
 // so ORDER BY id is the same as ORDER BY created_at without depending
 // on the clock).
 func (m *Manager) Items(ctx context.Context, listID string) ([]Item, error) {
 	const q = `
-		SELECT id, body, done
+		SELECT ` + itemJSON + `
 		FROM items
 		WHERE list_id = $1
 		ORDER BY id
@@ -117,8 +123,8 @@ func (m *Manager) Add(ctx context.Context, listID, tabID, body string) (Item, er
 			VALUES ($1, $2)
 			RETURNING id, body, done
 		)
-		SELECT id, body, done,
-		       pg_notify($3, $1 || '|' || $4 || '|' || id::text)
+		SELECT ` + itemJSON + `,
+		       pg_notify($3, json_build_object('list_id', $1, 'tab_id', $4, 'item_id', id)::text)
 		FROM inserted
 	`
 	for row := range m.pool.Query(ctx, q, listID, body, channel, tabID) {
@@ -139,8 +145,8 @@ func (m *Manager) Toggle(ctx context.Context, listID, tabID string, itemID int64
 			WHERE id = $1 AND list_id = $2
 			RETURNING id, body, done
 		)
-		SELECT id, body, done,
-		       pg_notify($3, $2 || '|' || $4 || '|' || id::text)
+		SELECT ` + itemJSON + `,
+		       pg_notify($3, json_build_object('list_id', $2, 'tab_id', $4, 'item_id', id)::text)
 		FROM updated
 	`
 	for row := range m.pool.Query(ctx, q, itemID, listID, channel, tabID) {
@@ -152,7 +158,7 @@ func (m *Manager) Toggle(ctx context.Context, listID, tabID string, itemID int64
 // Get fetches a single item by id. SSE handlers use it to re-render
 // the row when a NOTIFY arrives.
 func (m *Manager) Get(ctx context.Context, listID string, itemID int64) (Item, error) {
-	const q = `SELECT id, body, done FROM items WHERE id = $1 AND list_id = $2`
+	const q = `SELECT ` + itemJSON + ` FROM items WHERE id = $1 AND list_id = $2`
 	for row := range m.pool.Query(ctx, q, itemID, listID) {
 		return decodeItem(row)
 	}
@@ -209,8 +215,8 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 
 	for n := range polite.Notifications(ctx, cn) {
-		ev, ok := parsePayload(string(n.Payload))
-		if !ok {
+		var ev Event
+		if err := json.Unmarshal(n.Payload, &ev); err != nil {
 			continue
 		}
 		m.dispatch(ev)
@@ -235,27 +241,14 @@ func (m *Manager) dispatch(ev Event) {
 	}
 }
 
-// decodeItem reads (id, body, done) — the three columns every
-// query in this package selects in that order — into an Item.
+// decodeItem unmarshals the first column — a `json_build_object`
+// projection of (id, body, done) — into an [Item].
 func decodeItem(row *polite.Row) (Item, error) {
-	if _, err := row.Column(0).Bytes(); err != nil {
+	b, err := row.Column(0).Bytes()
+	if err != nil {
 		return Item{}, err
 	}
 	var it Item
-	it.ID, _ = row.Column(0).DecodeInt()
-	it.Body, _ = row.Column(1).DecodeText()
-	it.Done, _ = row.Column(2).DecodeBool()
-	return it, nil
-}
-
-func parsePayload(s string) (Event, bool) {
-	parts := strings.SplitN(s, "|", 3)
-	if len(parts) != 3 {
-		return Event{}, false
-	}
-	id, err := strconv.ParseInt(parts[2], 10, 64)
-	if err != nil {
-		return Event{}, false
-	}
-	return Event{ListID: parts[0], TabID: parts[1], ItemID: id}, true
+	err = json.Unmarshal(b, &it)
+	return it, err
 }
