@@ -85,19 +85,19 @@ func main() {
 		log.Fatalf("schema: %v", err)
 	}
 
-	cfg := list.New(pool)
+	mgr := list.New(pool)
 	go func() {
 		// Run owns one connection for LISTEN; if it ever returns
 		// we just log and let the demo continue without live
 		// updates rather than crashing the server.
-		if err := cfg.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		if err := mgr.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("listen: %v", err)
 		}
 	}()
 
 	tmpl := template.Must(template.ParseFS(templateFS, "templates/*.tmpl"))
 
-	srv := &server{cfg: cfg, tmpl: tmpl}
+	srv := &server{mgr: mgr, tmpl: tmpl}
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /public/", http.StripPrefix("/public/", http.FileServer(http.FS(mustSub(publicFS, "public")))))
@@ -165,7 +165,7 @@ func mustSub(f embed.FS, dir string) fs.FS {
 }
 
 type server struct {
-	cfg  *list.Config
+	mgr  *list.Manager
 	tmpl *template.Template
 }
 
@@ -182,11 +182,11 @@ func (s *server) show(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad list id", http.StatusBadRequest)
 		return
 	}
-	if err := s.cfg.Ensure(r.Context(), listID); err != nil {
+	if err := s.mgr.Ensure(r.Context(), listID); err != nil {
 		httpErr(w, err)
 		return
 	}
-	items, err := s.cfg.Items(r.Context(), listID)
+	items, err := s.mgr.Items(r.Context(), listID)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -215,7 +215,7 @@ func (s *server) add(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	it, err := s.cfg.Add(r.Context(), listID, tabID, body)
+	it, err := s.mgr.Add(r.Context(), listID, tabID, body)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -245,7 +245,7 @@ func (s *server) toggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tabID := r.PostFormValue("tab")
-	it, err := s.cfg.Toggle(r.Context(), listID, tabID, id)
+	it, err := s.mgr.Toggle(r.Context(), listID, tabID, id)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -283,14 +283,14 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
 
-	sub := s.cfg.Subscribe(listID)
-	defer s.cfg.Unsubscribe(sub)
+	sub := s.mgr.Subscribe(listID)
+	defer s.mgr.Unsubscribe(sub)
 
 	// Track which item IDs this connection has already shown so we
 	// can choose between "append" (new) and "replace" (update). The
 	// initial set comes from the items we know are already in the
 	// page; we lazily fill it as events arrive.
-	seen, err := initialSeen(r.Context(), s.cfg, listID)
+	seen, err := initialSeen(r.Context(), s.mgr, listID)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -324,7 +324,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 			if ev.TabID == tabID {
 				continue
 			}
-			it, err := s.cfg.Get(r.Context(), ev.ListID, ev.ItemID)
+			it, err := s.mgr.Get(r.Context(), ev.ListID, ev.ItemID)
 			if err != nil {
 				continue
 			}
@@ -344,8 +344,8 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func initialSeen(ctx context.Context, cfg *list.Config, listID string) (map[int64]bool, error) {
-	items, err := cfg.Items(ctx, listID)
+func initialSeen(ctx context.Context, mgr *list.Manager, listID string) (map[int64]bool, error) {
+	items, err := mgr.Items(ctx, listID)
 	if err != nil {
 		return nil, err
 	}

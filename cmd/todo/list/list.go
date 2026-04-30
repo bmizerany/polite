@@ -1,6 +1,6 @@
 // Package list is a tiny, polite-only data layer for the to-do demo.
 //
-// A [Config] wraps a [*polite.Pool] with a handful of high-level
+// A [Manager] wraps a [*polite.Pool] with a handful of high-level
 // methods (Ensure, Add, Toggle, Items, Get) and an in-process
 // LISTEN/NOTIFY broadcast bus that fans Postgres notifications out to
 // SSE subscribers. The package is deliberately small: SQL lives next
@@ -21,7 +21,7 @@ import (
 
 // Channel is the single PostgreSQL LISTEN channel the demo uses. Every
 // mutation NOTIFY's here with a payload of `listID|tabID|itemID`. A
-// single [Config] consumes the channel and demultiplexes by listID, so
+// single [Manager] consumes the channel and demultiplexes by listID, so
 // we keep one dedicated connection for notifications regardless of
 // how many browser tabs are connected.
 const Channel = "todo_changes"
@@ -33,7 +33,7 @@ type Item struct {
 	Done bool
 }
 
-// Event is what [Config] hands to subscribers. ListID and TabID come
+// Event is what [Manager] hands to subscribers. ListID and TabID come
 // from the NOTIFY payload; ItemID is the id of the row that changed.
 type Event struct {
 	ListID string
@@ -41,37 +41,37 @@ type Event struct {
 	ItemID int64
 }
 
-// Config bundles the pool used for data access and the in-process
+// Manager bundles the pool used for data access and the in-process
 // broadcast bus used to fan PostgreSQL LISTEN/NOTIFY traffic out to
-// SSE subscribers. One Config is meant to live for the lifetime of
-// the process; construct it with [New], call [Config.Run] in its
+// SSE subscribers. One Manager is meant to live for the lifetime of
+// the process; construct it with [New], call [Manager.Run] in its
 // own goroutine, and reuse the value across HTTP handlers.
-type Config struct {
+type Manager struct {
 	pool *polite.Pool
 
 	mu   sync.Mutex
 	subs map[chan Event]string // chan -> listID
 }
 
-// New returns a Config bound to pool. The returned value is ready to
-// use: data methods can be called immediately; [Config.Run] starts the
+// New returns a Manager bound to pool. The returned value is ready to
+// use: data methods can be called immediately; [Manager.Run] starts the
 // LISTEN/NOTIFY worker.
-func New(pool *polite.Pool) *Config {
-	return &Config{pool: pool, subs: map[chan Event]string{}}
+func New(pool *polite.Pool) *Manager {
+	return &Manager{pool: pool, subs: map[chan Event]string{}}
 }
 
 // Ensure creates the list row if it does not already exist. The
 // ON CONFLICT clause makes the call idempotent so the HTTP handler can
 // call it on every page load without a SELECT-then-INSERT race.
-func (c *Config) Ensure(ctx context.Context, listID string) error {
+func (m *Manager) Ensure(ctx context.Context, listID string) error {
 	const q = `INSERT INTO lists (id) VALUES ($1) ON CONFLICT DO NOTHING`
-	return c.pool.Exec(ctx, q, listID)
+	return m.pool.Exec(ctx, q, listID)
 }
 
 // Items returns the list's items in insertion order (id is bigserial,
 // so ORDER BY id is the same as ORDER BY created_at without depending
 // on the clock).
-func (c *Config) Items(ctx context.Context, listID string) ([]Item, error) {
+func (m *Manager) Items(ctx context.Context, listID string) ([]Item, error) {
 	const q = `
 		SELECT id, body, done
 		FROM items
@@ -79,7 +79,7 @@ func (c *Config) Items(ctx context.Context, listID string) ([]Item, error) {
 		ORDER BY id
 	`
 	var out []Item
-	for row := range c.pool.Query(ctx, q, listID) {
+	for row := range m.pool.Query(ctx, q, listID) {
 		it, err := decodeItem(row)
 		if err != nil {
 			return nil, err
@@ -93,7 +93,7 @@ func (c *Config) Items(ctx context.Context, listID string) ([]Item, error) {
 // over SSE), and returns the inserted row. The INSERT and the NOTIFY
 // happen in a single SQL statement using a CTE so the notification can
 // only fire if the row is actually committed.
-func (c *Config) Add(ctx context.Context, listID, tabID, body string) (Item, error) {
+func (m *Manager) Add(ctx context.Context, listID, tabID, body string) (Item, error) {
 	const q = `
 		WITH inserted AS (
 			INSERT INTO items (list_id, body)
@@ -104,7 +104,7 @@ func (c *Config) Add(ctx context.Context, listID, tabID, body string) (Item, err
 		       pg_notify($3, $1 || '|' || $4 || '|' || id::text)
 		FROM inserted
 	`
-	for row := range c.pool.Query(ctx, q, listID, body, Channel, tabID) {
+	for row := range m.pool.Query(ctx, q, listID, body, Channel, tabID) {
 		return decodeItem(row)
 	}
 	return Item{}, errors.New("list: insert returned no row")
@@ -114,7 +114,7 @@ func (c *Config) Add(ctx context.Context, listID, tabID, body string) (Item, err
 // same payload shape as Add; the SSE handler does not distinguish
 // inserts from updates — it just re-renders the item by id, and htmx
 // out-of-band swaps replace the existing <li> in the DOM.
-func (c *Config) Toggle(ctx context.Context, listID, tabID string, itemID int64) (Item, error) {
+func (m *Manager) Toggle(ctx context.Context, listID, tabID string, itemID int64) (Item, error) {
 	const q = `
 		WITH updated AS (
 			UPDATE items
@@ -126,7 +126,7 @@ func (c *Config) Toggle(ctx context.Context, listID, tabID string, itemID int64)
 		       pg_notify($3, $2 || '|' || $4 || '|' || id::text)
 		FROM updated
 	`
-	for row := range c.pool.Query(ctx, q, itemID, listID, Channel, tabID) {
+	for row := range m.pool.Query(ctx, q, itemID, listID, Channel, tabID) {
 		return decodeItem(row)
 	}
 	return Item{}, fmt.Errorf("list: item %d not found in %q", itemID, listID)
@@ -134,9 +134,9 @@ func (c *Config) Toggle(ctx context.Context, listID, tabID string, itemID int64)
 
 // Get fetches a single item by id. SSE handlers use it to re-render
 // the row when a NOTIFY arrives.
-func (c *Config) Get(ctx context.Context, listID string, itemID int64) (Item, error) {
+func (m *Manager) Get(ctx context.Context, listID string, itemID int64) (Item, error) {
 	const q = `SELECT id, body, done FROM items WHERE id = $1 AND list_id = $2`
-	for row := range c.pool.Query(ctx, q, itemID, listID) {
+	for row := range m.pool.Query(ctx, q, itemID, listID) {
 		return decodeItem(row)
 	}
 	return Item{}, fmt.Errorf("list: item %d not found", itemID)
@@ -146,19 +146,19 @@ func (c *Config) Get(ctx context.Context, listID string, itemID int64) (Item, er
 // Unsubscribe must be called to release the slot. The returned channel
 // is buffered so a slow subscriber cannot stall the dispatch loop;
 // events are dropped (rather than blocking) when the buffer fills.
-func (c *Config) Subscribe(listID string) chan Event {
+func (m *Manager) Subscribe(listID string) chan Event {
 	ch := make(chan Event, 16)
-	c.mu.Lock()
-	c.subs[ch] = listID
-	c.mu.Unlock()
+	m.mu.Lock()
+	m.subs[ch] = listID
+	m.mu.Unlock()
 	return ch
 }
 
 // Unsubscribe removes ch from the broadcast set and closes it.
-func (c *Config) Unsubscribe(ch chan Event) {
-	c.mu.Lock()
-	delete(c.subs, ch)
-	c.mu.Unlock()
+func (m *Manager) Unsubscribe(ch chan Event) {
+	m.mu.Lock()
+	delete(m.subs, ch)
+	m.mu.Unlock()
 	close(ch)
 }
 
@@ -167,8 +167,8 @@ func (c *Config) Unsubscribe(ch chan Event) {
 // subscribers. Run uses its own connection (not pool-recycled) because
 // LISTEN binds to a specific session; returning the connection to the
 // pool would lose the subscription.
-func (c *Config) Run(ctx context.Context) error {
-	cn, err := c.pool.Get(ctx)
+func (m *Manager) Run(ctx context.Context) error {
+	cn, err := m.pool.Get(ctx)
 	if err != nil {
 		return err
 	}
@@ -185,15 +185,15 @@ func (c *Config) Run(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		c.dispatch(ev)
+		m.dispatch(ev)
 	}
 	return ctx.Err()
 }
 
-func (c *Config) dispatch(ev Event) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	for ch, listID := range c.subs {
+func (m *Manager) dispatch(ev Event) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for ch, listID := range m.subs {
 		if listID != ev.ListID {
 			continue
 		}
