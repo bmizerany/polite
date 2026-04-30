@@ -142,6 +142,7 @@ func (c *Conn) WriteByte(b byte) error {
 	return c.w.WriteByte(b)
 }
 
+// ReadInt16 reads a big-endian int16 from the stream.
 func (c *Conn) ReadInt16() (int16, error) {
 	b, err := c.peek(2)
 	if err != nil {
@@ -157,6 +158,7 @@ func (c *Conn) WriteInt16(n int16) error {
 	return c.w.WriteByte(byte(n))
 }
 
+// ReadInt32 reads a big-endian int32 from the stream.
 func (c *Conn) ReadInt32() (int32, error) {
 	// TODO(bmizerany): use ctx to SetDeadline
 	b, err := c.peek(4)
@@ -212,6 +214,11 @@ func (c *Conn) Write(b []byte) (int, error) {
 	return c.w.Write(b)
 }
 
+// ReadBytes reads a length-prefixed byte slice: a big-endian int32 length
+// followed by that many bytes. The returned slice borrows the [Conn]'s
+// internal read buffer and is valid only until the next read call on the
+// [Conn]; callers that need to retain it must copy. A negative length is
+// reported as an error.
 func (c *Conn) ReadBytes() ([]byte, error) {
 	n, err := c.ReadInt32()
 	if err != nil {
