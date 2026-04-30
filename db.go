@@ -887,6 +887,39 @@ func (c Column) DecodeFloat() (float64, error) {
 	}
 }
 
+// DecodeBool returns the column value as a boolean using truthy
+// semantics: any non-zero byte in the wire value is true, and an
+// all-zero or empty value is false.
+//
+// The rule lines up with both kinds of value the caller is likely
+// to be looking at. PostgreSQL's bool sends a single byte (0x00 or
+// 0x01), so DecodeBool reads it directly. The four fixed-width
+// integers (int2, int4, int8, plus the one-byte form polite uses
+// for int8 arguments) are all-zero on the wire exactly when their
+// integer value is zero, so DecodeBool also matches DecodeInt(...) != 0
+// for those without an extra round trip through int64. Wider or
+// variable-width values (text, numeric, jsonb, ...) have non-falsy
+// representations that contain only zero bytes for some legal
+// values; for those, DecodeText/DecodeInt and a Go-side comparison
+// are clearer than this.
+//
+// Unlike the other decoders, SQL NULL is reported as false rather
+// than as an error: the typical use of a bool column at the call
+// site is "is this flag set?", and a missing flag is the unset
+// state. Callers that need to tell NULL apart from false can check
+// [Column.Bytes] for a nil slice.
+func (c Column) DecodeBool() (bool, error) {
+	if c.err != nil {
+		return false, c.err
+	}
+	for _, b := range c.data {
+		if b != 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 var (
 	pgEpoch     = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	pgEpochUnix = pgEpoch.Unix()
