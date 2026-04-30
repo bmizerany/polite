@@ -1,0 +1,165 @@
+{{/*
+  index.tmpl — the entire UI for the polite to-do demo.
+
+  All partials live in this one file as nested templates so the HTTP
+  handlers can render either the whole page ("page") or a fragment
+  ("item", "item-oob") through the same html/template instance. htmx
+  swaps the fragments in place; the styling is utility-class CSS
+  inlined in <style> at the top of the page (the only stylesheet the
+  demo ships).
+
+  Naming convention for partials:
+    page      — full HTML document, used for GET /lists/{id}
+    items     — the <ul> and its current rows, used inside `page`
+    item      — a single <li>, rendered both inline and via OOB
+    item-oob  — a single <li> wrapped in hx-swap-oob so it lands at
+                the right place in the parent DOM regardless of which
+                handler returned it
+    input-oob — the cleared text input, returned alongside `item-oob`
+                after a successful POST
+*/}}
+
+{{define "page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>todo · {{.ListID}}</title>
+  {{/* The hx-sse extension pauses the EventSource when document.hidden
+       fires (pauseOnBackground defaults to true). That makes background
+       tabs stop receiving updates until they regain focus, which is
+       exactly the wrong behaviour for a multi-tab demo: the user opens
+       two tabs, focuses one, and the other goes silent. Disable it. */}}
+  <meta name="htmx-config" content="sse.pauseOnBackground:false">
+
+  <script src="/public/htmx.min.js"></script>
+  <script src="/public/hx-sse.min.js"></script>
+  <style>
+    /* Big-CSS-domain-expert energy: a tiny utility set that gets us
+       a clean monochromatic UI without a stylesheet, a build step, or
+       a megabyte of JavaScript framework. Every class below is used
+       at least once in this template. */
+    *,*::before,*::after{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+         color:#111;background:#fff;-webkit-font-smoothing:antialiased}
+    a{color:inherit}
+    .container{max-width:36rem;margin:0 auto;padding:2rem 1rem}
+    .row{display:flex;align-items:center;gap:.5rem}
+    .between{justify-content:space-between}
+    .stack>*+*{margin-top:.75rem}
+    .muted{color:#666}
+    .title{font-size:1.25rem;font-weight:600;letter-spacing:-.01em;margin:0}
+    .hairline{border:0;border-top:1px solid #111;margin:1rem 0;opacity:.15}
+    .frame{border:1px solid #111;border-radius:2px;padding:.5rem .75rem;
+           background:#fff}
+    .input{flex:1;border:0;outline:0;background:transparent;font:inherit;
+           color:inherit;padding:.25rem 0}
+    .btn{appearance:none;border:1px solid #111;background:#fff;color:#111;
+         font:inherit;padding:.25rem .6rem;border-radius:2px;cursor:pointer}
+    .btn:hover{background:#111;color:#fff}
+    .list{list-style:none;margin:0;padding:0}
+    .item{display:flex;align-items:center;gap:.5rem;padding:.4rem 0;
+          border-bottom:1px solid rgba(17,17,17,.1)}
+    .item:last-child{border-bottom:0}
+    .item.done .body{text-decoration:line-through;color:#888}
+    .body{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+          white-space:nowrap}
+    .check{width:1rem;height:1rem;border:1px solid #111;display:inline-block;
+           position:relative;cursor:pointer;background:#fff;flex:none}
+    .item.done .check::after{content:"";position:absolute;inset:.15rem;
+                             background:#111}
+    form.row{margin:0}
+  </style>
+</head>
+<body>
+  <main class="container stack">
+    <header class="row between">
+      <h1 class="title">todo · <span class="muted">{{.ListID}}</span></h1>
+      <span class="muted">tab {{.TabID}}</span>
+    </header>
+    <hr class="hairline">
+
+    <form class="row frame"
+          hx-post="/lists/{{.ListID}}/items"
+          hx-swap="none">
+      <input type="hidden" name="tab" value="{{.TabID}}">
+      <input id="newitem" class="input" name="body" autocomplete="off"
+             placeholder="add an item and press enter…" required>
+      <button class="btn" type="submit">add</button>
+    </form>
+
+    {{template "items" .}}
+
+    <p class="muted">live updates stream from PostgreSQL via LISTEN/NOTIFY → SSE.</p>
+  </main>
+
+  {{/* htmx 4 SSE: hx-sse:connect opens an EventSource; unnamed
+       SSE messages are auto-swapped via htmx.swap, which honors any
+       hx-swap-oob attributes inside the message data. We set
+       hx-swap="none" so the *main* fragment lands nowhere — only the
+       OOB pieces matter. */}}
+  <div hx-ext="sse"
+       hx-sse:connect="/lists/{{.ListID}}/events?tab={{.TabID}}"
+       hx-swap="none"
+       style="display:none"></div>
+</body>
+</html>{{end}}
+
+
+{{/* `items` is rendered as part of the page only. It carries the
+     full pageData, so each row can reach for $.ListID and $.TabID
+     without a per-row wrapper struct. The OOB partials below take
+     `itemData` directly, which is why they exist as separate
+     definitions rather than reusing this loop body. */}}
+
+{{define "items"}}<ul id="items" class="list">
+  {{range .Items}}<li id="item-{{.ID}}" class="item{{if .Done}} done{{end}}">
+    <span class="check"
+          hx-post="/lists/{{$.ListID}}/items/{{.ID}}/toggle"
+          hx-vals='{"tab":"{{$.TabID}}"}'
+          hx-swap="none"
+          title="toggle"></span>
+    <span class="body">{{.Body}}</span>
+  </li>{{end}}
+</ul>{{end}}
+
+
+{{/* item-oob is rendered both by POST responses (so the originating
+     tab sees its own write) and by the SSE stream (so peer tabs do).
+     Using hx-swap-oob="beforeend:#items" appends a brand new item to
+     the end of the list; using outerHTML against #item-N replaces an
+     existing row in place after a toggle. The handler picks which
+     mode applies based on whether the row is new. */}}
+
+{{/* htmx4 strips the OOB wrapper element for non-outer swap styles
+     (style.startsWith('outer') is false for beforeend, so swapSpec.strip
+     defaults to true and only the wrapper's children are inserted). We
+     wrap the row in a <template> so the wrapper is what gets stripped
+     and the <li> itself lands inside #items. */}}
+
+{{define "item-oob-append"}}<template hx-swap-oob="beforeend:#items"><li
+    id="item-{{.ID}}" class="item{{if .Done}} done{{end}}">
+  <span class="check"
+        hx-post="/lists/{{$.ListID}}/items/{{.ID}}/toggle"
+        hx-vals='{"tab":"{{$.TabID}}"}'
+        hx-swap="none"
+        title="toggle"></span>
+  <span class="body">{{.Body}}</span>
+</li></template>{{end}}
+
+
+{{define "item-oob-replace"}}<li id="item-{{.ID}}"
+    hx-swap-oob="outerHTML"
+    class="item{{if .Done}} done{{end}}">
+  <span class="check"
+        hx-post="/lists/{{$.ListID}}/items/{{.ID}}/toggle"
+        hx-vals='{"tab":"{{$.TabID}}"}'
+        hx-swap="none"
+        title="toggle"></span>
+  <span class="body">{{.Body}}</span>
+</li>{{end}}
+
+
+{{define "input-oob"}}<input id="newitem" hx-swap-oob="true"
+    class="input" name="body" autocomplete="off"
+    placeholder="add an item and press enter…" required>{{end}}
