@@ -283,9 +283,6 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
 
-	sub := s.mgr.Subscribe(listID)
-	defer s.mgr.Unsubscribe(sub)
-
 	// Track which item IDs this connection has already shown so we
 	// can choose between "append" (new) and "replace" (update). The
 	// initial set comes from the items we know are already in the
@@ -296,51 +293,58 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	enc := sseWriter{w: w, flusher: flusher}
+
 	// Heartbeat keeps proxies and load balancers from closing the
 	// idle connection. SSE comments (": ...\n\n") are ignored by
-	// the client.
-	ping := time.NewTicker(25 * time.Second)
-	defer ping.Stop()
-
-	enc := sseWriter{w: w, flusher: flusher}
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ping.C:
-			enc.comment("ping")
-		case ev, ok := <-sub:
-			if !ok {
+	// the client. The event loop below blocks the main goroutine
+	// in range, so the ticker runs in its own goroutine; the
+	// WaitGroup ensures it stops writing before the handler returns.
+	hbCtx, stopHB := context.WithCancel(r.Context())
+	defer stopHB()
+	var hb sync.WaitGroup
+	hb.Go(func() {
+		t := time.NewTicker(25 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-hbCtx.Done():
 				return
+			case <-t.C:
+				enc.comment("ping")
 			}
-			// Mark seen *before* the originator filter: when this
-			// tab's own POST inserts a row via OOB, that row is
-			// now present in the tab's DOM even though we never
-			// emit an SSE message for it. Without this, a later
-			// toggle on the same row would arrive marked as
-			// "append" and create a duplicate <li>.
-			isFirst := !seen[ev.ItemID]
-			seen[ev.ItemID] = true
-			if ev.TabID == tabID {
-				continue
-			}
-			it, err := s.mgr.Get(r.Context(), ev.ListID, ev.ItemID)
-			if err != nil {
-				continue
-			}
-			tmplName := "item-oob-replace"
-			if isFirst {
-				tmplName = "item-oob-append"
-			}
-
-			var b strings.Builder
-			if err := s.tmpl.ExecuteTemplate(&b, tmplName,
-				itemData{ListID: ev.ListID, TabID: tabID, Item: it}); err != nil {
-				log.Printf("render: %v", err)
-				continue
-			}
-			enc.message(b.String())
 		}
+	})
+	defer hb.Wait()
+
+	for ev := range s.mgr.Events(r.Context(), listID) {
+		// Mark seen *before* the originator filter: when this
+		// tab's own POST inserts a row via OOB, that row is
+		// now present in the tab's DOM even though we never
+		// emit an SSE message for it. Without this, a later
+		// toggle on the same row would arrive marked as
+		// "append" and create a duplicate <li>.
+		isFirst := !seen[ev.ItemID]
+		seen[ev.ItemID] = true
+		if ev.TabID == tabID {
+			continue
+		}
+		it, err := s.mgr.Get(r.Context(), ev.ListID, ev.ItemID)
+		if err != nil {
+			continue
+		}
+		tmplName := "item-oob-replace"
+		if isFirst {
+			tmplName = "item-oob-append"
+		}
+
+		var b strings.Builder
+		if err := s.tmpl.ExecuteTemplate(&b, tmplName,
+			itemData{ListID: ev.ListID, TabID: tabID, Item: it}); err != nil {
+			log.Printf("render: %v", err)
+			continue
+		}
+		enc.message(b.String())
 	}
 }
 

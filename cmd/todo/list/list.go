@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"strconv"
 	"strings"
 	"sync"
@@ -142,24 +143,37 @@ func (m *Manager) Get(ctx context.Context, listID string, itemID int64) (Item, e
 	return Item{}, fmt.Errorf("list: item %d not found", itemID)
 }
 
-// Subscribe registers a channel to receive events for listID.
-// Unsubscribe must be called to release the slot. The returned channel
-// is buffered so a slow subscriber cannot stall the dispatch loop;
-// events are dropped (rather than blocking) when the buffer fills.
-func (m *Manager) Subscribe(listID string) chan Event {
-	ch := make(chan Event, 16)
-	m.mu.Lock()
-	m.subs[ch] = listID
-	m.mu.Unlock()
-	return ch
-}
-
-// Unsubscribe removes ch from the broadcast set and closes it.
-func (m *Manager) Unsubscribe(ch chan Event) {
-	m.mu.Lock()
-	delete(m.subs, ch)
-	m.mu.Unlock()
-	close(ch)
+// Events yields events for listID until ctx is cancelled or the
+// caller breaks out of the range. The subscription is registered when
+// iteration starts and removed when iteration ends, so each call gets
+// its own private buffer; nothing leaks if the caller breaks early.
+//
+// Events are buffered (capacity 16). When the buffer is full the
+// dispatch loop drops events for this subscriber rather than stalling
+// the rest of the bus; a slow consumer therefore loses updates rather
+// than blocking peers.
+func (m *Manager) Events(ctx context.Context, listID string) iter.Seq[Event] {
+	return func(yield func(Event) bool) {
+		ch := make(chan Event, 16)
+		m.mu.Lock()
+		m.subs[ch] = listID
+		m.mu.Unlock()
+		defer func() {
+			m.mu.Lock()
+			delete(m.subs, ch)
+			m.mu.Unlock()
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev := <-ch:
+				if !yield(ev) {
+					return
+				}
+			}
+		}
+	}
 }
 
 // Run owns one polite connection for the lifetime of ctx. It LISTENs
