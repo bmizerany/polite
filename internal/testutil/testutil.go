@@ -2,7 +2,7 @@
 // common mistakes, such as using non-idiomatic logging.
 //
 // It also aims to surface errors that may otherwise be ignored, such as
-// logging errors post writting HTTP headers.
+// logging errors post writing HTTP headers.
 package testutil
 
 import (

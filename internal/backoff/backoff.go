@@ -1,3 +1,4 @@
+// Package backoff yields a retry loop with exponential backoff and jitter.
 package backoff
 
 import (
@@ -7,6 +8,13 @@ import (
 	"time"
 )
 
+// Loop returns an iterator that yields successive attempt numbers, sleeping
+// between yields with an n^2 backoff capped at maxBackoff and jittered
+// uniformly in [0.5, 1.5). The first iteration yields immediately with n == 0.
+//
+// When ctx is canceled, Loop yields one final pair (n, ctx.Err()) and stops;
+// callers can break out of the range to terminate early without waiting for
+// the next backoff to elapse.
 func Loop(ctx context.Context, maxBackoff time.Duration) iter.Seq2[int, error] {
 	var n int
 	return func(yield func(int, error) bool) {

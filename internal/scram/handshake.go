@@ -30,6 +30,14 @@ const (
 
 var escapeUsernameRE = strings.NewReplacer("=", "=3D", ",", "=2C")
 
+// Handshake completes the SCRAM-SHA-256 or SCRAM-SHA-256-PLUS exchange on cn,
+// continuing from the AuthenticationSASL message in cr. It selects a hash
+// from the mechanisms advertised in cr.SASLMechanisms, sends the client-first
+// message, and reads the server's challenge and final message in turn.
+//
+// Handshake returns a non-nil error if no advertised mechanism is supported,
+// password is empty, the server message is malformed, the iteration count
+// exceeds the internal cap, or the server's signature does not verify.
 func Handshake(ctx context.Context, cn *febe.Conn, cr febe.AuthenticationResponse, user, password string) error {
 	next := func(want febe.AuthenticationType) (febe.AuthenticationResponse, error) {
 		var zero febe.AuthenticationResponse
