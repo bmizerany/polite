@@ -52,28 +52,26 @@ func Items(ctx context.Context, pool *polite.Pool, listID string) ([]Item, error
 	`
 	var out []Item
 	for row := range pool.Query(ctx, q, listID) {
-		if _, err := row.Column(0).Bytes(); err != nil {
+		it, err := decodeItem(row)
+		if err != nil {
 			return nil, err
 		}
-		var it Item
-		it.ID, _ = row.Column(0).DecodeInt()
-		it.Body, _ = row.Column(1).DecodeText()
-		it.Done = decodeBool(row)
 		out = append(out, it)
 	}
 	return out, nil
 }
 
-// decodeBool reads a boolean from the third column. Polite does not
-// have a built-in bool decoder (it rejects bool arguments on the
-// encoding side too), so we read the single wire byte directly: bool's
-// binary format is one byte, 0x00 or 0x01.
-func decodeBool(row *polite.Row) bool {
-	b, err := row.Column(2).Bytes()
-	if err != nil || len(b) == 0 {
-		return false
+// decodeItem reads (id, body, done) — the three columns every
+// query in this package selects in that order — into an Item.
+func decodeItem(row *polite.Row) (Item, error) {
+	if _, err := row.Column(0).Bytes(); err != nil {
+		return Item{}, err
 	}
-	return b[0] != 0
+	var it Item
+	it.ID, _ = row.Column(0).DecodeInt()
+	it.Body, _ = row.Column(1).DecodeText()
+	it.Done, _ = row.Column(2).DecodeBool()
+	return it, nil
 }
 
 // Add inserts a new item, NOTIFYs subscribers (so other tabs see it
@@ -91,19 +89,10 @@ func Add(ctx context.Context, pool *polite.Pool, listID, tabID, body string) (It
 		       pg_notify($3, $1 || '|' || $4 || '|' || id::text)
 		FROM inserted
 	`
-	var it Item
 	for row := range pool.Query(ctx, q, listID, body, Channel, tabID) {
-		if _, err := row.Column(0).Bytes(); err != nil {
-			return Item{}, err
-		}
-		it.ID, _ = row.Column(0).DecodeInt()
-		it.Body, _ = row.Column(1).DecodeText()
-		it.Done = decodeBool(row)
+		return decodeItem(row)
 	}
-	if it.ID == 0 {
-		return Item{}, errors.New("list: insert returned no row")
-	}
-	return it, nil
+	return Item{}, errors.New("list: insert returned no row")
 }
 
 // Toggle flips the `done` flag for a single item. It NOTIFYs with the
@@ -122,40 +111,20 @@ func Toggle(ctx context.Context, pool *polite.Pool, listID, tabID string, itemID
 		       pg_notify($3, $2 || '|' || $4 || '|' || id::text)
 		FROM updated
 	`
-	var it Item
 	for row := range pool.Query(ctx, q, itemID, listID, Channel, tabID) {
-		if _, err := row.Column(0).Bytes(); err != nil {
-			return Item{}, err
-		}
-		it.ID, _ = row.Column(0).DecodeInt()
-		it.Body, _ = row.Column(1).DecodeText()
-		it.Done = decodeBool(row)
+		return decodeItem(row)
 	}
-	if it.ID == 0 {
-		return Item{}, fmt.Errorf("list: item %d not found in %q", itemID, listID)
-	}
-	return it, nil
+	return Item{}, fmt.Errorf("list: item %d not found in %q", itemID, listID)
 }
 
 // Get fetches a single item by id. SSE handlers use it to re-render
 // the row when a NOTIFY arrives.
 func Get(ctx context.Context, pool *polite.Pool, listID string, itemID int64) (Item, error) {
 	const q = `SELECT id, body, done FROM items WHERE id = $1 AND list_id = $2`
-	var it Item
-	var found bool
 	for row := range pool.Query(ctx, q, itemID, listID) {
-		if _, err := row.Column(0).Bytes(); err != nil {
-			return Item{}, err
-		}
-		it.ID, _ = row.Column(0).DecodeInt()
-		it.Body, _ = row.Column(1).DecodeText()
-		it.Done = decodeBool(row)
-		found = true
+		return decodeItem(row)
 	}
-	if !found {
-		return Item{}, fmt.Errorf("list: item %d not found", itemID)
-	}
-	return it, nil
+	return Item{}, fmt.Errorf("list: item %d not found", itemID)
 }
 
 // Event is what the [Hub] hands to subscribers. ListID and TabID come
