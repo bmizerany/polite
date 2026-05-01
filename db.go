@@ -31,7 +31,6 @@ var (
 	ErrBusy           = errors.New("polite: a Query range is active; complete or break it before calling Query or Exec")
 	ErrClosed         = errors.New("polite: closed")
 	ErrTooManyWaiters = errors.New("polite: pool: too many waiters")
-	ErrIteratorUsed   = errors.New("polite: Query iterator already used; call Query again to re-execute")
 )
 
 var errDone = errors.New("polite: done")
@@ -633,8 +632,9 @@ func (c *Conn) prepareStmt(ctx context.Context, sql string, paramOIDs []oids.ID)
 // Conn return [ErrBusy]; end the range before calling either again.
 //
 // The returned iterator is single-use. Ranging over it more than once
-// yields a single [Row] carrying [ErrIteratorUsed]. Call Query again
-// to re-execute the SQL.
+// yields a Row that reports an error rather than re-executing the
+// SQL; call Query again for that. The error is intentionally
+// inline-only — callers should not branch on it.
 //
 // When COPY FROM enters copy mode, Query yields a [Row] whose columns
 // report [ErrCopyFrom].
@@ -646,7 +646,7 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 	var used bool
 	return func(yield func(*Row) bool) {
 		if used {
-			yield(&Row{err: ErrIteratorUsed})
+			yield(&Row{err: errors.New("polite: Query iterator already used; call Query again to re-execute")})
 			return
 		}
 		used = true

@@ -1390,11 +1390,10 @@ func TestStmtCacheEvictsOnPlanChanged(t *testing.T) {
 	}
 }
 
-// TestQueryIteratorSingleUse pins that the iter.Seq returned by Query
-// is single-use: the first range works, every subsequent attempt to
-// range over the same iterator yields an error on the first row,
-// every time. Re-running the SQL is the caller's responsibility —
-// calling Query again returns a fresh iterator.
+// TestQueryIteratorSingleUse pins that the iter.Seq returned by
+// Query is single-use: try 0 (the first invocation of the seq)
+// succeeds; tries 1-3 (reuses) each yield a Row that reports an
+// error. Calling Query again is how a caller re-executes the SQL.
 func TestQueryIteratorSingleUse(t *testing.T) {
 	t.Parallel()
 
@@ -1402,30 +1401,19 @@ func TestQueryIteratorSingleUse(t *testing.T) {
 	ctx := t.Context()
 
 	seq := cn.Query(ctx, "SELECT 1")
-
-	rows := 0
-	for row := range seq {
-		if _, err := row.Column(0).DecodeInt(); err != nil {
-			t.Fatalf("first iteration row %d: %v", rows, err)
+	for try := range 4 {
+		next, stop := iter.Pull(seq)
+		row, ok := next()
+		stop()
+		if !ok {
+			t.Fatalf("try %d: next returned ok=false; want a row", try)
 		}
-		rows++
-	}
-	if rows != 1 {
-		t.Fatalf("first iteration: rows = %d; want 1", rows)
-	}
-
-	for try := range 3 {
-		var gotErr error
-		var seen int
-		for row := range seq {
-			seen++
-			if _, err := row.Column(0).Bytes(); err != nil {
-				gotErr = err
-				break
-			}
-		}
-		if gotErr == nil {
-			t.Errorf("reuse #%d: got %d rows with no error; want error on reuse", try+1, seen)
+		_, err := row.Column(0).Bytes()
+		switch {
+		case try == 0 && err != nil:
+			t.Errorf("try 0: err = %v; want nil", err)
+		case try > 0 && err == nil:
+			t.Errorf("try %d: err = nil; want non-nil (iterator already used)", try)
 		}
 	}
 }
