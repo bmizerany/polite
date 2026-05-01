@@ -1390,6 +1390,46 @@ func TestStmtCacheEvictsOnPlanChanged(t *testing.T) {
 	}
 }
 
+// TestQueryIteratorSingleUse pins that the iter.Seq returned by Query
+// is single-use: the first range works, every subsequent attempt to
+// range over the same iterator yields an error on the first row,
+// every time. Re-running the SQL is the caller's responsibility —
+// calling Query again returns a fresh iterator.
+func TestQueryIteratorSingleUse(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	ctx := t.Context()
+
+	seq := cn.Query(ctx, "SELECT 1")
+
+	rows := 0
+	for row := range seq {
+		if _, err := row.Column(0).DecodeInt(); err != nil {
+			t.Fatalf("first iteration row %d: %v", rows, err)
+		}
+		rows++
+	}
+	if rows != 1 {
+		t.Fatalf("first iteration: rows = %d; want 1", rows)
+	}
+
+	for try := range 3 {
+		var gotErr error
+		var seen int
+		for row := range seq {
+			seen++
+			if _, err := row.Column(0).Bytes(); err != nil {
+				gotErr = err
+				break
+			}
+		}
+		if gotErr == nil {
+			t.Errorf("reuse #%d: got %d rows with no error; want error on reuse", try+1, seen)
+		}
+	}
+}
+
 func TestNotice(t *testing.T) {
 	t.Parallel()
 

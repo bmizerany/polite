@@ -31,6 +31,7 @@ var (
 	ErrBusy           = errors.New("polite: a Query range is active; complete or break it before calling Query or Exec")
 	ErrClosed         = errors.New("polite: closed")
 	ErrTooManyWaiters = errors.New("polite: pool: too many waiters")
+	ErrIteratorUsed   = errors.New("polite: Query iterator already used; call Query again to re-execute")
 )
 
 var errDone = errors.New("polite: done")
@@ -631,6 +632,10 @@ func (c *Conn) prepareStmt(ctx context.Context, sql string, paramOIDs []oids.ID)
 // range is active, further calls to [Conn.Query] or [Conn.Exec] on the same
 // Conn return [ErrBusy]; end the range before calling either again.
 //
+// The returned iterator is single-use. Ranging over it more than once
+// yields a single [Row] carrying [ErrIteratorUsed]. Call Query again
+// to re-execute the SQL.
+//
 // When COPY FROM enters copy mode, Query yields a [Row] whose columns
 // report [ErrCopyFrom].
 //
@@ -638,7 +643,13 @@ func (c *Conn) prepareStmt(ctx context.Context, sql string, paramOIDs []oids.ID)
 // running an internal SET before sending sql. If that SET fails, Query
 // yields a single Row carrying the failure and stops without sending sql.
 func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row] {
+	var used bool
 	return func(yield func(*Row) bool) {
+		if used {
+			yield(&Row{err: ErrIteratorUsed})
+			return
+		}
+		used = true
 		emit := func(r *Row) bool {
 			if c.closed && r.err != nil && errors.Is(r.err, febe.ErrTerminated) {
 				r.err = ErrClosed
