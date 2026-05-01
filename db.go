@@ -864,6 +864,9 @@ func (c Column) DecodeText() (string, error) {
 // bytes — and returns the value as int64. Any other width is reported as an
 // error rather than guessed at.
 //
+// PostgreSQL's bool is one byte (0x00 or 0x01), so DecodeInt reads a bool
+// column directly: 0 is false, 1 is true. Compare the result to 0 yourself.
+//
 // SQL NULL has a zero-length payload, so DecodeInt reports it as
 // "invalid length: 0". The package's "NULL" section covers the
 // rationale and the SQL-side alternatives.
@@ -908,34 +911,6 @@ func (c Column) DecodeFloat() (float64, error) {
 	default:
 		return 0, fmt.Errorf("DecodeFloat: invalid length: %d", len(v))
 	}
-}
-
-// DecodeBool decodes the column as a boolean from PostgreSQL's binary
-// wire format: a single byte, 0x00 for false and anything else for
-// true. (PostgreSQL itself only emits 0x00 or 0x01.) Any other length
-// is reported as an error rather than guessed at.
-//
-// DecodeBool deliberately refuses to synthesize a boolean from int2,
-// int4, int8, text, numeric, jsonb, or any other wider type. Without
-// that restriction, "false"::text decodes as true (no zero bytes) and
-// most numeric or jsonb payloads decode as truthy too — push the
-// predicate to PostgreSQL with COALESCE, IS NOT NULL, or an explicit
-// comparison instead.
-//
-// SQL NULL has a zero-length payload, so DecodeBool reports it as
-// "invalid length: 0", matching DecodeInt and DecodeFloat. The
-// package's "NULL" section covers the rationale and the SQL-side
-// alternatives; COALESCE(flag, false) is the usual one. Callers that
-// need to tell NULL apart from false can check [Column.Bytes] for a
-// nil slice.
-func (c Column) DecodeBool() (bool, error) {
-	if c.err != nil {
-		return false, c.err
-	}
-	if len(c.data) != 1 {
-		return false, fmt.Errorf("DecodeBool: invalid length: %d", len(c.data))
-	}
-	return c.data[0] != 0, nil
 }
 
 var (
