@@ -147,10 +147,10 @@ func TestWriteCopyDataHeader(t *testing.T) {
 
 	want := bytes.Buffer{}
 	want.WriteByte('d')
-	want.Write([]byte{0, 0, 0, 23})       // length: 4 (self) + 11 (sig) + 4 (flags) + 4 (ext)
+	want.Write([]byte{0, 0, 0, 23})          // length: 4 (self) + 11 (sig) + 4 (flags) + 4 (ext)
 	want.WriteString("PGCOPY\n\xff\r\n\x00") // signature
-	want.Write([]byte{0, 0, 0, 0})        // flags
-	want.Write([]byte{0, 0, 0, 0})        // ext length
+	want.Write([]byte{0, 0, 0, 0})           // flags
+	want.Write([]byte{0, 0, 0, 0})           // ext length
 
 	diff.Test(t, t.Errorf, b.Bytes(), want.Bytes())
 }
