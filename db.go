@@ -35,9 +35,19 @@ var (
 
 var errDone = errors.New("polite: done")
 
+// errPlanChanged matches PostgreSQL's "cached plan must not change
+// result type" (SQLSTATE 0A000), raised when DDL invalidates a
+// server-side prepared plan under us. polite evicts the matching
+// cache entry on this so the next call re-Parses cleanly; the
+// orphaned server-side prepared statement is left until the
+// connection closes, the same hygiene cost polite already accepts on
+// ordinary LRU eviction.
+var errPlanChanged = febe.ErrorCode("0A000")
+
 type statement struct {
-	name string
-	out  febe.RowDescriptionResponse
+	name     string
+	cacheKey string
+	out      febe.RowDescriptionResponse
 }
 
 // Conn is a PostgreSQL connection. Obtain one from [Dial] or [Pool.Get]; the
@@ -528,6 +538,7 @@ func (c *Conn) getStmt(ctx context.Context, sql string, paramOIDs []oids.ID) (*s
 			loadErr = err
 			return nil
 		}
+		s.cacheKey = key
 		return s
 	})
 	if loadErr != nil {
@@ -707,6 +718,9 @@ func (c *Conn) Query(ctx context.Context, sql string, args ...any) iter.Seq[*Row
 			if err != nil {
 				if errors.Is(err, errDone) {
 					return
+				}
+				if errors.Is(err, errPlanChanged) {
+					c.cache.Delete(stmt.cacheKey)
 				}
 				emit(&Row{err: c.recover(ctx, err)})
 				return

@@ -1330,6 +1330,66 @@ func TestStmtCacheKeyParamOIDs(t *testing.T) {
 	}
 }
 
+// TestStmtCacheEvictsOnPlanChanged pins polite's recovery for the case
+// where DDL invalidates a server-side prepared plan: PostgreSQL returns
+// "cached plan must not change result type" (SQLSTATE 0A000), polite
+// drops the matching cache entry, and the next call to the same SQL
+// re-Parses cleanly. The connection is left usable; only the cached
+// statement is evicted.
+func TestStmtCacheEvictsOnPlanChanged(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	ctx := t.Context()
+
+	if err := cn.Exec(ctx, "CREATE TEMP TABLE poison (n text)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cn.Exec(ctx, "INSERT INTO poison VALUES ('hello')"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cache miss: prepare and cache the statement on this connection.
+	if err := cn.Exec(ctx, "SELECT n FROM poison"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mutate the column type underneath the cached prepared statement.
+	if err := cn.Exec(ctx, "ALTER TABLE poison ALTER COLUMN n TYPE int4 USING 0"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cache hit against an invalidated plan: PG raises 0A000.
+	err := cn.Exec(ctx, "SELECT n FROM poison")
+	if !errors.Is(err, febe.ErrorCode("0A000")) {
+		t.Fatalf("first execute after ALTER: err = %v; want SQLSTATE 0A000", err)
+	}
+
+	// The connection is still usable.
+	if err := cn.Exec(ctx, "SELECT 1"); err != nil {
+		t.Errorf("SELECT 1 after 0A000 = %v; want nil (connection should survive)", err)
+	}
+
+	// Cache entry was evicted, so the same SQL re-Parses cleanly against
+	// the post-ALTER schema.
+	if err := cn.Exec(ctx, "SELECT n FROM poison"); err != nil {
+		t.Errorf("re-execute after 0A000 = %v; want nil (cache should have been evicted)", err)
+	}
+
+	// Two prepared statements remain for this SQL: the zombie from
+	// before the ALTER, and the fresh re-Parse. polite evicts only
+	// the client-side cache entry; the server side lingers until the
+	// connection closes. Intentional, not promised. Cycle long-lived
+	// connections, or grow Pool to do it.
+	var n int64
+	for row := range cn.Query(ctx, `SELECT count(*) FROM pg_prepared_statements WHERE statement = $1`, "SELECT n FROM poison") {
+		n, _ = row.Column(0).DecodeInt()
+	}
+	if n != 2 {
+		t.Errorf("pg_prepared_statements count = %d; want 2 (zombie + re-Parse)", n)
+	}
+}
+
 func TestNotice(t *testing.T) {
 	t.Parallel()
 
