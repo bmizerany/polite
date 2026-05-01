@@ -1300,6 +1300,36 @@ func TestQueryCacheHitAfterError(t *testing.T) {
 	}
 }
 
+// TestStmtCacheKeyParamOIDs pins that the per-connection prepared-
+// statement cache distinguishes the same SQL with different parameter
+// OIDs: a Go int and a Go string against the same SELECT $1::text
+// must produce two separate server-side prepared statements, not
+// reuse one. pg_prepared_statements is the source of truth — both
+// Parses land in it on this session.
+func TestStmtCacheKeyParamOIDs(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	ctx := t.Context()
+	const q = `SELECT $1::text`
+
+	if err := cn.Exec(ctx, q, 42); err != nil { // pins int8
+		t.Fatal(err)
+	}
+	if err := cn.Exec(ctx, q, "x"); err != nil { // pins text
+		t.Fatal(err)
+	}
+
+	var n int64
+	const meta = `SELECT count(*) FROM pg_prepared_statements WHERE statement = $1`
+	for row := range cn.Query(ctx, meta, q) {
+		n, _ = row.Column(0).DecodeInt()
+	}
+	if n != 2 {
+		t.Fatalf("pg_prepared_statements count for %q = %d; want 2", q, n)
+	}
+}
+
 func TestNotice(t *testing.T) {
 	t.Parallel()
 
