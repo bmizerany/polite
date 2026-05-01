@@ -69,8 +69,9 @@ func TestQuote(t *testing.T) {
 	})
 }
 
-// unquote reverses Quote: strip framing apostrophes and collapse '' to '.
-// Returns false if the input is not a well-formed Quote output.
+// unquote reverses Quote: strip framing apostrophes and collapse each
+// pair of apostrophes back into one. Returns false if the input is
+// not a well-formed Quote output.
 func unquote(s string) (string, bool) {
 	if len(s) < 2 || s[0] != '\'' || s[len(s)-1] != '\'' {
 		return "", false
