@@ -631,10 +631,8 @@ func (c *Conn) prepareStmt(ctx context.Context, sql string, paramOIDs []oids.ID)
 // range is active, further calls to [Conn.Query] or [Conn.Exec] on the same
 // Conn return [ErrBusy]; end the range before calling either again.
 //
-// The returned iterator is single-use. Ranging over it more than once
-// yields a Row that reports an error rather than re-executing the
-// SQL; call Query again for that. The error is intentionally
-// inline-only — callers should not branch on it.
+// The iterator is single-use. A second range yields an error row;
+// call Query again to re-execute.
 //
 // When COPY FROM enters copy mode, Query yields a [Row] whose columns
 // report [ErrCopyFrom].
