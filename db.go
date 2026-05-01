@@ -888,17 +888,16 @@ func (c Column) DecodeFloat() (float64, error) {
 }
 
 // DecodeBool decodes the column as a boolean from PostgreSQL's binary
-// wire format. The format is one byte: 0x00 is false, anything else is
-// true. PostgreSQL's bool only emits 0x00 or 0x01, but DecodeBool is
-// not stricter than the integer decoders about the byte itself.
+// wire format: a single byte, 0x00 for false and anything else for
+// true. (PostgreSQL itself only emits 0x00 or 0x01.) Any other length
+// is reported as an error rather than guessed at.
 //
-// Any other length is reported as an error rather than guessed at.
-// In particular, DecodeBool does not synthesize a boolean from int2,
-// int4, int8, text, numeric, jsonb, or any other wider type — push
-// the predicate to PostgreSQL with COALESCE, IS NOT NULL, or an
-// explicit comparison instead. Decoding a wider value here would
-// quietly read non-bool bytes as truthy ("false"::text has no zero
-// bytes) and that has surprised callers more than it has helped.
+// DecodeBool deliberately refuses to synthesize a boolean from int2,
+// int4, int8, text, numeric, jsonb, or any other wider type. Without
+// that restriction, "false"::text decodes as true (no zero bytes) and
+// most numeric or jsonb payloads decode as truthy too — push the
+// predicate to PostgreSQL with COALESCE, IS NOT NULL, or an explicit
+// comparison instead.
 //
 // SQL NULL has a zero-length payload, so DecodeBool reports it as
 // "invalid length: 0", matching DecodeInt and DecodeFloat. The
