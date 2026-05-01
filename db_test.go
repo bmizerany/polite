@@ -725,6 +725,9 @@ func TestDecodeNull(t *testing.T) {
 	t.Run("DecodeFloat", func(t *testing.T) {
 		testDecodeNull(t, cn, `SELECT NULL::float8`, Column.DecodeFloat, float64(0), "invalid length")
 	})
+	t.Run("DecodeBool", func(t *testing.T) {
+		testDecodeNull(t, cn, `SELECT NULL::bool`, Column.DecodeBool, false, "invalid length")
+	})
 	t.Run("DecodeTime", func(t *testing.T) {
 		testDecodeNull(t, cn, `SELECT NULL::timestamptz`, Column.DecodeTime, time.Time{}, "invalid length")
 	})
@@ -1446,6 +1449,63 @@ func TestRowDecodeFloat(t *testing.T) {
 	}
 	want := []float64{1.5, -2.25}
 	diff.Test(t, t.Errorf, got, want)
+}
+
+func TestRowDecodeBool(t *testing.T) {
+	t.Parallel()
+
+	check := testutil.Checker(t)
+	cn := newSession(t)
+	defer checkReady(t, cn) // ensure we leave in a good state
+
+	ctx := t.Context()
+	var got []bool
+	for row := range cn.Query(ctx, `SELECT true, false`) {
+		for col := range row.Columns() {
+			b, err := col.DecodeBool()
+			check(err, nil)
+			got = append(got, b)
+		}
+	}
+	want := []bool{true, false}
+	diff.Test(t, t.Errorf, got, want)
+}
+
+// TestDecodeBoolWrongWidth pins that DecodeBool rejects non-bool widths
+// rather than synthesizing a boolean from a wider value. This is the
+// design choice that keeps text 'false' (5 non-zero bytes) and friends
+// from masquerading as true.
+func TestDecodeBoolWrongWidth(t *testing.T) {
+	t.Parallel()
+
+	cn := newSession(t)
+	defer checkReady(t, cn)
+
+	cases := []struct {
+		name string
+		sql  string
+	}{
+		{"int2", `SELECT 1::int2`},
+		{"int4", `SELECT 1::int4`},
+		{"int8", `SELECT 1::int8`},
+		{"text_false", `SELECT 'false'::text`},
+		{"empty_text", `SELECT ''::text`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for row := range cn.Query(t.Context(), tc.sql) {
+				_, err := row.Column(0).DecodeBool()
+				if err == nil {
+					t.Fatal("DecodeBool err = nil; want invalid length")
+				}
+				if !strings.Contains(err.Error(), "invalid length") {
+					t.Fatalf("DecodeBool err = %q; want substring %q", err, "invalid length")
+				}
+				return
+			}
+			t.Fatal("expected 1 row")
+		})
+	}
 }
 
 func TestColumnType(t *testing.T) {

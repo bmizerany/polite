@@ -887,37 +887,33 @@ func (c Column) DecodeFloat() (float64, error) {
 	}
 }
 
-// DecodeBool returns the column value as a boolean using truthy
-// semantics: any non-zero byte in the wire value is true, and an
-// all-zero or empty value is false.
+// DecodeBool decodes the column as a boolean from PostgreSQL's binary
+// wire format. The format is one byte: 0x00 is false, anything else is
+// true. PostgreSQL's bool only emits 0x00 or 0x01, but DecodeBool is
+// not stricter than the integer decoders about the byte itself.
 //
-// The rule lines up with both kinds of value the caller is likely
-// to be looking at. PostgreSQL's bool sends a single byte (0x00 or
-// 0x01), so DecodeBool reads it directly. The four fixed-width
-// integers (int2, int4, int8, plus the one-byte form polite uses
-// for int8 arguments) are all-zero on the wire exactly when their
-// integer value is zero, so DecodeBool also matches DecodeInt(...) != 0
-// for those without an extra round trip through int64. Wider or
-// variable-width values (text, numeric, jsonb, ...) have non-falsy
-// representations that contain only zero bytes for some legal
-// values; for those, DecodeText/DecodeInt and a Go-side comparison
-// are clearer than this.
+// Any other length is reported as an error rather than guessed at.
+// In particular, DecodeBool does not synthesize a boolean from int2,
+// int4, int8, text, numeric, jsonb, or any other wider type — push
+// the predicate to PostgreSQL with COALESCE, IS NOT NULL, or an
+// explicit comparison instead. Decoding a wider value here would
+// quietly read non-bool bytes as truthy ("false"::text has no zero
+// bytes) and that has surprised callers more than it has helped.
 //
-// Unlike the other decoders, SQL NULL is reported as false rather
-// than as an error: the typical use of a bool column at the call
-// site is "is this flag set?", and a missing flag is the unset
-// state. Callers that need to tell NULL apart from false can check
-// [Column.Bytes] for a nil slice.
+// SQL NULL has a zero-length payload, so DecodeBool reports it as
+// "invalid length: 0", matching DecodeInt and DecodeFloat. The
+// package's "NULL" section covers the rationale and the SQL-side
+// alternatives; COALESCE(flag, false) is the usual one. Callers that
+// need to tell NULL apart from false can check [Column.Bytes] for a
+// nil slice.
 func (c Column) DecodeBool() (bool, error) {
 	if c.err != nil {
 		return false, c.err
 	}
-	for i := range c.data {
-		if c.data[i] != 0 {
-			return true, nil
-		}
+	if len(c.data) != 1 {
+		return false, fmt.Errorf("DecodeBool: invalid length: %d", len(c.data))
 	}
-	return false, nil
+	return c.data[0] != 0, nil
 }
 
 var (
