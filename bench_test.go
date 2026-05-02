@@ -57,6 +57,7 @@ func BenchmarkWideRow(b *testing.B) {
 				r.Amount, _ = row.Column(2).DecodeFloat()
 				r.TS, _ = row.Column(3).DecodeTime()
 				r.Payload, _ = row.Column(4).Bytes()
+				_ = r
 			}
 		}
 	})
