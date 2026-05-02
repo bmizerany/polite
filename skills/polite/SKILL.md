@@ -126,6 +126,43 @@ release notes for 15 through current/devel.
   `
   ```
 
+- **Long Query/Exec calls** break the parameter list. When the call
+  has more than a few parameters or runs long on one line, keep
+  `ctx, q,` on the call line and put each SQL parameter on its own
+  line, with a trailing comma after the last one and the closing `)`
+  on its own line. Reading top-to-bottom, the parameters line up
+  with `$1`, `$2`, … in the SQL.
+
+  Bad:
+
+  ```go
+  for row := range m.pool.Query(ctx, q, listID, body, channel, tabID, userID, ts) {
+  ```
+
+  Good:
+
+  ```go
+  for row := range m.pool.Query(ctx, q,
+  	listID,
+  	body,
+  	channel,
+  	tabID,
+  	userID,
+  	ts,
+  ) {
+  ```
+
+  The same shape applies to `Exec`:
+
+  ```go
+  err := cn.Exec(ctx, q,
+  	listID,
+  	body,
+  	channel,
+  	tabID,
+  )
+  ```
+
 ## Arguments
 
 Polite pins each parameter's PostgreSQL OID from the Go type:
