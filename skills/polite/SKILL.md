@@ -65,17 +65,18 @@ release notes for 15 through current/devel.
 - **For notifications, prefer `pg_notify($1, $2)`** with a static
   channel by policy. Keep payloads small; for large or durable data,
   store rows and notify with a key.
-- **Multi-line backtick SQL** puts the opening backtick on the same
-  line as the opener (`const`, `var`, `return`, or the call) — don't
-  break before it. The closing backtick sits on its own line, at the
-  same indentation as the first non-whitespace character of that
-  opening line. The SQL body is indented one level deeper than the
-  opening line — not flush-left. PostgreSQL ignores trailing
-  whitespace in queries and the prepared-statement cache keys on full
-  SQL text but the cost of a few trailing bytes is not measurable, so
-  the convention applies even when the closing newline is part of the
-  string. (If trailing whitespace must not appear in the literal —
-  rare for SQL — keep the closing backtick on the last line.)
+- **Multi-line backtick SQL** in a function body lives in a
+  `const q = ` near the top — usually the first statement, before
+  the call that uses it. The pattern is a small minimal function
+  wrapping one query; declaring `q` up front tells the reader what
+  the function does before they reach the call site.
+
+  There is one good shape. Opening backtick on the `const` line
+  (don't break before it); closing backtick on its own line at the
+  same column as `const`; SQL body indented one tab deeper.
+  PostgreSQL ignores trailing whitespace and the prepared-statement
+  cache cost of a few trailing bytes is not measurable, so the
+  closing newline being part of the string is fine.
 
   Bad:
 
@@ -84,14 +85,6 @@ release notes for 15 through current/devel.
   	SELECT 1`
   ```
 
-  Good:
-
-  ```go
-  const q = `
-  	SELECT 1
-  `
-  ```
-
   Bad:
 
   ```go
@@ -100,61 +93,37 @@ release notes for 15 through current/devel.
   	`
   ```
 
-  Good:
+  Bad:
 
   ```go
   const q = `
-  	SELECT 1
+  SELECT 1
   `
   ```
 
   Bad:
 
   ```go
-  for row := range cn.Query(ctx, `
-  	SELECT 1
-  	`) {
-  ```
-
-  Good:
-
-  ```go
-  for row := range cn.Query(ctx, `
-  	SELECT 1
-  `) {
-  ```
-
-  Bad:
-
-  ```go
-  for row := range cn.Query(ctx, `
-  SELECT 1
-  `) {
-  ```
-
-  Good:
-
-  ```go
-  for row := range cn.Query(ctx, `
-  	SELECT 1
-  `) {
-  ```
-
-  Bad:
-
-  ```go
-  for row := range cn.Query(ctx,
+  const q =
   	`
   		SELECT 1
-  	`) {
+  	`
   ```
 
-  Good:
+  Bad — inline in the call instead of hoisted to `const q`:
 
   ```go
   for row := range cn.Query(ctx, `
   	SELECT 1
   `) {
+  ```
+
+  Good:
+
+  ```go
+  const q = `
+  	SELECT 1
+  `
   ```
 
 ## Arguments
