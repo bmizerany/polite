@@ -65,6 +65,17 @@ release notes for 15 through current/devel.
 - **For notifications, prefer `pg_notify($1, $2)`** with a static
   channel by policy. Keep payloads small; for large or durable data,
   store rows and notify with a key.
+- **Multi-line backtick SQL** puts the closing backtick on its own
+  line, aligned with the `const` (or `var`) keyword. The SQL body is
+  indented one level deeper than the backtick:
+
+  ```go
+  const q = `
+  	SELECT id, name
+  	FROM accounts
+  	WHERE active
+  `
+  ```
 
 ## Arguments
 
