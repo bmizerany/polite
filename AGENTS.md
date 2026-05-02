@@ -1,5 +1,9 @@
 # AGENTS Instructions
 
+Read [skills/polite/SKILL.md](skills/polite/SKILL.md) before editing code,
+godoc, or tests in this repo. It carries the package ethos and the rules
+that don't fit in `doc.go`.
+
 ## Overview
 
 This codebase is name `polite` because it is for `postgres` and `lite` on API
@@ -16,7 +20,9 @@ that could complicate its usage.
 
 - Prefer exported setup over unexported field construction. If the package has a
   real entry point such as `Dial`, use it unless the test is specifically about
-  malformed internal state that cannot be reached otherwise.
+  malformed internal state that cannot be reached otherwise. There is almost
+  certainly a way to "just use postgres" to test the client using well crafted
+  postgres SQL.
 - Do not simulate impossible states just to hit a branch. A test should model a
   situation a real client, server, or network transport could actually produce.
 - Each test should prove one real thing with the fewest moving parts possible.
