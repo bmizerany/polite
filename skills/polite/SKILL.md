@@ -66,15 +66,61 @@ release notes for 15 through current/devel.
   channel by policy. Keep payloads small; for large or durable data,
   store rows and notify with a key.
 - **Multi-line backtick SQL** puts the closing backtick on its own
-  line, aligned with the `const` (or `var`) keyword. The SQL body is
-  indented one level deeper than the backtick:
+  line, at the same indentation as the first non-whitespace character
+  of the line that opens the literal — the `const`, `var`, `return`,
+  or function call that introduces it. The SQL body sits one level
+  deeper. PostgreSQL ignores trailing whitespace in queries and the
+  prepared-statement cache keys on full SQL text but the cost of a few
+  trailing bytes is not measurable, so the convention applies even
+  when the closing newline is part of the string. (If trailing
+  whitespace must not appear in the literal — rare for SQL — keep the
+  closing backtick on the last line.)
+
+  Bad:
 
   ```go
   const q = `
-  	SELECT id, name
-  	FROM accounts
-  	WHERE active
+  	SELECT 1`
+  ```
+
+  Good:
+
+  ```go
+  const q = `
+  	SELECT 1
   `
+  ```
+
+  Bad:
+
+  ```go
+  const q = `
+  	SELECT 1
+  	`
+  ```
+
+  Good:
+
+  ```go
+  const q = `
+  	SELECT 1
+  `
+  ```
+
+  Bad:
+
+  ```go
+  for row := range cn.Query(ctx, `
+  	SELECT 1
+  	`) {
+  ```
+
+  Good:
+
+  ```go
+  for row := range cn.Query(ctx, `
+  	SELECT 1
+  `) {
   ```
 
 ## Arguments
