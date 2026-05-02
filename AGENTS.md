@@ -1,8 +1,12 @@
 # AGENTS Instructions
 
-Read [skills/polite/SKILL.md](skills/polite/SKILL.md) before editing code,
-godoc, or tests in this repo. It carries the package ethos and the rules
-that don't fit in `doc.go`.
+Read [skills/contributing/SKILL.md](skills/contributing/SKILL.md) before
+editing code, godoc, or tests in this repo. It carries the package ethos
+and the rules that don't fit in `doc.go`.
+
+`skills/polite/SKILL.md` is the *user-facing* skill, distributed to
+consumers of the polite package. Keep it consumer-focused; contributor
+rules belong in `skills/contributing/SKILL.md`.
 
 ## Overview
 
