@@ -25,35 +25,35 @@ const (
 // goroutines. See the package documentation for the scheduling discipline.
 type Pool struct {
 	// Dial opens a new connection when the pool needs one. If Dial is
-	// nil, the package-level [Dial] is used with [DefaultDSN] and nil
-	// config.
+	// nil, the package-level Dial function is used with DefaultDSN and
+	// nil config.
 	//
 	// Dial is invoked with the pool's lifetime context, not the
-	// caller's [Pool.Get] context, so canceling a Get does not cancel
+	// caller's Get context, so canceling a Get does not cancel
 	// an in-flight dial.
 	//
 	// Errors returned by Dial trigger an exponential-backoff retry
-	// (sleep capped at 5s) that continues until [Pool.Close]. Permanent
+	// (sleep capped at 5s) that continues until Close. Permanent
 	// errors such as bad credentials, an unknown database, or TLS
 	// failures are not surfaced to callers and will retry forever;
-	// they are logged through [Pool.Logger]. Callers cancel by closing
-	// the pool.
+	// they are logged through the Logger field. Callers cancel by
+	// closing the pool.
 	Dial func(ctx context.Context) (*Conn, error)
 
 	// MaxItems is the maximum number of connections that can be open at
-	// once. If MaxItems is zero, then [DefaultPoolMaxConns] is used.
+	// once. If MaxItems is zero, then DefaultPoolMaxConns is used.
 	MaxItems int
 
 	// MaxWaiters is the maximum number of waiters that can be waiting
 	// for a connection. If this number is exceeded, Get returns
-	// [ErrTooManyWaiters]. If MaxWaiters is zero, then
-	// [DefaultPoolMaxWaiters] is used.
+	// ErrTooManyWaiters. If MaxWaiters is zero, then
+	// DefaultPoolMaxWaiters is used.
 	MaxWaiters int
 
 	// Logger receives the pool's "error opening new connection;
-	// retrying" warnings emitted by the [Pool.Dial] retry loop. If
-	// Logger is nil, [slog.Default] is used. To silence these
-	// warnings, pass a logger backed by [slog.DiscardHandler].
+	// retrying" warnings emitted by the Dial field's retry loop. If
+	// Logger is nil, slog.Default is used. To silence these
+	// warnings, pass a logger backed by slog.DiscardHandler.
 	Logger *slog.Logger
 
 	waitlist  wait.List[*Conn]

@@ -33,9 +33,9 @@ type Config struct {
 	// If Now is nil, polite leaves PostgreSQL's default time behavior
 	// unchanged.
 	//
-	// Now is captured at [Dial] and used for the lifetime of the returned
-	// [Conn]; mutating Config.Now afterwards has no effect on existing
-	// connections.
+	// Now is captured by the package-level Dial function and used for
+	// the lifetime of the returned Conn; mutating Config.Now afterwards
+	// has no effect on existing connections.
 	Now func() time.Time
 }
 
