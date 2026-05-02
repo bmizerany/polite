@@ -127,7 +127,12 @@ func (m *Manager) Add(ctx context.Context, listID, tabID, body string) (Item, er
 		       pg_notify($3, json_build_object('list_id', $1, 'tab_id', $4, 'item_id', id)::text)
 		FROM inserted
 	`
-	for row := range m.pool.Query(ctx, q, listID, body, channel, tabID) {
+	for row := range m.pool.Query(ctx, q,
+		listID,
+		body,
+		channel,
+		tabID,
+	) {
 		return decodeItem(row)
 	}
 	return Item{}, errors.New("list: insert returned no row")
@@ -149,7 +154,12 @@ func (m *Manager) Toggle(ctx context.Context, listID, tabID string, itemID int64
 		       pg_notify($3, json_build_object('list_id', $2, 'tab_id', $4, 'item_id', id)::text)
 		FROM updated
 	`
-	for row := range m.pool.Query(ctx, q, itemID, listID, channel, tabID) {
+	for row := range m.pool.Query(ctx, q,
+		itemID,
+		listID,
+		channel,
+		tabID,
+	) {
 		return decodeItem(row)
 	}
 	return Item{}, fmt.Errorf("list: item %d not found in %q", itemID, listID)
