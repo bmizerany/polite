@@ -865,7 +865,7 @@ func (c Column) DecodeText() (string, error) {
 // error rather than guessed at.
 //
 // PostgreSQL's bool is one byte (0x00 or 0x01), so DecodeInt reads a bool
-// column directly: 0 is false, 1 is true. Compare the result to 0 yourself.
+// column directly: 0 is false, 1 is true.
 //
 // SQL NULL has a zero-length payload, so DecodeInt reports it as
 // "invalid length: 0". The package's "NULL" section covers the
