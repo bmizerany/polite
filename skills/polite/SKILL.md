@@ -65,16 +65,17 @@ release notes for 15 through current/devel.
 - **For notifications, prefer `pg_notify($1, $2)`** with a static
   channel by policy. Keep payloads small; for large or durable data,
   store rows and notify with a key.
-- **Multi-line backtick SQL** puts the closing backtick on its own
-  line, at the same indentation as the first non-whitespace character
-  of the line that opens the literal — the `const`, `var`, `return`,
-  or function call that introduces it. The SQL body sits one level
-  deeper. PostgreSQL ignores trailing whitespace in queries and the
-  prepared-statement cache keys on full SQL text but the cost of a few
-  trailing bytes is not measurable, so the convention applies even
-  when the closing newline is part of the string. (If trailing
-  whitespace must not appear in the literal — rare for SQL — keep the
-  closing backtick on the last line.)
+- **Multi-line backtick SQL** puts the opening backtick on the same
+  line as the opener (`const`, `var`, `return`, or the call) — don't
+  break before it. The closing backtick sits on its own line, at the
+  same indentation as the first non-whitespace character of that
+  opening line. The SQL body is indented one level deeper than the
+  opening line — not flush-left. PostgreSQL ignores trailing
+  whitespace in queries and the prepared-statement cache keys on full
+  SQL text but the cost of a few trailing bytes is not measurable, so
+  the convention applies even when the closing newline is part of the
+  string. (If trailing whitespace must not appear in the literal —
+  rare for SQL — keep the closing backtick on the last line.)
 
   Bad:
 
@@ -112,6 +113,39 @@ release notes for 15 through current/devel.
   ```go
   for row := range cn.Query(ctx, `
   	SELECT 1
+  	`) {
+  ```
+
+  Good:
+
+  ```go
+  for row := range cn.Query(ctx, `
+  	SELECT 1
+  `) {
+  ```
+
+  Bad:
+
+  ```go
+  for row := range cn.Query(ctx, `
+  SELECT 1
+  `) {
+  ```
+
+  Good:
+
+  ```go
+  for row := range cn.Query(ctx, `
+  	SELECT 1
+  `) {
+  ```
+
+  Bad:
+
+  ```go
+  for row := range cn.Query(ctx,
+  	`
+  		SELECT 1
   	`) {
   ```
 
