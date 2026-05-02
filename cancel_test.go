@@ -111,15 +111,16 @@ func TestQueryCancelMidFlight(t *testing.T) {
 	// generous but bounded so a regression cannot hang CI.
 	pollCtx, pollCancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer pollCancel()
+	const q = `
+		SELECT 1 FROM pg_stat_activity
+		WHERE pid = $1 AND state = 'active' AND query LIKE '%pg_sleep%'
+	`
 	for _, err := range backoff.Loop(pollCtx, 50*time.Millisecond) {
 		if err != nil {
 			t.Fatal("backend never reached state=active within poll deadline")
 		}
 		rows := 0
-		for range mon.Query(pollCtx, `
-			SELECT 1 FROM pg_stat_activity
-			WHERE pid = $1 AND state = 'active' AND query LIKE '%pg_sleep%'
-		`, int32(pid)) {
+		for range mon.Query(pollCtx, q, int32(pid)) {
 			rows++
 		}
 		if rows > 0 {
