@@ -30,11 +30,11 @@ func TestXZ(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			xzBytes, err := readBase64(fsys, "input.xz.b64")
+			xzBytes, err := readFile(fsys, "input.xz")
 			if err != nil {
 				t.Fatalf("input: %v", err)
 			}
-			want, err := readExpected(fsys)
+			want, err := readFile(fsys, "expected")
 			if err != nil {
 				t.Fatalf("expected: %v", err)
 			}
@@ -54,19 +54,19 @@ func TestXZ(t *testing.T) {
 	}
 }
 
-func readBase64(fsys fs.FS, name string) ([]byte, error) {
-	b, err := fs.ReadFile(fsys, name)
-	if err != nil {
-		return nil, err
-	}
-	return base64.StdEncoding.DecodeString(string(bytes.TrimRight(b, "\n")))
-}
-
-func readExpected(fsys fs.FS) ([]byte, error) {
-	if b, err := fs.ReadFile(fsys, "expected"); err == nil {
+// readFile reads name from fsys. If name is missing, it falls back
+// to name+".b64" and base64-decodes the contents — the standard
+// dodge for shipping bytes that don't survive txtar's text format
+// (xz streams, random binaries, etc.).
+func readFile(fsys fs.FS, name string) ([]byte, error) {
+	if b, err := fs.ReadFile(fsys, name); err == nil {
 		return b, nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	return readBase64(fsys, "expected.b64")
+	b, err := fs.ReadFile(fsys, name+".b64")
+	if err != nil {
+		return nil, err
+	}
+	return base64.StdEncoding.DecodeString(string(bytes.TrimRight(b, "\n")))
 }
