@@ -1,4 +1,8 @@
-package potest
+// Package xz decodes XZ streams whose only filter is LZMA2.
+//
+// It supports the check types None, CRC32, and CRC64. SHA-256 is
+// rejected. Multi-stream concatenation is not supported.
+package xz
 
 import (
 	"bufio"
@@ -10,12 +14,9 @@ import (
 	"io"
 )
 
-// newXZReader returns a reader that decompresses a single-stream
-// XZ archive whose only filter is LZMA2.
-//
-// It supports the check types None, CRC32, and CRC64. SHA-256 is
-// rejected. Multi-stream concatenation is not supported.
-func newXZReader(r io.Reader) (io.Reader, error) {
+// NewReader returns a reader that decompresses a single-stream XZ
+// archive read from r.
+func NewReader(r io.Reader) (io.Reader, error) {
 	z := &xzStream{br: bufio.NewReader(r)}
 	if err := z.readStreamHeader(); err != nil {
 		return nil, err

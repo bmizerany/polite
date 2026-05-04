@@ -1,4 +1,4 @@
-package potest
+package xz
 
 import (
 	"bytes"
@@ -44,9 +44,9 @@ func TestXZ(t *testing.T) {
 				t.Fatal("fixture has no expected or expected.b64")
 			}
 
-			r, err := newXZReader(bytes.NewReader(xzBytes))
+			r, err := NewReader(bytes.NewReader(xzBytes))
 			if err != nil {
-				t.Fatalf("newXZReader: %v", err)
+				t.Fatalf("NewReader: %v", err)
 			}
 			got, err := io.ReadAll(r)
 			if err != nil {

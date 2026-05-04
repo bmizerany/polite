@@ -15,6 +15,8 @@ import (
 	"os"
 	"path"
 	"strings"
+
+	"blake.io/polite/potest/xz"
 )
 
 // Download fetches the PostgreSQL binaries published by the
@@ -108,7 +110,7 @@ func extractTxz(jar *os.File, dst *os.Root) error {
 		return err
 	}
 	defer rc.Close()
-	xr, err := newXZReader(rc)
+	xr, err := xz.NewReader(rc)
 	if err != nil {
 		return err
 	}
