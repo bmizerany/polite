@@ -51,11 +51,33 @@ func Download(ctx context.Context, goos, goarch, version string) (fs.FS, error) 
 }
 
 // mavenJarURL is the location of the embedded-postgres binary
-// distribution on Maven Central.
+// distribution on Maven Central. Zonky's artifact names use a
+// slightly different vocabulary for arch than Go's GOARCH; the
+// translation table is in zonkyArch.
 func mavenJarURL(goos, goarch, version string) string {
-	artifact := "embedded-postgres-binaries-" + goos + "-" + goarch
+	artifact := "embedded-postgres-binaries-" + goos + "-" + zonkyArch(goarch)
 	return "https://repo1.maven.org/maven2/io/zonky/test/postgres/" +
 		artifact + "/" + version + "/" + artifact + "-" + version + ".jar"
+}
+
+// zonkyArch translates a Go GOARCH to the suffix Zonky's
+// embedded-postgres-binaries artifacts use on Maven Central.
+//
+// Go     Zonky
+// amd64  amd64
+// arm64  arm64v8
+// arm    arm32v7
+// 386    i386
+func zonkyArch(goarch string) string {
+	switch goarch {
+	case "arm64":
+		return "arm64v8"
+	case "arm":
+		return "arm32v7"
+	case "386":
+		return "i386"
+	}
+	return goarch
 }
 
 func fetchJar(ctx context.Context, url string) (*os.File, error) {
