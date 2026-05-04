@@ -3,7 +3,9 @@ package xz
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"io"
+	"io/fs"
 	"path/filepath"
 	"testing"
 
@@ -24,24 +26,17 @@ func TestXZ(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			files := map[string][]byte{}
-			for _, f := range arch.Files {
-				files[f.Name] = f.Data
-			}
-			xzBytes, err := base64.StdEncoding.DecodeString(trimNL(files["input.xz.b64"]))
+			fsys, err := txtar.FS(arch)
 			if err != nil {
-				t.Fatalf("decode input: %v", err)
+				t.Fatal(err)
 			}
-			var want []byte
-			if b, ok := files["expected"]; ok {
-				want = b
-			} else if b, ok := files["expected.b64"]; ok {
-				want, err = base64.StdEncoding.DecodeString(trimNL(b))
-				if err != nil {
-					t.Fatalf("decode expected: %v", err)
-				}
-			} else {
-				t.Fatal("fixture has no expected or expected.b64")
+			xzBytes, err := readBase64(fsys, "input.xz.b64")
+			if err != nil {
+				t.Fatalf("input: %v", err)
+			}
+			want, err := readExpected(fsys)
+			if err != nil {
+				t.Fatalf("expected: %v", err)
 			}
 
 			r, err := NewReader(bytes.NewReader(xzBytes))
@@ -59,4 +54,19 @@ func TestXZ(t *testing.T) {
 	}
 }
 
-func trimNL(b []byte) string { return string(bytes.TrimRight(b, "\n")) }
+func readBase64(fsys fs.FS, name string) ([]byte, error) {
+	b, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return nil, err
+	}
+	return base64.StdEncoding.DecodeString(string(bytes.TrimRight(b, "\n")))
+}
+
+func readExpected(fsys fs.FS) ([]byte, error) {
+	if b, err := fs.ReadFile(fsys, "expected"); err == nil {
+		return b, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	return readBase64(fsys, "expected.b64")
+}
