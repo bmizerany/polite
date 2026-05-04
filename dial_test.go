@@ -309,6 +309,12 @@ func TestOpenDialError(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	maybeBecomeSupervisor()
+	dir, err := ensurePG()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	pgBinDir = dir
 	os.Exit(m.Run())
 }
 
@@ -330,9 +336,25 @@ func startPG(t *testing.T, settings ...string) string {
 	}
 
 	dir := t.TempDir()
+	cred, err := dropRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	cmd := exec.CommandContext(t.Context(), "initdb", dir)
+	initArgs := []string{dir}
+	if cred != nil {
+		// initdb's bootstrap superuser defaults to the OS user
+		// running it. We've dropped to an unprivileged uid for
+		// the spawn, so name the superuser after the current
+		// process owner instead — that's who the tests connect
+		// back as.
+		initArgs = append([]string{"-U", currentUser()}, initArgs...)
+	}
+	cmd := exec.CommandContext(t.Context(), filepath.Join(pgBinDir, "initdb"), initArgs...)
 	cmd.Dir = dir
+	if cred != nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("initdb %s", dir)
@@ -350,8 +372,11 @@ func startPG(t *testing.T, settings ...string) string {
 
 	t.Logf("postgres %s", strings.Join(args, " "))
 
-	cmd = exec.CommandContext(t.Context(), "postgres", args...)
+	cmd = exec.CommandContext(t.Context(), filepath.Join(pgBinDir, "postgres"), args...)
 	cmd.Dir = dir
+	if cred != nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: cred}
+	}
 	cmd.WaitDelay = 1 * time.Second
 	cmd.Cancel = func() error {
 		return cmd.Process.Signal(syscall.SIGQUIT)
@@ -413,32 +438,23 @@ func startPG(t *testing.T, settings ...string) string {
 type logf func(format string, args ...any)
 
 func waitForPGReady(ctx context.Context, logf logf, host, port string) error {
+	dsn := strings.Join([]string{
+		"host=" + host,
+		"dbname=postgres",
+		"port=" + port,
+		"sslmode=disable",
+	}, " ")
 	for _, err := range backoff.Loop(ctx, 200*time.Millisecond) {
 		if err != nil {
 			return err
 		}
-
-		// Avoid bootstrapping problems and use pg_isready to wait for
-		// postgres to be ready, instead of our driver. Using our
-		// driver can lead to confusing and hard to debug errors
-		// where postgres is fine, but the driver is not, but the
-		// is failing in a way to is hard to distinguish from a
-		// postgres failure.
-
-		cmd := exec.CommandContext(ctx, "pg_isready",
-			"-d", "postgres",
-			"-h", host,
-			"-p", port,
-			"-t", "3",
-			"-U", "postgres",
-		)
-
-		cmd.Dir = host
-		err := cmd.Run()
-		if err == nil {
-			return nil
+		c, err := Dial(ctx, dsn, nil)
+		if err != nil {
+			logf("dial failed: %v; trying again", err)
+			continue
 		}
-		logf("pg_isready failed: %v; trying again", err)
+		c.Close()
+		return nil
 	}
 	return nil
 }

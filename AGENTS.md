@@ -108,6 +108,15 @@ type Foo struct {
 }
 ```
 
+## Backoff
+
+- When a retry loop is needed, use `blake.io/polite/internal/backoff.Loop`.
+  Do not hand-roll a sleep loop.
+- Keep the max backoff short — usually 1 to 3 seconds, scaled to what
+  the loop is doing.
+- For tests hitting the local server, cap at 1 second; 500ms is often
+  better.
+
 ## Nomenclature
 
 When the user uses "SQL" casually in a sentence, unless otherwise noted, it

@@ -1,0 +1,4 @@
+-- input.xz.b64 --
+/Td6WFoAAAFpIt42AgAhARYAAAB0L+WjAQALaGVsbG8gd29ybGQKAC07CK8AASAMot20vJBCmQ0BAAAAAAFZWg==
+-- expected --
+hello world

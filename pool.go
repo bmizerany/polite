@@ -218,7 +218,7 @@ func (p *Pool) Close() error {
 }
 
 func (p *Pool) openConn() *Conn {
-	for i := range backoff.Loop(p.cancelCtx, 5*time.Second) {
+	for i := range backoff.Loop(p.cancelCtx, 3*time.Second) {
 		cn, err := p.open(p.cancelCtx)
 		if err == nil {
 			return cn
