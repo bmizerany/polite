@@ -1,7 +1,11 @@
 // Command todo is a single-binary to-do list demo for the polite
 // PostgreSQL client. It serves a monochrome htmx4 UI with live
-// cross-tab updates over Server-Sent Events; every byte of CSS is
-// inlined in the template, every byte of JavaScript is htmx itself.
+// cross-tab updates over Server-Sent Events. The Postgres schema
+// owns change notification through an AFTER INSERT OR UPDATE trigger,
+// so the Go side runs plain INSERT and UPDATE statements. Every
+// committed change broadcasts a tiny LISTEN/NOTIFY message; SSE
+// subscribers re-fetch the list and re-render <ul id="items"> in
+// place via htmx out-of-band swap.
 //
 // Run it against a local PostgreSQL on port 5432:
 //
@@ -21,6 +25,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -28,7 +33,6 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -36,32 +40,18 @@ import (
 	"blake.io/polite/cmd/todo/list"
 )
 
-//go:embed schema.sql
-var schemaSQL string
-
 //go:embed templates/index.tmpl
 var templateFS embed.FS
 
 //go:embed public
 var publicFS embed.FS
 
-// pageData is the value passed to the page and partial templates.
-// Items is nil for the OOB partials; the per-item templates project
-// the surrounding ListID/TabID into each row via {{$.ListID}} so a
-// single Item value is enough.
+// pageData is the value passed to both the page template and the
+// items partial. The same value drives the initial page render and
+// every SSE-driven re-render of <ul id="items">.
 type pageData struct {
 	ListID string
-	TabID  string
-	Items  []list.Item
-}
-
-// itemData is what we hand to the per-item partials. We carry ListID
-// and TabID alongside the item itself so the rendered <li> can wire
-// up its own toggle button.
-type itemData struct {
-	ListID string
-	TabID  string
-	list.Item
+	Items  []*list.Item
 }
 
 func main() {
@@ -80,14 +70,9 @@ func main() {
 
 	mgr := list.New(*dsn)
 	defer mgr.Close()
-	go func() {
-		// Run owns one connection for LISTEN; if it ever returns
-		// we just log and let the demo continue without live
-		// updates rather than crashing the server.
-		if err := mgr.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("listen: %v", err)
-		}
-	}()
+	if err := mgr.Listen(ctx); err != nil {
+		log.Fatalf("listen: %v", err)
+	}
 
 	tmpl := template.Must(template.ParseFS(templateFS, "templates/*.tmpl"))
 
@@ -95,11 +80,11 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /public/", http.StripPrefix("/public/", http.FileServer(http.FS(mustSub(publicFS, "public")))))
-	mux.HandleFunc("GET /{$}", srv.home)
-	mux.HandleFunc("GET /lists/{list}", srv.show)
-	mux.HandleFunc("POST /lists/{list}/items", srv.add)
-	mux.HandleFunc("POST /lists/{list}/items/{id}/toggle", srv.toggle)
-	mux.HandleFunc("GET /lists/{list}/events", srv.events)
+	mux.HandleFunc("GET /{$}", srv.handleHome)
+	mux.HandleFunc("GET /lists/{list}", srv.handleShow)
+	mux.HandleFunc("POST /lists/{list}/items", srv.handleAdd)
+	mux.HandleFunc("POST /lists/{list}/items/{id}/toggle", srv.handleToggle)
+	mux.HandleFunc("GET /lists/{list}/events", srv.handleEvents)
 
 	httpSrv := &http.Server{Addr: *addr, Handler: mux}
 	go func() {
@@ -112,47 +97,6 @@ func main() {
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("http: %v", err)
 	}
-}
-
-func applySchema(ctx context.Context, dsn string) error {
-	// polite prepares every statement, and the extended-query
-	// protocol allows only one command per Parse. Split the file
-	// on top-level semicolons and run each piece. The schema is
-	// plain DDL, so a naive split is safe — no quoted semicolons,
-	// no $$-quoted bodies. Strip comments before splitting so a
-	// stray semicolon in a comment can't cut a statement in half.
-	cn, err := polite.Dial(ctx, dsn, nil)
-	if err != nil {
-		return err
-	}
-	defer cn.Close()
-	for stmt := range strings.SplitSeq(stripComments(schemaSQL), ";") {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
-			continue
-		}
-		if err := cn.Exec(ctx, stmt); err != nil {
-			return fmt.Errorf("schema %q: %w", firstLine(stmt), err)
-		}
-	}
-	return nil
-}
-
-func stripComments(s string) string {
-	var b strings.Builder
-	for line := range strings.SplitSeq(s, "\n") {
-		if i := strings.Index(line, "--"); i >= 0 {
-			line = line[:i]
-		}
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
-
-func firstLine(s string) string {
-	first, _, _ := strings.Cut(s, "\n")
-	return first
 }
 
 func mustSub(f embed.FS, dir string) fs.FS {
@@ -168,109 +112,70 @@ type server struct {
 	tmpl *template.Template
 }
 
-// home redirects to a fresh list. Lists are identified by a short
-// random hex string; this means a user can bookmark a URL to keep
-// using the same list, and there is no signup or auth in the demo.
-func (s *server) home(w http.ResponseWriter, r *http.Request) {
+// handleHome mints a fresh random-hex list ID and redirects so the
+// URL is bookmarkable; the demo has no signup or auth.
+func (s *server) handleHome(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/lists/"+randID(4), http.StatusSeeOther)
 }
 
-func (s *server) show(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleShow(w http.ResponseWriter, r *http.Request) {
 	listID := r.PathValue("list")
-	if !validID(listID) {
-		http.Error(w, "bad list id", http.StatusBadRequest)
-		return
-	}
-	if err := s.mgr.Ensure(r.Context(), listID); err != nil {
-		httpErr(w, err)
-		return
-	}
 	items, err := s.mgr.Items(r.Context(), listID)
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	render(w, s.tmpl, "page", pageData{
-		ListID: listID,
-		TabID:  randID(3),
-		Items:  items,
-	})
+	render(w, s.tmpl, "page", pageData{ListID: listID, Items: items})
 }
 
-func (s *server) add(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	listID := r.PathValue("list")
-	if !validID(listID) {
-		http.Error(w, "bad list id", http.StatusBadRequest)
-		return
-	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	body := strings.TrimSpace(r.PostFormValue("body"))
-	tabID := r.PostFormValue("tab")
 	if body == "" {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	it, err := s.mgr.Add(r.Context(), listID, tabID, body)
-	if err != nil {
+	if err := s.mgr.Add(r.Context(), listID, body); err != nil {
+		if errors.Is(err, list.ErrInvalidListID) {
+			http.Error(w, "bad list id", http.StatusBadRequest)
+			return
+		}
 		httpErr(w, err)
 		return
 	}
-	// Append the new row to the originating tab via OOB, and clear
-	// the input the same way. Peer tabs receive their copy via the
-	// SSE stream below.
+	// The new item arrives in this tab the same way it arrives in
+	// peer tabs: through the SSE stream, which re-renders the list
+	// in place. The POST response only clears the input.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	render(w, s.tmpl, "item-oob-append", itemData{ListID: listID, TabID: tabID, Item: it})
 	render(w, s.tmpl, "input-oob", nil)
 }
 
-func (s *server) toggle(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleToggle(w http.ResponseWriter, r *http.Request) {
 	listID := r.PathValue("list")
-	if !validID(listID) {
-		http.Error(w, "bad list id", http.StatusBadRequest)
-		return
-	}
-	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "bad item id", http.StatusBadRequest)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	tabID := r.PostFormValue("tab")
-	it, err := s.mgr.Toggle(r.Context(), listID, tabID, id)
-	if err != nil {
+	if err := s.mgr.Toggle(r.Context(), listID, id); err != nil {
 		httpErr(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	render(w, s.tmpl, "item-oob-replace", itemData{ListID: listID, TabID: tabID, Item: it})
+	w.WriteHeader(http.StatusNoContent)
 }
 
-// events streams item changes for a list as a single SSE event named
-// "oob". The event data is the rendered <li> with hx-swap-oob set, so
-// htmx applies the swap in place — there is no client-side dispatch.
-//
-// The originating tab is identified by the `tab` query parameter and
-// filtered out: it has already applied the change via the POST
-// response, and re-applying the OOB swap would either duplicate the
-// row (for inserts) or briefly flicker (for toggles).
-func (s *server) events(w http.ResponseWriter, r *http.Request) {
+// handleEvents streams change notifications for a list. On every
+// NOTIFY the handler re-fetches the list and writes the rendered
+// <ul> as one SSE message. The <ul> carries hx-swap-oob="outerHTML"
+// so htmx applies the swap in place; the originating tab and peer
+// tabs are updated identically by the same mechanism.
+func (s *server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	listID := r.PathValue("list")
-	if !validID(listID) {
-		http.Error(w, "bad list id", http.StatusBadRequest)
-		return
-	}
-	tabID := r.URL.Query().Get("tab")
-	log.Printf("sse open  list=%s tab=%s remote=%s", listID, tabID, r.RemoteAddr)
-	defer log.Printf("sse close list=%s tab=%s", listID, tabID)
-
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -278,135 +183,34 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
 
-	// Track which item IDs this connection has already shown so we
-	// can choose between "append" (new) and "replace" (update). The
-	// initial set comes from the items we know are already in the
-	// page; we lazily fill it as events arrive.
-	seen, err := initialSeen(r.Context(), s.mgr, listID)
-	if err != nil {
-		httpErr(w, err)
-		return
-	}
-
-	enc := sseWriter{w: w, flusher: flusher}
-
-	// Heartbeat keeps proxies and load balancers from closing the
-	// idle connection. SSE comments (": ...\n\n") are ignored by
-	// the client. The event loop below blocks the main goroutine
-	// in range, so the ticker runs in its own goroutine; the
-	// WaitGroup ensures it stops writing before the handler returns.
-	hbCtx, stopHB := context.WithCancel(r.Context())
-	defer stopHB()
-	var hb sync.WaitGroup
-	hb.Go(func() {
-		t := time.NewTicker(25 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-hbCtx.Done():
-				return
-			case <-t.C:
-				enc.comment("ping")
-			}
-		}
-	})
-	defer hb.Wait()
-
-	for ev := range s.mgr.Events(r.Context(), listID) {
-		// Mark seen *before* the originator filter: when this
-		// tab's own POST inserts a row via OOB, that row is
-		// now present in the tab's DOM even though we never
-		// emit an SSE message for it. Without this, a later
-		// toggle on the same row would arrive marked as
-		// "append" and create a duplicate <li>.
-		isFirst := !seen[ev.ItemID]
-		seen[ev.ItemID] = true
-		if ev.TabID == tabID {
-			continue
-		}
-		it, err := s.mgr.Get(r.Context(), ev.ListID, ev.ItemID)
+	for range s.mgr.Events(r.Context(), listID) {
+		items, err := s.mgr.Items(r.Context(), listID)
 		if err != nil {
+			log.Printf("items: %v", err)
 			continue
 		}
-		tmplName := "item-oob-replace"
-		if isFirst {
-			tmplName = "item-oob-append"
-		}
-
 		var b strings.Builder
-		if err := s.tmpl.ExecuteTemplate(&b, tmplName,
-			itemData{ListID: ev.ListID, TabID: tabID, Item: it}); err != nil {
+		if err := s.tmpl.ExecuteTemplate(&b, "items",
+			pageData{ListID: listID, Items: items}); err != nil {
 			log.Printf("render: %v", err)
 			continue
 		}
-		enc.message(b.String())
+		writeSSE(w, b.String())
+		flusher.Flush()
 	}
 }
 
-func initialSeen(ctx context.Context, mgr *list.Manager, listID string) (map[int64]bool, error) {
-	items, err := mgr.Items(ctx, listID)
-	if err != nil {
-		return nil, err
+// writeSSE writes one SSE message frame: each line of html is
+// prefixed with "data: " per the SSE wire format, and the message
+// terminates with a blank line.
+func writeSSE(w io.Writer, html string) {
+	for line := range strings.SplitSeq(html, "\n") {
+		fmt.Fprintf(w, "data: %s\n", line)
 	}
-	out := make(map[int64]bool, len(items))
-	for _, it := range items {
-		out[it.ID] = true
-	}
-	return out, nil
-}
-
-// sseWriter serializes Server-Sent Events. We keep it inline rather
-// than pulling in a third-party package; the wire format is just
-// "event: name\ndata: line\n\n".
-type sseWriter struct {
-	mu      sync.Mutex
-	w       http.ResponseWriter
-	flusher http.Flusher
-}
-
-// message writes an unnamed SSE message. htmx 4's hx-sse extension
-// auto-swaps unnamed messages via htmx.swap, which honors any
-// hx-swap-oob attributes inside the data — exactly what we want.
-func (s *sseWriter) message(data string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for line := range strings.SplitSeq(data, "\n") {
-		fmt.Fprintf(s.w, "data: %s\n", line)
-	}
-	fmt.Fprint(s.w, "\n")
-	s.flusher.Flush()
-}
-
-func (s *sseWriter) comment(msg string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	fmt.Fprintf(s.w, ": %s\n\n", msg)
-	s.flusher.Flush()
-}
-
-// validID limits list IDs to a small charset so they are safe to drop
-// straight into the page title and into URLs without escaping. The
-// HTTP handlers still pass them as parameters to polite, so SQL
-// injection is not the concern here — readability is.
-func validID(s string) bool {
-	if len(s) == 0 || len(s) > 64 {
-		return false
-	}
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= 'A' && r <= 'Z':
-		case r >= '0' && r <= '9':
-		case r == '-' || r == '_':
-		default:
-			return false
-		}
-	}
-	return true
+	fmt.Fprint(w, "\n")
 }
 
 func randID(nBytes int) string {
@@ -426,4 +230,56 @@ func render(w http.ResponseWriter, t *template.Template, name string, data any) 
 func httpErr(w http.ResponseWriter, err error) {
 	log.Printf("error: %v", err)
 	http.Error(w, err.Error(), http.StatusInternalServerError)
+}
+
+//go:embed schema.sql
+var schemaSQL string
+
+// applySchema executes schemaSQL one statement at a time. polite
+// prepares every statement and the extended-query protocol allows
+// only one command per Parse.
+func applySchema(ctx context.Context, dsn string) error {
+	cn, err := polite.Dial(ctx, dsn, nil)
+	if err != nil {
+		return err
+	}
+	defer cn.Close()
+	stmts, err := splitSchema(schemaSQL)
+	if err != nil {
+		return err
+	}
+	for _, stmt := range stmts {
+		if err := cn.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("schema: %w", err)
+		}
+	}
+	return nil
+}
+
+// splitSchema returns the statements in s. Statements are separated
+// by a line whose trimmed content is exactly ";". A line that begins
+// with ";" but carries anything else is rejected: keep the separator
+// alone so the splitter never has to know about $$-quoting, single
+// quotes, or "--" comments.
+func splitSchema(s string) ([]string, error) {
+	var out []string
+	var cur strings.Builder
+	for line := range strings.Lines(s) {
+		t := strings.TrimSpace(line)
+		if t == ";" {
+			if stmt := strings.TrimSpace(cur.String()); stmt != "" {
+				out = append(out, stmt)
+			}
+			cur.Reset()
+			continue
+		}
+		if strings.HasPrefix(t, ";") {
+			return nil, fmt.Errorf("schema: %q: ';' must be alone on its line", line)
+		}
+		cur.WriteString(line)
+	}
+	if stmt := strings.TrimSpace(cur.String()); stmt != "" {
+		out = append(out, stmt)
+	}
+	return out, nil
 }

@@ -1,47 +1,49 @@
 // Package list is a tiny, polite-only data layer for the to-do demo.
 //
-// A [Manager] wraps a [*polite.Pool] with a handful of high-level
-// methods (Ensure, Add, Toggle, Items, Get) and an in-process
-// LISTEN/NOTIFY broadcast bus that fans Postgres notifications out to
-// SSE subscribers. The package is deliberately small: SQL lives next
-// to the method that runs it, in a `const q = ...` so the query is
-// the documentation.
+// A [Manager] wraps a [*polite.Pool] with three high-level methods
+// (Add, Toggle, Items) and an in-process broadcast bus that fans
+// PostgreSQL LISTEN/NOTIFY traffic out to SSE subscribers. Call
+// [Manager.Listen] once at startup to bring up the dedicated
+// notification connection. The schema's items_notify trigger
+// publishes every committed change, so the Go methods are plain
+// INSERT and UPDATE statements with no inline pg_notify call.
 package list
 
 import (
 	"context"
 	json "encoding/json/v2"
 	"errors"
-	"fmt"
 	"iter"
 	"sync"
 
 	"blake.io/polite"
+	"blake.io/polite/febe"
 )
 
-// channel is the single PostgreSQL LISTEN channel the demo uses. Every
-// mutation NOTIFY's here with a JSON payload that unmarshals into an
-// [Event]. A single [Manager] consumes the channel and demultiplexes
-// by listID, so we keep one dedicated connection for notifications
-// regardless of how many browser tabs are connected.
 const channel = "todo_changes"
 
-// Item is a row in the `items` table. Queries return it as a JSON
-// object built by `json_build_object` so the wire bytes drop straight
-// into [encoding/json/v2.Unmarshal].
+// ErrInvalidListID is returned by [Manager.Add] and [Manager.Toggle]
+// when the listID argument fails the items_list_id_format CHECK
+// constraint declared on the items table. Callers should match it
+// with [errors.Is] rather than peeking at the underlying Postgres
+// error.
+var ErrInvalidListID = errors.New("list: invalid list_id")
+
+// Item is a row in the items table. Queries return it as a JSON object
+// built by PostgreSQL's json_build_object so the wire bytes drop
+// straight into [encoding/json/v2.Unmarshal].
 type Item struct {
 	ID   int64  `json:"id"`
 	Body string `json:"body"`
 	Done bool   `json:"done"`
 }
 
-// Event is what [Manager] hands to subscribers. The NOTIFY payload is
-// a JSON object produced by `json_build_object` and unmarshaled with
-// [encoding/json/v2.Unmarshal].
+// Event identifies a list whose items have changed. Subscribers
+// re-fetch the list with [Manager.Items] and re-render. The payload
+// is intentionally tiny so the trigger has no per-mutation work
+// beyond a single pg_notify.
 type Event struct {
 	ListID string `json:"list_id"`
-	TabID  string `json:"tab_id"`
-	ItemID int64  `json:"item_id"`
 }
 
 // Manager bundles the pool used for data access and the in-process
@@ -57,10 +59,11 @@ type Manager struct {
 	subs map[chan Event]string // chan -> listID
 }
 
-// New returns a Manager that dials dsn for both pooled queries and the
-// dedicated LISTEN connection used by [Manager.Run]. The returned value
-// is ready to use: data methods can be called immediately. Call
-// [Manager.Close] to release the pool when done.
+// New returns a Manager that dials dsn for both pooled queries and
+// the dedicated LISTEN connection used by [Manager.Listen]. Data
+// methods can be called immediately; live updates require [Manager.Listen]
+// to have been called. Call [Manager.Close] to release the pool when
+// done.
 func New(dsn string) *Manager {
 	m := &Manager{
 		dsn:  dsn,
@@ -79,29 +82,12 @@ func (m *Manager) Close() error {
 	return m.pool.Close()
 }
 
-// Ensure creates the list row if it does not already exist. The
-// ON CONFLICT clause makes the call idempotent so the HTTP handler can
-// call it on every page load without a SELECT-then-INSERT race.
-func (m *Manager) Ensure(ctx context.Context, listID string) error {
-	const q = `INSERT INTO lists (id) VALUES ($1) ON CONFLICT DO NOTHING`
-	return m.pool.Exec(ctx, q, listID)
-}
-
-// itemJSON is the projection used by every Items/Add/Toggle/Get query;
-// it builds the JSON object decodeItem unmarshals.
-const itemJSON = `json_build_object('id', id, 'body', body, 'done', done)`
-
-// Items returns the list's items in insertion order (id is bigserial,
-// so ORDER BY id is the same as ORDER BY created_at without depending
-// on the clock).
-func (m *Manager) Items(ctx context.Context, listID string) ([]Item, error) {
-	const q = `
-		SELECT ` + itemJSON + `
-		FROM items
-		WHERE list_id = $1
-		ORDER BY id
-	`
-	var out []Item
+// Items returns the list's items in insertion order. id is bigserial,
+// so ORDER BY id matches insertion order without depending on the
+// clock.
+func (m *Manager) Items(ctx context.Context, listID string) ([]*Item, error) {
+	const q = `SELECT json_build_object('id', id, 'body', body, 'done', done) FROM items WHERE list_id = $1 ORDER BY id`
+	var out []*Item
 	for row := range m.pool.Query(ctx, q, listID) {
 		it, err := decodeItem(row)
 		if err != nil {
@@ -112,67 +98,25 @@ func (m *Manager) Items(ctx context.Context, listID string) ([]Item, error) {
 	return out, nil
 }
 
-// Add inserts a new item, NOTIFYs subscribers (so other tabs see it
-// over SSE), and returns the inserted row. The INSERT and the NOTIFY
-// happen in a single SQL statement using a CTE so the notification can
-// only fire if the row is actually committed.
-func (m *Manager) Add(ctx context.Context, listID, tabID, body string) (Item, error) {
-	const q = `
-		WITH inserted AS (
-			INSERT INTO items (list_id, body)
-			VALUES ($1, $2)
-			RETURNING id, body, done
-		)
-		SELECT ` + itemJSON + `,
-		       pg_notify($3, json_build_object('list_id', $1, 'tab_id', $4, 'item_id', id)::text)
-		FROM inserted
-	`
-	for row := range m.pool.Query(ctx, q,
-		listID,
-		body,
-		channel,
-		tabID,
-	) {
-		return decodeItem(row)
-	}
-	return Item{}, errors.New("list: insert returned no row")
+// Add inserts a new item. The items_notify trigger fires after commit
+// and broadcasts the change to subscribers. Returns [ErrInvalidListID]
+// if listID violates the items_list_id_format CHECK.
+func (m *Manager) Add(ctx context.Context, listID, body string) error {
+	err := m.pool.Exec(ctx,
+		`INSERT INTO items (list_id, body) VALUES ($1, $2)`,
+		listID, body)
+	return wrapListIDErr(err)
 }
 
-// Toggle flips the `done` flag for a single item. It NOTIFYs with the
-// same payload shape as Add; the SSE handler does not distinguish
-// inserts from updates — it just re-renders the item by id, and htmx
-// out-of-band swaps replace the existing <li> in the DOM.
-func (m *Manager) Toggle(ctx context.Context, listID, tabID string, itemID int64) (Item, error) {
-	const q = `
-		WITH updated AS (
-			UPDATE items
-			SET done = NOT done
-			WHERE id = $1 AND list_id = $2
-			RETURNING id, body, done
-		)
-		SELECT ` + itemJSON + `,
-		       pg_notify($3, json_build_object('list_id', $2, 'tab_id', $4, 'item_id', id)::text)
-		FROM updated
-	`
-	for row := range m.pool.Query(ctx, q,
-		itemID,
-		listID,
-		channel,
-		tabID,
-	) {
-		return decodeItem(row)
-	}
-	return Item{}, fmt.Errorf("list: item %d not found in %q", itemID, listID)
-}
-
-// Get fetches a single item by id. SSE handlers use it to re-render
-// the row when a NOTIFY arrives.
-func (m *Manager) Get(ctx context.Context, listID string, itemID int64) (Item, error) {
-	const q = `SELECT ` + itemJSON + ` FROM items WHERE id = $1 AND list_id = $2`
-	for row := range m.pool.Query(ctx, q, itemID, listID) {
-		return decodeItem(row)
-	}
-	return Item{}, fmt.Errorf("list: item %d not found", itemID)
+// Toggle inverts the done column for one item. The items_notify
+// trigger broadcasts the change to subscribers. Returns
+// [ErrInvalidListID] if listID violates the items_list_id_format
+// CHECK.
+func (m *Manager) Toggle(ctx context.Context, listID string, itemID int64) error {
+	err := m.pool.Exec(ctx,
+		`UPDATE items SET done = NOT done WHERE id = $1 AND list_id = $2`,
+		itemID, listID)
+	return wrapListIDErr(err)
 }
 
 // Events yields events for listID until ctx is cancelled or the
@@ -208,22 +152,28 @@ func (m *Manager) Events(ctx context.Context, listID string) iter.Seq[Event] {
 	}
 }
 
-// Run dials a dedicated connection and LISTENs on the demo's NOTIFY
-// channel for the lifetime of ctx, dispatching every notification to
-// matching subscribers. The connection is not pool-recycled because
-// LISTEN binds to a specific session; returning it to the pool would
-// lose the subscription.
-func (m *Manager) Run(ctx context.Context) error {
+// Listen dials a dedicated connection and issues the demo's LISTEN
+// command, then spawns a goroutine that dispatches notifications to
+// matching subscribers until ctx is cancelled. The connection is not
+// pool-recycled because LISTEN binds to a specific session; returning
+// it to the pool would lose the subscription. Errors during the
+// synchronous setup (Dial or LISTEN) are returned; once Listen
+// returns nil, the dispatch loop runs in the background.
+func (m *Manager) Listen(ctx context.Context) error {
 	cn, err := polite.Dial(ctx, m.dsn, nil)
 	if err != nil {
 		return err
 	}
-	defer cn.Close()
-
 	if err := cn.Exec(ctx, `LISTEN `+channel); err != nil {
+		cn.Close()
 		return err
 	}
+	go m.dispatchLoop(ctx, cn)
+	return nil
+}
 
+func (m *Manager) dispatchLoop(ctx context.Context, cn *polite.Conn) {
+	defer cn.Close()
 	for n := range polite.Notifications(ctx, cn) {
 		var ev Event
 		if err := json.Unmarshal(n.Payload, &ev); err != nil {
@@ -231,7 +181,6 @@ func (m *Manager) Run(ctx context.Context) error {
 		}
 		m.dispatch(ev)
 	}
-	return ctx.Err()
 }
 
 func (m *Manager) dispatch(ev Event) {
@@ -251,14 +200,39 @@ func (m *Manager) dispatch(ev Event) {
 	}
 }
 
-// decodeItem unmarshals the first column — a `json_build_object`
-// projection of (id, body, done) — into an [Item].
-func decodeItem(row *polite.Row) (Item, error) {
+// decodeItem unmarshals the first column, a json_build_object
+// projection of id, body, and done, into a freshly allocated [Item].
+func decodeItem(row *polite.Row) (*Item, error) {
 	b, err := row.Column(0).Bytes()
 	if err != nil {
-		return Item{}, err
+		return nil, err
 	}
 	var it Item
-	err = json.Unmarshal(b, &it)
-	return it, err
+	if err := json.Unmarshal(b, &it); err != nil {
+		return nil, err
+	}
+	return &it, nil
+}
+
+// wrapListIDErr translates an items_list_id_format CHECK violation
+// into [ErrInvalidListID] so callers do not need to recognise polite
+// or Postgres error types. Other errors and nil pass through
+// unchanged.
+func wrapListIDErr(err error) error {
+	if isConstraintError(err, "items_list_id_format") {
+		return ErrInvalidListID
+	}
+	return err
+}
+
+// isConstraintError reports whether err is a Postgres error whose
+// constraint name matches name. polite surfaces backend errors as
+// [*febe.Error] with Constraint set on integrity-violation classes
+// (SQLSTATE 23xxx).
+func isConstraintError(err error, name string) bool {
+	var pgErr *febe.Error
+	if !errors.As(err, &pgErr) {
+		return false
+	}
+	return pgErr.Constraint == name
 }

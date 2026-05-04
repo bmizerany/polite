@@ -1,22 +1,16 @@
 {{/*
-  index.tmpl — the entire UI for the polite to-do demo.
+  index.tmpl: the entire UI for the polite to-do demo.
 
-  All partials live in this one file as nested templates so the HTTP
-  handlers can render either the whole page ("page") or a fragment
-  ("item", "item-oob") through the same html/template instance. htmx
-  swaps the fragments in place; the styling is utility-class CSS
-  inlined in <style> at the top of the page (the only stylesheet the
-  demo ships).
+  Three named templates:
 
-  Naming convention for partials:
-    page      — full HTML document, used for GET /lists/{id}
-    items     — the <ul> and its current rows, used inside `page`
-    item      — a single <li>, rendered both inline and via OOB
-    item-oob  — a single <li> wrapped in hx-swap-oob so it lands at
-                the right place in the parent DOM regardless of which
-                handler returned it
-    input-oob — the cleared text input, returned alongside `item-oob`
-                after a successful POST
+    page       - full HTML document, used for GET /lists/{id}
+    items      - <ul id="items"> with hx-swap-oob="outerHTML",
+                 used both inline by `page` (where the OOB attribute
+                 is harmless on the initial document load) and as
+                 the SSE message body (where htmx uses the OOB
+                 attribute to replace the existing <ul> in place)
+    input-oob  - the cleared text input, returned by POST /items so
+                 the originating tab's input clears after submit
 */}}
 
 {{define "page"}}<!doctype html>
@@ -34,10 +28,10 @@
   <script src="/public/htmx.min.js"></script>
   <script src="/public/hx-sse.min.js"></script>
   <style>
-    /* Big-CSS-domain-expert energy: a tiny utility set that gets us
-       a clean monochromatic UI without a stylesheet, a build step, or
-       a megabyte of JavaScript framework. Every class below is used
-       at least once in this template. */
+    /* A tiny utility set that gets us a clean monochromatic UI
+       without a stylesheet, a build step, or a megabyte of
+       JavaScript framework. Every class below is used at least
+       once in this template. */
     *,*::before,*::after{box-sizing:border-box}
     html,body{margin:0;padding:0}
     body{font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
@@ -45,7 +39,6 @@
     a{color:inherit}
     .container{max-width:36rem;margin:0 auto;padding:2rem 1rem}
     .row{display:flex;align-items:center;gap:.5rem}
-    .between{justify-content:space-between}
     .stack>*+*{margin-top:.75rem}
     .muted{color:#666}
     .title{font-size:1.25rem;font-weight:600;letter-spacing:-.01em;margin:0}
@@ -73,91 +66,48 @@
 </head>
 <body>
   <main class="container stack">
-    <header class="row between">
+    <header class="row">
       <h1 class="title">todo · <span class="muted">{{.ListID}}</span></h1>
-      <span class="muted">tab {{.TabID}}</span>
     </header>
     <hr class="hairline">
 
     <form class="row frame"
           hx-post="/lists/{{.ListID}}/items"
           hx-swap="none">
-      <input type="hidden" name="tab" value="{{.TabID}}">
-      <input id="newitem" class="input" name="body" autocomplete="off"
+      <input id="newitem" class="input" name="body" autocomplete="off" autofocus
              placeholder="add an item and press enter…" required>
       <button class="btn" type="submit">add</button>
     </form>
 
     {{template "items" .}}
 
-    <p class="muted">live updates stream from PostgreSQL via LISTEN/NOTIFY → SSE.</p>
+    <p class="muted">live updates stream from PostgreSQL via LISTEN/NOTIFY → SSE.
+      <a href="/lists/{{.ListID}}" target="_blank" rel="noopener">open this list in a new tab</a>
+      to watch them arrive.</p>
   </main>
 
   {{/* htmx 4 SSE: hx-sse:connect opens an EventSource; unnamed
        SSE messages are auto-swapped via htmx.swap, which honors any
-       hx-swap-oob attributes inside the message data. We set
-       hx-swap="none" so the *main* fragment lands nowhere — only the
-       OOB pieces matter. */}}
+       hx-swap-oob attributes inside the data. We set hx-swap="none"
+       so the *main* fragment lands nowhere; only the OOB <ul>
+       matters. */}}
   <div hx-ext="sse"
-       hx-sse:connect="/lists/{{.ListID}}/events?tab={{.TabID}}"
+       hx-sse:connect="/lists/{{.ListID}}/events"
        hx-swap="none"
        style="display:none"></div>
 </body>
 </html>{{end}}
 
 
-{{/* `items` is rendered as part of the page only. It carries the
-     full pageData, so each row can reach for $.ListID and $.TabID
-     without a per-row wrapper struct. The OOB partials below take
-     `itemData` directly, which is why they exist as separate
-     definitions rather than reusing this loop body. */}}
-
-{{define "items"}}<ul id="items" class="list">
+{{define "items"}}<ul id="items" hx-swap-oob="outerHTML" class="list">
   {{range .Items}}<li id="item-{{.ID}}" class="item{{if .Done}} done{{end}}">
     <span class="check"
           hx-post="/lists/{{$.ListID}}/items/{{.ID}}/toggle"
-          hx-vals='{"tab":"{{$.TabID}}"}'
           hx-swap="none"
           title="toggle"></span>
     <span class="body">{{.Body}}</span>
   </li>{{end}}
 </ul>{{end}}
-
-
-{{/* item-oob is rendered both by POST responses (so the originating
-     tab sees its own write) and by the SSE stream (so peer tabs do).
-     Using hx-swap-oob="beforeend:#items" appends a brand new item to
-     the end of the list; using outerHTML against #item-N replaces an
-     existing row in place after a toggle. The handler picks which
-     mode applies based on whether the row is new. */}}
-
-{{/* htmx4 strips the OOB wrapper element for non-outer swap styles
-     (style.startsWith('outer') is false for beforeend, so swapSpec.strip
-     defaults to true and only the wrapper's children are inserted). We
-     wrap the row in a <template> so the wrapper is what gets stripped
-     and the <li> itself lands inside #items. */}}
-
-{{define "item-oob-append"}}<template hx-swap-oob="beforeend:#items"><li
-    id="item-{{.ID}}" class="item{{if .Done}} done{{end}}">
-  <span class="check"
-        hx-post="/lists/{{$.ListID}}/items/{{.ID}}/toggle"
-        hx-vals='{"tab":"{{$.TabID}}"}'
-        hx-swap="none"
-        title="toggle"></span>
-  <span class="body">{{.Body}}</span>
-</li></template>{{end}}
-
-
-{{define "item-oob-replace"}}<li id="item-{{.ID}}"
-    hx-swap-oob="outerHTML"
-    class="item{{if .Done}} done{{end}}">
-  <span class="check"
-        hx-post="/lists/{{$.ListID}}/items/{{.ID}}/toggle"
-        hx-vals='{"tab":"{{$.TabID}}"}'
-        hx-swap="none"
-        title="toggle"></span>
-  <span class="body">{{.Body}}</span>
-</li>{{end}}
 
 
 {{define "input-oob"}}<input id="newitem" hx-swap-oob="true"
