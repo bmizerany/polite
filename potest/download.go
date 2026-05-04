@@ -34,11 +34,7 @@ func Download(ctx context.Context, goos, goarch, version string) (fs.FS, error) 
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf(
-		"https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-%s-%s/%s/embedded-postgres-binaries-%s-%s-%s.jar",
-		goos, goarch, version, goos, goarch, version,
-	)
-	jar, err := fetchJar(ctx, url)
+	jar, err := fetchJar(ctx, mavenJarURL(goos, goarch, version))
 	if err != nil {
 		root.Close()
 		return nil, err
@@ -50,6 +46,14 @@ func Download(ctx context.Context, goos, goarch, version string) (fs.FS, error) 
 		return nil, err
 	}
 	return root.FS(), nil
+}
+
+// mavenJarURL is the location of the embedded-postgres binary
+// distribution on Maven Central.
+func mavenJarURL(goos, goarch, version string) string {
+	artifact := "embedded-postgres-binaries-" + goos + "-" + goarch
+	return "https://repo1.maven.org/maven2/io/zonky/test/postgres/" +
+		artifact + "/" + version + "/" + artifact + "-" + version + ".jar"
 }
 
 func fetchJar(ctx context.Context, url string) (*os.File, error) {

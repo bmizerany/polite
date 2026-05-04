@@ -309,12 +309,10 @@ func TestOpenDialError(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	maybeBecomeSupervisor()
-	dir, err := ensurePG()
-	if err != nil {
+	if err := ensurePG(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	pgBinDir = dir
 	os.Exit(m.Run())
 }
 

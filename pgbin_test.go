@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/exec"
@@ -22,111 +23,139 @@ const pgTestVersion = "18.3.0"
 
 var pgBinDir string
 
-func ensurePG() (string, error) {
-	bin, err := ensureBinaries()
+func ensurePG() error {
+	if os.Getenv("DATABASE_URL") != "" {
+		return nil
+	}
+	install, err := openInstall()
 	if err != nil {
-		return "", err
+		return err
 	}
-	if os.Getenv("DATABASE_URL") == "" {
-		if err := ensureServer(bin); err != nil {
-			return "", err
-		}
-	}
-	return bin, nil
-}
-
-func ensureBinaries() (string, error) {
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(cache, "postgres",
-		runtime.GOOS+"-"+runtime.GOARCH+"-"+pgTestVersion)
-	if !hasBinaries(dir) {
-		fsys, err := potest.Download(context.Background(),
-			runtime.GOOS, runtime.GOARCH, pgTestVersion)
-		if err != nil {
-			return "", fmt.Errorf("download postgres: %w", err)
-		}
-		if err := os.CopyFS(dir, fsys); err != nil {
-			return "", fmt.Errorf("copy postgres: %w", err)
-		}
-		if !hasBinaries(dir) {
-			return "", fmt.Errorf("download postgres: %s missing initdb/postgres", dir)
+	defer install.Close()
+	if !hasBinaries(install) {
+		if err := populate(install); err != nil {
+			return err
 		}
 	}
 	if os.Getuid() == 0 {
-		if err := openCachePath(dir); err != nil {
-			return "", err
-		}
-	}
-	return filepath.Join(dir, "bin"), nil
-}
-
-// openCachePath widens permissions on dir and every parent up to /
-// so a user the test process drops to (e.g. postgres) can traverse
-// and read the install. Tests run as root in some sandboxes; this is
-// a no-op everywhere else.
-func openCachePath(dir string) error {
-	for p := dir; p != "/" && p != ""; p = filepath.Dir(p) {
-		if err := os.Chmod(p, 0o755); err != nil {
+		if err := widenForDroppedRoot(install); err != nil {
 			return err
 		}
 	}
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	pgBinDir = filepath.Join(install.Name(), "bin")
+	return ensureServer(install)
+}
+
+// openInstall opens an *os.Root over the cache directory where the
+// PostgreSQL install lives, creating the dir if necessary.
+func openInstall() (*os.Root, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(cache, "postgres",
+		runtime.GOOS+"-"+runtime.GOARCH+"-"+pgTestVersion)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	return os.OpenRoot(dir)
+}
+
+func hasBinaries(install *os.Root) bool {
+	for _, name := range []string{"bin/initdb", "bin/postgres"} {
+		info, err := install.Stat(name)
+		if err != nil || info.Mode()&0o111 == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func populate(install *os.Root) error {
+	fsys, err := potest.Download(context.Background(),
+		runtime.GOOS, runtime.GOARCH, pgTestVersion)
+	if err != nil {
+		return fmt.Errorf("download postgres: %w", err)
+	}
+	if err := os.CopyFS(install.Name(), fsys); err != nil {
+		return fmt.Errorf("copy postgres: %w", err)
+	}
+	if !hasBinaries(install) {
+		return errors.New("download postgres: install missing initdb/postgres")
+	}
+	return nil
+}
+
+// widenForDroppedRoot makes everything under install readable +
+// traversable by other users, and widens every parent directory of
+// the install just enough that a dropped uid can walk down to it.
+// Sticky and world-writable bits on shared dirs (e.g. /tmp) are
+// preserved.
+func widenForDroppedRoot(install *os.Root) error {
+	err := fs.WalkDir(install.FS(), ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		mode := info.Mode().Perm() | 0o005
-		if info.IsDir() || info.Mode()&0o100 != 0 {
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		mode := info.Mode().Perm() | 0o004
+		if d.IsDir() || info.Mode()&0o100 != 0 {
 			mode |= 0o001
 		}
-		return os.Chmod(path, mode)
+		if mode == info.Mode().Perm() {
+			return nil
+		}
+		return install.Chmod(name, mode)
 	})
+	if err != nil {
+		return err
+	}
+	for p := filepath.Dir(install.Name()); p != "/" && p != ""; p = filepath.Dir(p) {
+		info, err := os.Stat(p)
+		if err != nil {
+			return err
+		}
+		mode := info.Mode().Perm() | 0o055
+		if mode == info.Mode().Perm() {
+			break
+		}
+		if err := os.Chmod(p, mode); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // dropRoot returns a syscall.Credential pointing at an unprivileged
-// account if the current process is running as root, chowns dataDir
-// to that account, and widens permissions on every parent directory
-// so the dropped user can traverse to it. Returns nil credential when
-// not root.
+// account if the current process is root, chowns the entire test-root
+// under TMPDIR (parent of dataDir) to that account, and widens
+// traversal on every parent. Returns nil when not root.
+//
+// We can't synthesize a uid out of thin air: initdb calls getpwuid()
+// on its effective uid and aborts on lookup failure, so the uid must
+// exist in /etc/passwd. We use postgres if present, otherwise nobody.
 func dropRoot(dataDir string) (*syscall.Credential, error) {
 	if os.Getuid() != 0 {
 		return nil, nil
 	}
-	u, err := user.Lookup("postgres")
-	if err != nil {
-		u, err = user.Lookup("nobody")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("no postgres or nobody user available: %w", err)
-	}
-	uid, err := strconv.ParseUint(u.Uid, 10, 32)
+	uid, gid, err := lookupUnprivileged()
 	if err != nil {
 		return nil, err
 	}
-	gid, err := strconv.ParseUint(u.Gid, 10, 32)
-	if err != nil {
+	testRoot := stepUpToTemp(dataDir)
+	if err := chownTree(testRoot, uid, gid); err != nil {
 		return nil, err
 	}
-	tmp := os.TempDir()
-	root := dataDir
-	for filepath.Dir(root) != tmp && filepath.Dir(root) != "/" && filepath.Dir(root) != "" {
-		root = filepath.Dir(root)
-	}
-	if err := chownTree(root, int(uid), int(gid)); err != nil {
-		return nil, err
-	}
-	for p := filepath.Dir(root); p != "/" && p != ""; p = filepath.Dir(p) {
+	for p := filepath.Dir(testRoot); p != "/" && p != ""; p = filepath.Dir(p) {
 		info, err := os.Stat(p)
 		if err != nil {
 			return nil, err
 		}
-		// Only widen — never strip sticky/world-writable from
-		// shared dirs like /tmp.
 		mode := info.Mode().Perm() | 0o055
 		if mode == info.Mode().Perm() {
-			continue
+			break
 		}
 		if err := os.Chmod(p, mode); err != nil {
 			return nil, err
@@ -135,8 +164,33 @@ func dropRoot(dataDir string) (*syscall.Credential, error) {
 	return &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}, nil
 }
 
-// chownTree recursively assigns uid/gid to dir and every file
-// underneath. Existing mode bits are preserved.
+func lookupUnprivileged() (uid, gid int, err error) {
+	u, err := user.Lookup("postgres")
+	if err != nil {
+		u, err = user.Lookup("nobody")
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("no postgres or nobody user: %w", err)
+	}
+	uu, err := strconv.ParseUint(u.Uid, 10, 32)
+	if err != nil {
+		return 0, 0, err
+	}
+	gg, err := strconv.ParseUint(u.Gid, 10, 32)
+	if err != nil {
+		return 0, 0, err
+	}
+	return int(uu), int(gg), nil
+}
+
+func stepUpToTemp(dir string) string {
+	tmp := os.TempDir()
+	for filepath.Dir(dir) != tmp && filepath.Dir(dir) != "/" && filepath.Dir(dir) != "" {
+		dir = filepath.Dir(dir)
+	}
+	return dir
+}
+
 func chownTree(dir string, uid, gid int) error {
 	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -153,28 +207,19 @@ func currentUser() string {
 	return "postgres"
 }
 
-func hasBinaries(dir string) bool {
-	for _, name := range []string{"initdb", "postgres"} {
-		info, err := os.Stat(filepath.Join(dir, "bin", name))
-		if err != nil || info.Mode()&0o111 == 0 {
-			return false
-		}
-	}
-	return true
-}
-
 // ensureServer makes sure a postgres server is listening on
 // /tmp/.s.PGSQL.5411 — the socket the default testDSN points at. If
 // one is already there it returns without doing anything; otherwise
-// it spawns a fresh server backed by the binaries at bin and lets the
+// it spawns a fresh server backed by the install at root and lets the
 // supervisor pattern in postgres_test.go shut it down on test exit.
-func ensureServer(bin string) error {
+func ensureServer(root *os.Root) error {
 	const socket = "/tmp/.s.PGSQL.5411"
 	if c, err := net.Dial("unix", socket); err == nil {
 		c.Close()
 		return nil
 	}
 
+	bin := filepath.Join(root.Name(), "bin")
 	dataDir, err := os.MkdirTemp("", "polite-pg-")
 	if err != nil {
 		return err
