@@ -117,13 +117,7 @@ func extractTxz(jar *os.File, dst *os.Root) error {
 	if err != nil {
 		return err
 	}
-	var entry *zip.File
-	for _, f := range zr.File {
-		if strings.HasSuffix(f.Name, ".txz") {
-			entry = f
-			break
-		}
-	}
+	entry := getTXZFile(zr)
 	if entry == nil {
 		return errors.New("potest: jar has no .txz entry")
 	}
@@ -137,6 +131,15 @@ func extractTxz(jar *os.File, dst *os.Root) error {
 		return err
 	}
 	return untar(tar.NewReader(xr), dst)
+}
+
+func getTXZFile(zr *zip.Reader) *zip.File {
+	for _, f := range zr.File {
+		if strings.HasSuffix(f.Name, ".txz") {
+			return f
+		}
+	}
+	return nil
 }
 
 func untar(tr *tar.Reader, dst *os.Root) error {

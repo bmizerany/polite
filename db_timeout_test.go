@@ -15,13 +15,14 @@ func TestQueryDeadlineAllowsReuse(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
-	var gotErr error
-	for row := range cn.Query(ctx, "SELECT pg_sleep(1)") {
-		if _, err := row.Column(0).Bytes(); err != nil {
-			gotErr = err
-			break
+	gotErr := func() error {
+		for row := range cn.Query(ctx, "SELECT pg_sleep(1)") {
+			if _, err := row.Column(0).Bytes(); err != nil {
+				return err
+			}
 		}
-	}
+		return nil
+	}()
 	if gotErr == nil {
 		t.Fatal("expected deadline error")
 	}

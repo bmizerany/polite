@@ -44,6 +44,9 @@ jobs:
       - name: staticcheck
         run: go run honnef.co/go/tools/cmd/staticcheck ./...
 
+      - name: unreturned
+        run: go tool unreturned ./...
+
 
   gotest:
     runs-on: ubuntu-22.04

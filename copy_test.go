@@ -136,18 +136,19 @@ func TestCopyFromConstraintViolation(t *testing.T) {
 	}
 
 	// Enter COPY FROM and send a NULL for a NOT NULL column.
-	var gotErr error
-	for row := range cn.Query(ctx, "COPY strict FROM STDIN WITH (FORMAT binary)") {
-		_, err := row.Column(0).Bytes()
-		if err != nil && !errors.Is(err, ErrCopyFrom) {
-			gotErr = err
-			break
+	gotErr := func() error {
+		for row := range cn.Query(ctx, "COPY strict FROM STDIN WITH (FORMAT binary)") {
+			_, err := row.Column(0).Bytes()
+			if err != nil && !errors.Is(err, ErrCopyFrom) {
+				return err
+			}
+			// Send a row with NULL id — violates NOT NULL.
+			if err := cn.Exec(ctx, "", nil); err != nil {
+				t.Fatal(err)
+			}
 		}
-		// Send a row with NULL id — violates NOT NULL.
-		if err := cn.Exec(ctx, "", nil); err != nil {
-			t.Fatal(err)
-		}
-	}
+		return nil
+	}()
 
 	if gotErr == nil {
 		t.Fatal("expected a constraint violation error")
