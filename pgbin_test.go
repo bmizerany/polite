@@ -207,7 +207,7 @@ func currentUser() string {
 	return "postgres"
 }
 
-// ensureServer makes sure a postgres server is listening on
+// ensureServer makes sure a postgres server is ready on
 // /tmp/.s.PGSQL.5411 — the socket the default testDSN points at. If
 // one is already there it returns without doing anything; otherwise
 // it spawns a fresh server backed by the install at root and lets the
@@ -216,7 +216,9 @@ func ensureServer(root *os.Root) error {
 	const socket = "/tmp/.s.PGSQL.5411"
 	if c, err := net.Dial("unix", socket); err == nil {
 		c.Close()
-		return nil
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return waitDefaultServerReady(ctx)
 	}
 
 	bin := filepath.Join(root.Name(), "bin")
@@ -261,19 +263,31 @@ func ensureServer(root *os.Root) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	if err := waitDefaultServerReady(ctx); err != nil {
+		cmd.Process.Signal(syscall.SIGQUIT)
+		return err
+	}
+	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		return fmt.Errorf("postgres exited early: %v", cmd.ProcessState)
+	}
+	return nil
+}
+
+func waitDefaultServerReady(ctx context.Context) error {
+	var lastErr error
 	for _, err := range backoff.Loop(ctx, 500*time.Millisecond) {
 		if err != nil {
-			cmd.Process.Signal(syscall.SIGQUIT)
-			return errors.New("postgres did not start within 10s")
+			if lastErr != nil {
+				return fmt.Errorf("postgres did not start: %w", lastErr)
+			}
+			return errors.New("postgres did not start")
 		}
-		c, dialErr := net.Dial("unix", socket)
-		if dialErr == nil {
-			c.Close()
+		cn, err := Dial(ctx, testDSN, nil)
+		if err == nil {
+			cn.Close()
 			return nil
 		}
-		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-			return fmt.Errorf("postgres exited early: %v", cmd.ProcessState)
-		}
+		lastErr = err
 	}
 	return nil
 }
