@@ -190,7 +190,7 @@ func (z *xzStream) openBlock() (*xzBlock, error) {
 	return b, nil
 }
 
-func lzma2DictSize(b byte) (int, error) {
+func lzma2DictSize(b byte) (int64, error) {
 	if b > 40 {
 		return 0, fmt.Errorf("xz: invalid lzma2 dict prop %d", b)
 	}
@@ -199,12 +199,12 @@ func lzma2DictSize(b byte) (int, error) {
 	}
 	v := uint32(2 | (b & 1))
 	v <<= b/2 + 11
-	return int(v), nil
+	return int64(v), nil
 }
 
 type xzBlock struct {
 	stream  *xzStream
-	dictMax int
+	dictMax int64
 	raw     *counter
 	lz2     *lzma2Reader
 
@@ -418,7 +418,7 @@ type lzma2Reader struct {
 	lit    bool
 }
 
-func newLZMA2Reader(r *counter, dictMax int) *lzma2Reader {
+func newLZMA2Reader(r *counter, dictMax int64) *lzma2Reader {
 	d := &dict{buf: make([]byte, 0, 1<<16)}
 	return &lzma2Reader{
 		br:  r,
