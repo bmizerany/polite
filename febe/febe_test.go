@@ -652,6 +652,35 @@ func TestWriteRowDescription(t *testing.T) {
 	}
 }
 
+// A backend that declares a negative field or parameter count must not
+// drive make([]T, n) into a "makeslice: len out of range" panic.
+func TestReadDescriptionNegativeCount(t *testing.T) {
+	cases := []struct {
+		name string
+		typ  byte
+		read func(*Conn) error
+	}{
+		{"row", 'T', func(c *Conn) error { _, err := c.ReadRowDescription(); return err }},
+		{"parameter", 't', func(c *Conn) error { _, err := c.ReadParameterDescription(); return err }},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var b bytes.Buffer
+			var body bytes.Buffer
+			writeInt16(t, &body, -1) // count
+			writeMessage(t, &b, tt.typ, body.Bytes())
+
+			cn := New(&b, io.Discard)
+			if _, err := cn.ReadHeader(context.Background()); err != nil {
+				t.Fatalf("ReadHeader() = %v; want nil", err)
+			}
+			if err := tt.read(cn); err == nil {
+				t.Fatal("read = nil; want error")
+			}
+		})
+	}
+}
+
 // DataRow
 // One of the set of rows returned by a SELECT, FETCH, etc. query.
 func TestReadDataRow(t *testing.T) {

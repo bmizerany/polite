@@ -497,6 +497,21 @@ func TestReadByteN(t *testing.T) {
 	}
 }
 
+func TestReadByteNNegative(t *testing.T) {
+	cn := NewConn(strings.NewReader("FEBE"), nil)
+	got, err := cn.ReadByteN(-4)
+	if err == nil {
+		t.Fatalf("ReadByteN(-4) = %q, nil; want error", got)
+	}
+	if got != nil {
+		t.Errorf("ReadByteN(-4) = %q; want nil", got)
+	}
+	// The negative length is sticky, like any other malformed read.
+	if err := cn.Err(); err == nil {
+		t.Error("Err() = nil; want sticky error")
+	}
+}
+
 func TestReadByteNAllocs(t *testing.T) {
 	r := strings.NewReader("")
 	cn := NewConn(r, nil)

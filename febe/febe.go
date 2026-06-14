@@ -89,7 +89,7 @@ func (s ReadyStatus) Idle() bool {
 	return s == ReadyStatusIdle
 }
 
-var statusNames = [255]string{
+var statusNames = [256]string{
 	ReadyStatusIdle:   "ReadyStatusIdle",
 	ReadyStatusBusy:   "ReadyStatusBusy",
 	ReadyStatusFailed: "ReadyStatusFailed",
@@ -578,6 +578,9 @@ func (c *Conn) ReadAuthentication() (AuthenticationResponse, error) {
 		// read the remaining bytes: message body length - size of
 		// type (int32)
 		rem := c.h.BodyLen() - 4
+		if rem < 0 {
+			return zero, errShortMessage
+		}
 		data, err := c.c.ReadByteN(rem)
 		if err != nil {
 			return zero, err
@@ -912,6 +915,9 @@ func (c *Conn) ReadRowDescription() (RowDescriptionResponse, error) {
 	if err != nil {
 		return RowDescriptionResponse{}, err
 	}
+	if n < 0 {
+		return RowDescriptionResponse{}, errShortMessage
+	}
 	fields := make([]FieldDescription, n)
 	for i := range fields {
 		name, err := c.c.ReadString()
@@ -975,6 +981,9 @@ func (c *Conn) ReadParameterDescription() (ParameterDescriptionResponse, error) 
 	n, err := c.c.ReadInt16()
 	if err != nil {
 		return ParameterDescriptionResponse{}, err
+	}
+	if n < 0 {
+		return ParameterDescriptionResponse{}, errShortMessage
 	}
 	ids := make([]oids.ID, n)
 	for i := range ids {

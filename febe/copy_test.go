@@ -106,6 +106,38 @@ func TestCopyData(t *testing.T) {
 	}
 }
 
+// A CopyOut whose column count is large enough that numCols*2 overflows
+// int16 (16384) once drove Discard(int(numCols*2)) with a negative count,
+// a no-op that left the per-column format codes unread and misframed every
+// later message. A negative numCols is the same hazard. Both must surface a
+// clean error instead of a silent desync.
+func TestReadCopyOutBadNumCols(t *testing.T) {
+	cases := []struct {
+		name    string
+		numCols int16
+	}{
+		{"overflow", 16384},
+		{"negative", -1},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var b bytes.Buffer
+			var body bytes.Buffer
+			body.WriteByte(0) // format
+			writeInt16(t, &body, tt.numCols)
+			writeMessage(t, &b, 'H', body.Bytes())
+
+			cn := New(&b, nil)
+			if _, err := cn.ReadHeader(context.Background()); err != nil {
+				t.Fatalf("ReadHeader() = %v; want nil", err)
+			}
+			if _, err := cn.ReadCopyOut(); err == nil {
+				t.Fatal("ReadCopyOut() = nil; want error")
+			}
+		})
+	}
+}
+
 // TestWriteCopyDataRowNull verifies a nil [][]byte entry is sent as the
 // PostgreSQL binary-COPY NULL marker (length -1) rather than a zero-length
 // non-NULL value.

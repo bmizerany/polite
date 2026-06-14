@@ -76,7 +76,10 @@ func (c *Conn) readCopy() (CopyResponse, error) {
 	if err != nil {
 		return zero, err
 	}
-	if err := c.c.Discard(int(numCols * 2)); err != nil {
+	if numCols < 0 {
+		return zero, errShortMessage
+	}
+	if err := c.c.Discard(int(numCols) * 2); err != nil {
 		return zero, err
 	}
 	return CopyResponse{
@@ -142,6 +145,9 @@ func (c *Conn) discardBinarySignatureFlagsAndExt() error {
 	n, err := c.c.ReadInt32() // length of the extension area
 	if err != nil {
 		return err
+	}
+	if n < 0 {
+		return errShortMessage
 	}
 	return c.c.Discard(int(n))
 }

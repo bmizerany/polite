@@ -106,6 +106,9 @@ func (c *Conn) peek(n int) ([]byte, error) {
 	if c.err != nil {
 		return nil, c.err
 	}
+	if n < 0 {
+		return nil, c.setErr(errors.New("febeio: negative read length"))
+	}
 	w := c.r.window()
 	for len(w) < n {
 		_, err := c.r.extend()
