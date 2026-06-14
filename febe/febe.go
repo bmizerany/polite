@@ -685,6 +685,13 @@ func (c *Conn) ReadBackendKeyData() (BackendKeyDataResponse, error) {
 }
 
 // Notification is the backend NotificationResponse message.
+//
+// Its channel name and payload both alias the connection's read buffer
+// and are valid only until the next read on the Conn: the next step of a
+// [Notifications] range, or the next [Conn.ReadHeader]. Use
+// [Notification.Channel] and [Notification.Payload] to copy them out
+// before then; retaining the Notification across a read and reading them
+// afterward yields corrupted bytes.
 type Notification struct {
 	// MessageHeader is the decoded message header.
 	MessageHeader
@@ -692,26 +699,25 @@ type Notification struct {
 	// PID is the backend process ID that sent the notification.
 	PID int32
 
-	// Channel is the notification channel name. It is owned by the
-	// Notification and stays valid after the next read.
-	Channel []byte
-
-	// payload aliases the connection's read buffer; [Notification.Append]
-	// exposes it. It is unexported because, unlike Channel, it is only
-	// valid until the next read on the Conn.
+	// channel and payload alias the connection's read buffer; the
+	// Channel and Payload methods expose them.
+	channel []byte
 	payload []byte
 }
 
-// Append appends the notification payload to dst and returns the
+// Channel appends the notification channel name to dst and returns the
 // resulting slice. Pass nil to get a freshly allocated copy, or a
-// scratch buffer to reuse its memory.
-//
-// The payload aliases the connection's read buffer, so it is valid only
-// until the next read on the Conn: the next step of a [Notifications]
-// range, or the next [Conn.ReadHeader]. Append before then. Retaining
-// the Notification and calling Append after the next read yields
-// corrupted bytes.
-func (n *Notification) Append(dst []byte) []byte {
+// scratch buffer to reuse its memory. See [Notification] for the
+// lifetime of the underlying bytes.
+func (n *Notification) Channel(dst []byte) []byte {
+	return append(dst, n.channel...)
+}
+
+// Payload appends the notification payload to dst and returns the
+// resulting slice. Pass nil to get a freshly allocated copy, or a
+// scratch buffer to reuse its memory. See [Notification] for the
+// lifetime of the underlying bytes.
+func (n *Notification) Payload(dst []byte) []byte {
 	return append(dst, n.payload...)
 }
 
@@ -773,24 +779,30 @@ func (c *Conn) readNotification() (Notification, error) {
 	if err != nil {
 		return Notification{}, err
 	}
-	channel, err := c.c.ReadString()
+	// Read the channel and payload as one window. ReadString borrows the
+	// read buffer, valid only until the next read, and reading the second
+	// string can compact the buffer over the first. Reading the rest of
+	// the body (the two NUL-terminated strings) in a single call leaves
+	// both pointing into the same stable window. The body after pid needs
+	// at least the two terminators.
+	body, err := c.c.ReadByteN(c.h.BodyLen() - 4)
 	if err != nil {
 		return Notification{}, err
 	}
-	// ReadString borrows the connection's read buffer, valid only until
-	// the next read. Reading payload can move channel's bytes when the
-	// buffer compacts to make room, so channel must be copied now, before
-	// that read. Payload stays borrowed; Append lets the caller copy it.
-	channel = bytes.Clone(channel)
-	payload, err := c.c.ReadString()
-	if err != nil {
-		return Notification{}, err
+	i := bytes.IndexByte(body, 0)
+	if i < 0 {
+		return Notification{}, errShortMessage
+	}
+	rest := body[i+1:]
+	j := bytes.IndexByte(rest, 0)
+	if j < 0 {
+		return Notification{}, errShortMessage
 	}
 	return Notification{
 		MessageHeader: c.h,
 		PID:           pid,
-		Channel:       channel,
-		payload:       payload,
+		channel:       body[:i],
+		payload:       rest[:j],
 	}, nil
 }
 

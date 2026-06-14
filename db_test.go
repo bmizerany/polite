@@ -1828,10 +1828,10 @@ func TestEvents(t *testing.T) {
 	}
 
 	for n := range Notifications(ctx, listener) {
-		if got := string(n.Channel); got != "test_events" {
+		if got := string(n.Channel(nil)); got != "test_events" {
 			t.Fatalf("Channel = %q; want %q", got, "test_events")
 		}
-		if got := string(n.Append(nil)); got != "hello" {
+		if got := string(n.Payload(nil)); got != "hello" {
 			t.Fatalf("Payload = %q; want %q", got, "hello")
 		}
 		break
@@ -1869,13 +1869,13 @@ func TestNotificationsPreservesCallerTrace(t *testing.T) {
 	var got []string
 	ctx = febe.WithTrace(ctx, &febe.Trace{
 		ReceivedNotification: func(_ context.Context, n *febe.Notification) {
-			got = append(got, string(n.Append(nil)))
+			got = append(got, string(n.Payload(nil)))
 		},
 	})
 
 	var yielded []string
 	for n := range Notifications(ctx, listener) {
-		yielded = append(yielded, string(n.Append(nil)))
+		yielded = append(yielded, string(n.Payload(nil)))
 		break
 	}
 

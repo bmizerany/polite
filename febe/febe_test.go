@@ -305,10 +305,12 @@ func TestNotificationResponseTrace(t *testing.T) {
 	var got *Notification
 	ctx := WithTrace(context.Background(), &Trace{
 		ReceivedNotification: func(ctx context.Context, n *Notification) {
-			// Payload is valid only during the callback; copy it
-			// now so the assertions survive the next read.
+			// channel and payload are valid only during the
+			// callback; copy them now so the assertions survive the
+			// next read.
 			cp := *n
-			cp.payload = n.Append(nil)
+			cp.channel = n.Channel(nil)
+			cp.payload = n.Payload(nil)
 			got = &cp
 		},
 	})
@@ -324,7 +326,7 @@ func TestNotificationResponseTrace(t *testing.T) {
 			msgLen:  20,
 		},
 		PID:     1234,
-		Channel: []byte("hello"),
+		channel: []byte("hello"),
 		payload: []byte("world"),
 	}
 	diff.Test(t, t.Errorf, got, want)
@@ -834,15 +836,15 @@ func TestReadNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// payload still aliases the read buffer here; it is compared before
-	// the ReadHeader below, which would invalidate it.
+	// channel and payload still alias the read buffer here; they are
+	// compared before the ReadHeader below, which would invalidate them.
 	want := Notification{
 		MessageHeader: MessageHeader{
 			msgType: 'A',
 			msgLen:  20,
 		},
 		PID:     1234,
-		Channel: []byte("hello"),
+		channel: []byte("hello"),
 		payload: []byte("world"),
 	}
 
@@ -873,16 +875,17 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func TestReadNotificationOwnsFields(t *testing.T) {
-	// readNotification must return owned copies, not slices borrowed from
-	// the read buffer. With a payload near the 8 KB buffer size, reading
-	// the payload compacts the buffer in place over the channel bytes, so
-	// a borrowed channel reads back as payload bytes.
+func TestReadNotificationFieldsIntact(t *testing.T) {
+	// A notification's channel and payload both alias the read buffer and
+	// must read back intact within the loop body, even when the message
+	// spans read boundaries. readNotification reads the whole body in one
+	// call so that parsing one field cannot move the other; reading them
+	// field by field would let the payload read compact the buffer over
+	// the channel.
 	//
-	// The first notification leaves the buffer's offset advanced; the
-	// second is then read in the steady state where the next read makes
-	// room by compacting rather than by reusing the whole buffer. A
-	// borrowed channel is corrupted on that second read.
+	// Stream two notifications with a payload near the 8 KB buffer size so
+	// the second is read in the steady state where the buffer compacts to
+	// make room rather than reusing the whole buffer.
 	const channel = "ch"
 	payload := strings.Repeat("p", 7000)
 
@@ -907,10 +910,10 @@ func TestReadNotificationOwnsFields(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if string(got.Channel) != channel {
-			t.Errorf("notification %d: Channel = %q, want %q", i, got.Channel, channel)
+		if c := got.Channel(nil); string(c) != channel {
+			t.Errorf("notification %d: channel = %q, want %q", i, c, channel)
 		}
-		if p := got.Append(nil); string(p) != payload {
+		if p := got.Payload(nil); string(p) != payload {
 			t.Errorf("notification %d: payload length = %d, want %d", i, len(p), len(payload))
 		}
 	}
