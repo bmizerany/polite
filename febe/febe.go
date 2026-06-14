@@ -689,11 +689,27 @@ type Notification struct {
 	// PID is the backend process ID that sent the notification.
 	PID int32
 
-	// Channel is the notification channel name.
+	// Channel is the notification channel name. It is owned by the
+	// Notification and stays valid after the next read.
 	Channel []byte
 
-	// Payload is the notification payload.
-	Payload []byte
+	// payload aliases the connection's read buffer; [Notification.Append]
+	// exposes it. It is unexported because, unlike Channel, it is only
+	// valid until the next read on the Conn.
+	payload []byte
+}
+
+// Append appends the notification payload to dst and returns the
+// resulting slice. Pass nil to get a freshly allocated copy, or a
+// scratch buffer to reuse its memory.
+//
+// The payload aliases the connection's read buffer, so it is valid only
+// until the next read on the Conn: the next step of a [Notifications]
+// range, or the next [Conn.ReadHeader]. Append before then. Retaining
+// the Notification and calling Append after the next read yields
+// corrupted bytes.
+func (n *Notification) Append(dst []byte) []byte {
+	return append(dst, n.payload...)
 }
 
 // WriteParameterStatus writes a backend ParameterStatus ('S') message.
@@ -758,6 +774,11 @@ func (c *Conn) readNotification() (Notification, error) {
 	if err != nil {
 		return Notification{}, err
 	}
+	// ReadString borrows the connection's read buffer, valid only until
+	// the next read. Reading payload can move channel's bytes when the
+	// buffer compacts to make room, so channel must be copied now, before
+	// that read. Payload stays borrowed; Append lets the caller copy it.
+	channel = bytes.Clone(channel)
 	payload, err := c.c.ReadString()
 	if err != nil {
 		return Notification{}, err
@@ -766,7 +787,7 @@ func (c *Conn) readNotification() (Notification, error) {
 		MessageHeader: c.h,
 		PID:           pid,
 		Channel:       channel,
-		Payload:       payload,
+		payload:       payload,
 	}, nil
 }
 

@@ -277,7 +277,7 @@ func (c *Conn) Idle() bool {
 //
 //	cn.Exec(ctx, "LISTEN chat")
 //	for n := range polite.Notifications(ctx, cn) {
-//		fmt.Printf("%s: %s\n", n.Channel, n.Payload)
+//		fmt.Printf("%s: %s\n", n.Channel, n.Append(nil))
 //	}
 func Notifications(ctx context.Context, cn *Conn) iter.Seq[*febe.Notification] {
 	return func(yield func(*febe.Notification) bool) {

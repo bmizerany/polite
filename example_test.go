@@ -182,7 +182,7 @@ func ExampleNotifications_listenNotify() {
 	cn.Exec(ctx, "LISTEN chat")
 
 	for n := range polite.Notifications(ctx, cn) {
-		fmt.Printf("channel=%s payload=%s\n", n.Channel, n.Payload)
+		fmt.Printf("channel=%s payload=%s\n", n.Channel, n.Append(nil))
 	}
 }
 

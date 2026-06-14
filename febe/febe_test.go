@@ -305,7 +305,11 @@ func TestNotificationResponseTrace(t *testing.T) {
 	var got *Notification
 	ctx := WithTrace(context.Background(), &Trace{
 		ReceivedNotification: func(ctx context.Context, n *Notification) {
-			got = n
+			// Payload is valid only during the callback; copy it
+			// now so the assertions survive the next read.
+			cp := *n
+			cp.payload = n.Append(nil)
+			got = &cp
 		},
 	})
 
@@ -321,7 +325,7 @@ func TestNotificationResponseTrace(t *testing.T) {
 		},
 		PID:     1234,
 		Channel: []byte("hello"),
-		Payload: []byte("world"),
+		payload: []byte("world"),
 	}
 	diff.Test(t, t.Errorf, got, want)
 }
@@ -801,6 +805,8 @@ func TestReadNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// payload still aliases the read buffer here; it is compared before
+	// the ReadHeader below, which would invalidate it.
 	want := Notification{
 		MessageHeader: MessageHeader{
 			msgType: 'A',
@@ -808,13 +814,77 @@ func TestReadNotification(t *testing.T) {
 		},
 		PID:     1234,
 		Channel: []byte("hello"),
-		Payload: []byte("world"),
+		payload: []byte("world"),
 	}
 
 	diff.Test(t, t.Errorf, got, want)
 
 	_, err = cn.ReadHeader(context.Background())
 	diff.Test(t, t.Errorf, err, io.ErrUnexpectedEOF)
+}
+
+// chunkReader streams an endless repetition of msg, returning at most
+// chunk bytes per Read, so a large message spans read boundaries the way a
+// socket delivers it.
+type chunkReader struct {
+	msg   []byte
+	chunk int
+	pos   int
+}
+
+func (r *chunkReader) Read(p []byte) (int, error) {
+	n := min(len(p), r.chunk)
+	for i := range n {
+		p[i] = r.msg[r.pos]
+		r.pos++
+		if r.pos == len(r.msg) {
+			r.pos = 0
+		}
+	}
+	return n, nil
+}
+
+func TestReadNotificationOwnsFields(t *testing.T) {
+	// readNotification must return owned copies, not slices borrowed from
+	// the read buffer. With a payload near the 8 KB buffer size, reading
+	// the payload compacts the buffer in place over the channel bytes, so
+	// a borrowed channel reads back as payload bytes.
+	//
+	// The first notification leaves the buffer's offset advanced; the
+	// second is then read in the steady state where the next read makes
+	// room by compacting rather than by reusing the whole buffer. A
+	// borrowed channel is corrupted on that second read.
+	const channel = "ch"
+	payload := strings.Repeat("p", 7000)
+
+	var b bytes.Buffer
+	w := New(&b, &b)
+	for range 2 {
+		if err := w.WriteNotification(1234, channel, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 4 KB chunks against the 8 KB buffer force the compaction.
+	cn := New(&chunkReader{msg: b.Bytes(), chunk: 4096}, io.Discard)
+	for i := range 2 {
+		if err := cn.readAndSetCurrentHeader(); err != nil {
+			t.Fatal(err)
+		}
+		got, err := cn.readNotification()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got.Channel) != channel {
+			t.Errorf("notification %d: Channel = %q, want %q", i, got.Channel, channel)
+		}
+		if p := got.Append(nil); string(p) != payload {
+			t.Errorf("notification %d: payload length = %d, want %d", i, len(p), len(payload))
+		}
+	}
 }
 
 func TestWriteParse(t *testing.T) {

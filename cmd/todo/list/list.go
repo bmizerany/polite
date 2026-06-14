@@ -176,7 +176,7 @@ func (m *Manager) dispatchLoop(ctx context.Context, cn *polite.Conn) {
 	defer cn.Close()
 	for n := range polite.Notifications(ctx, cn) {
 		var ev Event
-		if err := json.Unmarshal(n.Payload, &ev); err != nil {
+		if err := json.Unmarshal(n.Append(nil), &ev); err != nil {
 			continue
 		}
 		m.dispatch(ev)
