@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os/user"
 	"slices"
+	"strings"
 )
 
 // Options holds the parsed connection parameters used to reach a
@@ -155,7 +156,7 @@ func Parse(dsn string) (*Options, error) {
 			}
 			state = 2
 		case 2:
-			val = tok
+			val = unquote(tok)
 			switch key {
 			case "host":
 				o.Host = val
@@ -185,6 +186,28 @@ func Parse(dsn string) (*Options, error) {
 		}
 	}
 	return o, nil
+}
+
+// unquote resolves a DSN value token from [ScanDSN]. A token wrapped in
+// apostrophes has them removed and its \' and \\ escapes resolved; any
+// other token is returned unchanged.
+func unquote(tok string) string {
+	if len(tok) < 2 || tok[0] != '\'' || tok[len(tok)-1] != '\'' {
+		return tok
+	}
+	s := tok[1 : len(tok)-1]
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i++
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 var isWhitespace = [256]bool{
