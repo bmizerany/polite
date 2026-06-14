@@ -1,9 +1,15 @@
 package potest
 
 import (
+	"bytes"
+	"crypto/sha1"
+	"crypto/sha512"
+	"encoding/hex"
+	"hash"
 	"io/fs"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -46,3 +52,36 @@ func TestDownload(t *testing.T) {
 }
 
 const testVersion = "18.3.0"
+
+func TestVerifyChecksum(t *testing.T) {
+	payload := []byte("embedded postgres jar bytes")
+	digest := func(h hash.Hash) string {
+		h.Write(payload)
+		return hex.EncodeToString(h.Sum(nil))
+	}
+	sha512Hex := digest(sha512.New())
+	sha1Hex := digest(sha1.New())
+
+	for _, c := range []struct {
+		name    string
+		newHash func() hash.Hash
+		data    []byte
+		want    string
+		wantErr bool
+	}{
+		{"sha512 match", func() hash.Hash { return sha512.New() }, payload, sha512Hex, false},
+		{"sha512 match uppercase", func() hash.Hash { return sha512.New() }, payload, strings.ToUpper(sha512Hex), false},
+		{"sha512 match with filename", func() hash.Hash { return sha512.New() }, payload, sha512Hex + "  postgres.jar\n", false},
+		{"sha512 mismatch", func() hash.Hash { return sha512.New() }, payload, strings.Repeat("0", len(sha512Hex)), true},
+		{"sha512 truncated", func() hash.Hash { return sha512.New() }, payload[:10], sha512Hex, true},
+		{"sha1 match", func() hash.Hash { return sha1.New() }, payload, sha1Hex, false},
+		{"sha1 mismatch", func() hash.Hash { return sha1.New() }, payload, sha1Hex[:len(sha1Hex)-1] + "f", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			err := verifyChecksum(c.newHash(), bytes.NewReader(c.data), c.want)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("verifyChecksum err = %v, wantErr = %v", err, c.wantErr)
+			}
+		})
+	}
+}

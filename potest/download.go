@@ -7,8 +7,12 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"context"
+	"crypto/sha1"
+	"crypto/sha512"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"io/fs"
 	"net/http"
@@ -36,13 +40,18 @@ func Download(ctx context.Context, goos, goarch, version string) (fs.FS, error) 
 	if err != nil {
 		return nil, err
 	}
-	jar, err := fetchJar(ctx, mavenJarURL(goos, goarch, version))
+	url := mavenJarURL(goos, goarch, version)
+	jar, err := fetchJar(ctx, url)
 	if err != nil {
 		root.Close()
 		return nil, err
 	}
 	defer os.Remove(jar.Name())
 	defer jar.Close()
+	if err := verifyJar(ctx, jar, url); err != nil {
+		root.Close()
+		return nil, err
+	}
 	if err := extractTxz(jar, root); err != nil {
 		root.Close()
 		return nil, err
@@ -106,6 +115,75 @@ func fetchJar(ctx context.Context, url string) (*os.File, error) {
 		return nil, err
 	}
 	return f, nil
+}
+
+// verifyJar checks jar against the strongest checksum sidecar Maven
+// publishes alongside the artifact at url. Maven Central serves both
+// url+".sha512" and url+".sha1"; sha512 is preferred and sha1 is the
+// fallback. A mismatch (including a truncated download) is fatal.
+func verifyJar(ctx context.Context, jar *os.File, url string) error {
+	for _, c := range []struct {
+		ext string
+		h   hash.Hash
+	}{
+		{".sha512", sha512.New()},
+		{".sha1", sha1.New()},
+	} {
+		want, err := fetchSidecar(ctx, url+c.ext)
+		if errors.Is(err, errNoSidecar) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := jar.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		return verifyChecksum(c.h, jar, want)
+	}
+	return fmt.Errorf("potest: %s: no checksum sidecar", url)
+}
+
+var errNoSidecar = errors.New("potest: no checksum sidecar")
+
+// fetchSidecar returns the hex digest published at url. A 404 reports
+// errNoSidecar so verifyJar can fall back to a weaker algorithm.
+func fetchSidecar(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", errNoSidecar
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("potest: %s: %s", url, resp.Status)
+	}
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// verifyChecksum hashes r through h and reports an error unless the
+// result equals the digest in want. want is a Maven sidecar body: the
+// hex digest, optionally followed by whitespace and a filename.
+func verifyChecksum(h hash.Hash, r io.Reader, want string) error {
+	if _, err := io.Copy(h, r); err != nil {
+		return err
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	want, _, _ = strings.Cut(strings.TrimSpace(want), " ")
+	if !strings.EqualFold(got, want) {
+		return fmt.Errorf("potest: checksum mismatch: got %s, want %s", got, want)
+	}
+	return nil
 }
 
 func extractTxz(jar *os.File, dst *os.Root) error {
