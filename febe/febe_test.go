@@ -919,6 +919,71 @@ func TestReadNotificationFieldsIntact(t *testing.T) {
 	}
 }
 
+func TestNotificationChannelIntactInCallback(t *testing.T) {
+	// The original bug: a large NOTIFY payload spanning a read boundary
+	// compacted the read buffer over the channel name, so the channel was
+	// already corrupted by the time ReceivedNotification ran. Drive the
+	// full ReadHeader dispatch with a chunked reader and a payload near
+	// the 8 KB buffer size, and check the channel inside the callback. The
+	// later notifications are read in the steady state where the buffer
+	// compacts to make room.
+	const channel = "ch"
+	payload := strings.Repeat("p", 7000)
+
+	var b bytes.Buffer
+	w := New(&b, &b)
+	for range 3 {
+		if err := w.WriteNotification(1234, channel, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Flush the notifications before appending the Terminate: the large
+	// payloads overflow the buffered writer and flush mid-sequence, so a
+	// Terminate written before Flush would land between notifications.
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	writeMessage(t, &b, 'X', nil) // Terminate ends the dispatch loop.
+
+	var seen int
+	ctx := WithTrace(context.Background(), &Trace{
+		ReceivedNotification: func(_ context.Context, n *Notification) {
+			seen++
+			if got := string(n.Channel(nil)); got != channel {
+				t.Errorf("notification %d: channel in callback = %q, want %q", seen, got, channel)
+			}
+			if got := n.Payload(nil); string(got) != payload {
+				t.Errorf("notification %d: payload len = %d, want %d", seen, len(got), len(payload))
+			}
+		},
+	})
+
+	// 4 KB chunks against the 8 KB buffer force the compaction.
+	cn := New(&chunkedReader{data: b.Bytes(), chunk: 4096}, io.Discard)
+	if _, err := cn.ReadHeader(ctx); !errors.Is(err, ErrTerminated) {
+		t.Fatalf("ReadHeader = %v; want %v", err, ErrTerminated)
+	}
+	if seen != 3 {
+		t.Fatalf("callback saw %d notifications; want 3", seen)
+	}
+}
+
+// chunkedReader serves data in at most chunk-byte reads, then EOF.
+type chunkedReader struct {
+	data  []byte
+	chunk int
+}
+
+func (r *chunkedReader) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		return 0, io.EOF
+	}
+	n := min(len(p), min(r.chunk, len(r.data)))
+	copy(p, r.data[:n])
+	r.data = r.data[n:]
+	return n, nil
+}
+
 func TestWriteParse(t *testing.T) {
 	t.Run("no oids", func(t *testing.T) {
 		var b bytes.Buffer
