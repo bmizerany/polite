@@ -3,6 +3,7 @@ package scram
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"strings"
@@ -27,6 +28,48 @@ func TestHandshakeCtxCancel(t *testing.T) {
 	}, "user", "pencil")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Handshake() err = %v; want context.Canceled", err)
+	}
+}
+
+// TestHandshakeClientNonceEntropy drives a real handshake and checks the
+// client nonce carried in the client-first message clears the SCRAM 128-bit
+// floor. crypto/rand.Text returns RFC 4648 base32 (5 bits per character), so
+// 128 bits requires at least 26 characters; an 80-bit nonce would be 16.
+func TestHandshakeClientNonceEntropy(t *testing.T) {
+	var s state
+	s.user = "user"
+	s.password = "pencil"
+	s.salt = []byte("salt")
+	s.clientNonce = fixedNonce()
+	s.serverNonce = s.clientNonce + "server"
+	s.iter = 4096
+
+	mechanisms := []string{"SCRAM-SHA-256"}
+	want, ok := referenceSCRAM(sha256.New, s)
+	if !ok {
+		t.Fatal("referenceSCRAM rejected a valid transcript")
+	}
+
+	got, err := runHandshake(t, mechanisms,
+		febe.AuthenticationTypeSASLContinue, challengeMessage(s.serverNonce, s.salt, s.iter),
+		serverFinalMessage(want.serverSig), febe.AuthenticationTypeOK,
+		s.user, s.password)
+	if err != nil {
+		t.Fatalf("Handshake() = %v", err)
+	}
+
+	// Strip the "n,," GS2 channel-binding header before reading the SCRAM
+	// attributes, as a server would.
+	_, scramData, ok := bytes.Cut(got.initial.data, []byte("n,,"))
+	if !ok {
+		t.Fatalf("client first %q missing GS2 header", got.initial.data)
+	}
+	nonce, err := attr(scramData, 'r')
+	if err != nil {
+		t.Fatalf("attr(r) = %v", err)
+	}
+	if bits := len(nonce) * 5; bits < 128 {
+		t.Fatalf("client nonce %q = %d bits; want >= 128", nonce, bits)
 	}
 }
 

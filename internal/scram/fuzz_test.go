@@ -671,7 +671,7 @@ func fixedNonce() string {
 	old := crand.Reader
 	crand.Reader = bytes.NewReader(bytes.Repeat([]byte{0x42}, 256))
 	defer func() { crand.Reader = old }()
-	return crand.Text()[:16]
+	return crand.Text()
 }
 
 func flipBytes(data []byte) []byte {

@@ -65,7 +65,7 @@ func Handshake(ctx context.Context, cn *febe.Conn, cr febe.AuthenticationRespons
 		return fmt.Errorf("polite: password is required for %q authentication", usingMechanism)
 	}
 
-	nonce := rand.Text()[:16]
+	nonce := rand.Text()
 
 	// Send the client-first message with the username and client nonce.
 	clientFirst := "n=" + escapeUsernameRE.Replace(user) + ",r=" + nonce
