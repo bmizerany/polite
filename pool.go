@@ -80,10 +80,12 @@ func (p *Pool) init() {
 // progress, and the backend is at ReadyForQuery outside any
 // transaction block. Callers that leave a connection in any other
 // state must clean it up before calling Put, or accept that Put will
-// close and discard it.
+// close and discard it. Put also discards a connection that sent a
+// cancel request: the request can reach the backend after its query
+// finished and cancel the next caller's query.
 func (p *Pool) Put(cn *Conn) {
 	p.init()
-	if p.cancelCtx.Err() != nil || !cn.Idle() {
+	if p.cancelCtx.Err() != nil || !cn.Idle() || cn.cancelSent {
 		cn.Close()
 		p.waitlist.Retire()
 		return

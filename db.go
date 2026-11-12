@@ -103,6 +103,13 @@ type Conn struct {
 	// collide with the in-flight row stream.
 	busy bool
 
+	// cancelSent is true once cancelQuery has run. The backend may get the
+	// CancelRequest after the query it was meant for has finished, and
+	// then it cancels whatever runs next on this connection, so
+	// [Pool.Put] retires the connection rather than hand it to someone
+	// else.
+	cancelSent bool
+
 	// syncPending is true after a Sync has been flushed to the backend
 	// but the matching ReadyForQuery has not yet been consumed. It is the
 	// single source of truth for whether the connection needs to be
@@ -1227,6 +1234,7 @@ func (e cancelledError) Unwrap() []error {
 // only means the query keeps running, which is no worse than not having
 // attempted to cancel at all.
 func (c *Conn) cancelQuery() {
+	c.cancelSent = true
 	pid := c.fc.BackendPID()
 	secret := c.fc.BackendSecret()
 	if pid == 0 || c.dial == nil {
