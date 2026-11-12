@@ -79,6 +79,35 @@ func TestPoolGetReady(t *testing.T) {
 	}
 }
 
+// TestPoolPutRetiresCancelled asserts that Put discards a connection that
+// sent a CancelRequest. The backend can get the request after its query
+// finished, and it then cancels the next query on that connection, which
+// would be another caller's.
+func TestPoolPutRetiresCancelled(t *testing.T) {
+	t.Parallel()
+
+	p := newTestPool(t)
+	cn, err := p.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if err := cn.Exec(ctx, "SELECT pg_sleep(10)"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Exec err = %v; want %v", err, context.DeadlineExceeded)
+	}
+	p.Put(cn)
+
+	cn2, err := p.Get(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Put(cn2)
+	if cn == cn2 {
+		t.Fatal("Get returned the connection that sent a cancel request")
+	}
+}
+
 func TestPoolGetNextErrorAfterClose(t *testing.T) {
 	t.Parallel()
 
